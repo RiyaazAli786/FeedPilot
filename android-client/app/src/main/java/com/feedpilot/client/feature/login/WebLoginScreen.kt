@@ -15,12 +15,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -275,7 +275,7 @@ fun WebLoginScreen(
                 trailingContent = {
                     CircleIconButton(onClick = { showSuggestionPanel = true }) {
                         Icon(
-                            Icons.Filled.Badge,
+                            Icons.Filled.PersonSearch,
                             contentDescription = "Pick a suggested username",
                             tint = AppTheme.brand.headerContentColor
                         )
