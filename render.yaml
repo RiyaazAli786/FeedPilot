@@ -31,6 +31,14 @@ services:
       # is what's actually installed; setting it before then locks out every existing install.
       - key: RequestSigning__Secret
         sync: false
+      # Optional Telegram monitoring. Keep the bot token private in Render env vars; do not
+      # commit real bot credentials. ChatId must be the numeric destination chat/group id.
+      - key: Telegram__Enabled
+        value: "false"
+      - key: Telegram__BotToken
+        sync: false
+      - key: Telegram__ChatId
+        sync: false
       # Provide this yourself: your Postgres "Internal Database URL" from the Render dashboard.
       # sync:false means Render prompts for it instead of trying to create a new database.
       - key: DATABASE_URL

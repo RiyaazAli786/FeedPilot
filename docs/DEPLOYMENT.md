@@ -23,11 +23,22 @@ Optional values:
 
 ```text
 RequestSigning__Secret=<same value embedded in app build>
+Telegram__Enabled=true
+Telegram__BotToken=<bot token from BotFather>
+Telegram__ChatId=<numeric Telegram destination chat id>
 Payments__UpiId=<UPI id>
 Payments__PayeeName=<payee name>
 SmmPanel__ApiKey=<panel key if enabled>
 AssetStorage__Provider=B2
 ```
+
+Telegram logging is already wired for backend API requests, app-reported Instagram calls, and client crash reports. Add the bot to your Telegram group/channel, send one message there, then open:
+
+```text
+https://api.telegram.org/bot<token>/getUpdates
+```
+
+Use the numeric `chat.id` value as `Telegram__ChatId`. Group ids usually start with `-100`. Keep `Telegram__BotToken` only in Render environment variables and rotate it in BotFather if it was shared anywhere.
 
 ## Android API URL
 
