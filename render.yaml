@@ -1,0 +1,49 @@
+# Render Blueprint — provisions the API web service.
+# In Render: New > Blueprint, point at this repo. Review, then Apply.
+#
+# NOTE: this does NOT create a database, because Render's free tier allows only one free
+# Postgres per account. Set DATABASE_URL (below) to your existing database's Internal URL.
+# If you'd rather have a dedicated database created for this app, see DEPLOY.md.
+services:
+  - type: web
+    name: feedpilot-api-ount
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      # Strong random values generated once by Render. Jwt__Secret signs auth tokens;
+      # Admin__ApiKey guards the /dashboard admin endpoints (enter it in the dashboard).
+      - key: Jwt__Secret
+        generateValue: true
+      - key: Admin__ApiKey
+        generateValue: true
+      - key: Admin__DashboardPasscode
+        sync: false
+      - key: Admin__BackupPasscode
+        sync: false
+      # Locks /api/** (except /api/admin/**) to requests signed by the Android client — see
+      # RequestSigningMiddleware. Leave unset until the client build carrying this same value
+      # is what's actually installed; setting it before then locks out every existing install.
+      - key: RequestSigning__Secret
+        sync: false
+      # Provide this yourself: your Postgres "Internal Database URL" from the Render dashboard.
+      # sync:false means Render prompts for it instead of trying to create a new database.
+      - key: DATABASE_URL
+        sync: false
+      - key: AssetStorage__Provider
+        value: B2
+      - key: AssetStorage__KeyId
+        sync: false
+      - key: AssetStorage__ApplicationKey
+        sync: false
+      - key: AssetStorage__BucketName
+        sync: false
+      - key: AssetStorage__BucketId
+        sync: false
+      - key: AssetStorage__Prefix
+        value: upgrade

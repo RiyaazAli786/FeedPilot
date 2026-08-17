@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only network policy.
+
+  Since Android 7 an app ignores user-installed CAs, so an intercepting proxy (Fiddler,
+  Charles, mitmproxy) cannot decrypt its HTTPS traffic no matter what the device trusts.
+  Opting into the "user" trust anchor here is what makes capture work on an unrooted
+  Genymotion image.
+
+  This file lives in src/debug on purpose: release builds never see it and keep the platform
+  default, where only system CAs are trusted. Do not move it to src/main.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="database" path="feedpilot.db" />
+    <include domain="sharedpref" path="." />
+    <!--
+      The EncryptedSharedPreferences file MUST NOT be backed up. Its master key lives in the
+      Android Keystore, which is never part of a backup, so a restored copy of this file lands
+      on the new device with no key that can decrypt it. EncryptedSharedPreferences.create()
+      then throws on every launch, which crashed the app on startup for anyone who set their
+      phone up from a Smart Switch / Google backup.
+    -->
+    <exclude domain="sharedpref" path="feedpilot_secure_prefs.xml" />
+</full-backup-content>

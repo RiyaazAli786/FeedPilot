@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!--
+      feedpilot_secure_prefs.xml is excluded from both transports on purpose: it is encrypted
+      with an Android Keystore master key that no backup can carry across, so restoring it
+      produces a file the app cannot open. See backup_rules.xml for the full explanation.
+    -->
+    <cloud-backup>
+        <include domain="database" path="feedpilot.db" />
+        <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="feedpilot_secure_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="feedpilot.db" />
+        <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="feedpilot_secure_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>

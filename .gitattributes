@@ -1,0 +1,15 @@
+# Normalize line endings on commit
+* text=auto
+
+# Shell scripts and the Gradle wrapper must use LF
+*.sh text eol=lf
+gradlew text eol=lf
+
+# Windows batch scripts use CRLF
+*.bat text eol=crlf
+
+# Binary assets
+*.jar binary
+*.png binary
+*.keystore binary
+*.apk binary

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Applies the debug-only network policy (see res/xml/network_security_config.xml) so a local
+  intercepting proxy can decrypt this build's traffic. The main manifest does not set
+  networkSecurityConfig, so this is a clean addition at merge time — no tools:replace needed.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>

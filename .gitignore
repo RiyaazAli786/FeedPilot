@@ -1,0 +1,83 @@
+# General
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# .NET / ASP.NET
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+backend/src/**/appsettings.Development.local.json
+backend/src/**/*.db
+backend/src/**/*.db-shm
+backend/src/**/*.db-wal
+
+# Android / Gradle
+.gradle/
+build/
+android-client/.gradle/
+android-client/.kotlin/
+android-client/**/build/
+android-client/local.properties
+android-client/captures/
+android-client/.externalNativeBuild/
+android-client/.cxx/
+*.apk
+*.aab
+*.keystore
+!backend/src/FeedPilot.Api/wwwroot/apk/
+!backend/src/FeedPilot.Api/wwwroot/apk/*.json
+
+# iOS / Xcode
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Generated/release artifacts
+artifacts/
+.deploy_state/
+android-sdk/
+accept_licenses.ps1
+install_build_tools.ps1
+
+# Legacy copied reference docs kept locally but not pushed
+/API_DOCUMENTATION.md
+/APPLICATION_WORKING.md
+/architecture.md
+/BUILD.md
+/context.md
+/DEPLOYMENT.md
+/DEPLOYMENT_SCHEMA_46.4.25.178.md
+/Implementation.md
+/PM2_COMMANDS.md
+/SERVER_SPECIFICATION.txt
+/SPECIFICATION.txt
+/ecosystem.config.js
+docs/ACCOUNT_DAILY_ACTION_LIMITS_AND_COOLDOWN_PLAN.md
+docs/DEVICE_IDENTITY_AND_CLONE_UNIQUENESS_PLAN.md
+docs/LIVE_COIN_SYNC_IMPLEMENTATION_PLAN.md
+docs/ONLINE_INDICATOR_AND_TASK_VALIDATION_PLAN.md
+docs/PICKED_USERNAME_AND_ENFORCEMENT_PLAN.md
+docs/REFERRAL_AND_COIN_PRICING_PLAN.md
+docs/SMM_API.md
+docs/SMM_API_FULL_REFERENCE.md
+docs/order_flow.md
+docs/order_improvements.md
+
+# Legacy one-off scripts and captured responses
+scripts/

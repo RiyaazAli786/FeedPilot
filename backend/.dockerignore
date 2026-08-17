@@ -1,0 +1,8 @@
+**/bin
+**/obj
+**/*.user
+**/.vs
+# Local dev SQLite database — never ship dev data into the image.
+**/*.db
+**/*.db-shm
+**/*.db-wal

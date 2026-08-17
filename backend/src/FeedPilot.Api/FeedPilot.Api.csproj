@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FeedPilot.Api</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.2" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="7.2.0" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\comments\comments.txt" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="wwwroot\comments\service_177_comments.txt" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="wwwroot\generator\Brazil_Instagram_Username_Generator.xlsx" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="wwwroot\generator\dataset.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <None Update="wwwroot\comments\comments.txt" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <None Update="wwwroot\comments\service_177_comments.txt" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <None Update="wwwroot\generator\Brazil_Instagram_Username_Generator.xlsx" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <None Update="wwwroot\generator\dataset.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <Target Name="ExcludeFilesFromDeployment" BeforeTargets="CopyFilesToOutputDirectory;Publish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(FileName)%(Extension)' == 'comments.txt' Or '%(FileName)%(Extension)' == 'service_177_comments.txt' Or '%(FileName)%(Extension)' == 'Brazil_Instagram_Username_Generator.xlsx' Or '%(FileName)%(Extension)' == 'dataset.json'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

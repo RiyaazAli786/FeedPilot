@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FeedPilot — Backup / Restore</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  :root {
+    --bg: #f3f7fa; --surface: #ffffff; --border: #d9e3ea; --text: #101820;
+    --muted: #58626d; --brand: #25d9d0; --danger: #d92d20; --ok: #12b76a; --info: #2e90fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#060b10; --surface:#0d151c; --border:#243541; --text:#f2f7f8; --muted:#9fb1bd; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:12px; padding:16px 20px;
+           background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  h1 { font-size:17px; margin:0; font-weight:700; }
+  .grow { flex:1; }
+  main { padding:20px; max-width:720px; margin:0 auto; }
+  a.back { color:var(--muted); text-decoration:none; font-size:13px; }
+  a.back:hover { color:var(--info); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:16px; }
+  .card h2 { margin:0 0 4px; font-size:15px; }
+  .card p.desc { margin:0 0 14px; color:var(--muted); font-size:13px; }
+  input, select, button { font:inherit; color:var(--text); background:var(--bg);
+                          border:1px solid var(--border); border-radius:8px; padding:8px 12px; }
+  button { cursor:pointer; }
+  button.primary { background:var(--brand); border-color:var(--brand); color:#101820; font-weight:600; }
+  button.danger { background:var(--danger); border-color:var(--danger); color:#ffffff; font-weight:600; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input[type=file] { padding:6px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .msg { margin-top:12px; padding:10px 12px; border-radius:8px; font-size:13px; }
+  .msg.ok { background:#12b76a1a; color:var(--ok); }
+  .msg.err { background:#d92d201a; color:var(--danger); }
+  .result-list { margin:10px 0 0; padding:0; list-style:none; font-size:13px; }
+  .result-list li { display:flex; justify-content:space-between; padding:4px 0;
+                     border-bottom:1px solid var(--border); }
+  .result-list li:last-child { border-bottom:0; }
+  /* overflow-y:auto — content taller than max-height would otherwise spill past this fixed,
+     top-layer box with no way to reach it (unreachable on short mobile viewports especially). */
+  dialog { border:1px solid var(--border); border-radius:14px; background:var(--surface);
+           color:var(--text); padding:0; max-width:420px; width:92vw; max-height:calc(100vh - 32px);
+           position:fixed; inset:0; margin:auto; height:fit-content; overflow-y:auto; }
+  dialog::backdrop { background:rgba(0,0,0,.5); }
+  /* Same server-verified idle lock as the main dashboard — this page is one click from the
+     dashboard and holds the more sensitive backup/restore actions, so it gets the same lock
+     rather than being reachable unlocked via a direct link. */
+  .lock-dialog { padding:0; width:min(320px,90vw); }
+  .lock-dialog::backdrop { background:var(--bg); opacity:1; }
+  .lock-card { padding:32px 28px; text-align:center; }
+  .lock-icon { font-size:32px; margin-bottom:8px; }
+  .lock-card h2 { margin:0 0 4px; font-size:18px; }
+  .lock-card input { width:100%; box-sizing:border-box; text-align:center; letter-spacing:4px;
+                      font-size:18px; margin:16px 0 8px; }
+  .lock-error { color:var(--danger); font-size:12px; min-height:16px; margin-bottom:8px; }
+  .dlg-body { display:flex; flex-direction:column; gap:12px; padding:20px; }
+  .dlg-foot { display:flex; justify-content:flex-end; gap:8px; padding:14px 20px;
+              border-top:1px solid var(--border); }
+  .spinner {
+    display:inline-block; width:14px; height:14px; border-radius:50%;
+    border:2px solid var(--border); border-top-color:var(--brand);
+    animation:spin .7s linear infinite; vertical-align:middle;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="index.html">&larr; Dashboard</a>
+  <h1>Backup / Restore</h1>
+  <span class="grow"></span>
+  <a href="Update.html" style="text-decoration:none; margin-right:8px;">
+    <button type="button">Upgrade Assets</button>
+  </a>
+  <input id="key" type="password" placeholder="Admin key" style="width:170px" autocomplete="off">
+  <input id="passcode" type="password" placeholder="Backup passcode" style="width:170px" autocomplete="off">
+  <button id="save-key">Connect</button>
+</header>
+
+<main>
+  <p class="muted" style="margin:0 0 16px">
+    This page needs two separate credentials: your usual admin key, and a second backup
+    passcode held apart from it. Neither is enough on its own.
+  </p>
+
+  <div class="card">
+    <h2>Export a backup</h2>
+    <p class="desc">
+      Downloads every user, device, linked Instagram account, wallet (with its coin history),
+      app order, withdrawal, worker task, subscription/password-reset request, coin transfer, and
+      the runner config as one JSON file — everything a backend migration needs to
+      not lose data.
+    </p>
+    <button id="backup-download" class="primary">Download backup</button>
+  </div>
+
+  <div class="card">
+    <h2>Restore from a backup</h2>
+    <p class="desc">
+      Reads a backup file back in. This is an <strong>upsert</strong> — rows already in the
+      database with a matching id are updated to the file's values, everything else is left
+      alone. Safe to run against a database that already has some data, which is the normal case
+      right after standing up a fresh backend before traffic even moves over. A file exported
+      before a given section existed (e.g. an older backup missing coin transfers) restores fine —
+      that section is just skipped rather than the whole restore failing.
+    </p>
+    <button id="backup-restore">Choose file &amp; restore…</button>
+    <input id="backup-file" type="file" accept="application/json" style="display:none">
+    <ul class="result-list" id="restore-result" style="display:none"></ul>
+  </div>
+<div id="msg"></div>
+</main>
+
+<dialog id="lock-screen" class="lock-dialog">
+  <div class="lock-card">
+    <div class="lock-icon">🔒</div>
+    <h2>Dashboard locked</h2>
+    <p class="muted">Enter the dashboard passcode to continue.</p>
+    <input id="lock-input" type="password" autocomplete="off" placeholder="Passcode">
+    <div id="lock-error" class="lock-error"></div>
+    <button id="lock-submit" class="primary" style="width:100%">Unlock</button>
+  </div>
+</dialog>
+
+<dialog id="confirm-dlg">
+  <div class="dlg-body">
+    <strong id="confirm-title">Confirm</strong>
+    <p id="confirm-message" class="muted" style="margin:0;white-space:pre-line"></p>
+  </div>
+  <div class="dlg-foot">
+    <button id="confirm-cancel">Cancel</button>
+    <button id="confirm-ok" class="primary">OK</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+// The admin session is shared with the main dashboard (same localStorage key, so it survives a
+// browser restart and one login covers both pages). The backup session is deliberately page-only,
+// so opening or refreshing backup.html asks for the backup passcode again.
+// Neither raw secret (admin key, backup passcode) is ever stored — only the short-lived session
+// tokens minted by their respective challenge-response login endpoints.
+const adminSessionToken = () => localStorage.getItem('tf_admin_session') || '';
+let backupSession = '';
+const backupSessionToken = () => backupSession;
+
+function updateKeyUi() {
+  const has = !!adminSessionToken() && !!backupSessionToken();
+  $('#key').style.display = adminSessionToken() ? 'none' : '';
+  $('#passcode').style.display = backupSessionToken() ? 'none' : '';
+  $('#save-key').textContent = has ? 'Connected' : 'Connect';
+  $('#backup-download').disabled = !has;
+  $('#backup-restore').disabled = !has;
+}
+
+/** HMAC-SHA256(keyStr, dataBytes), base64-encoded — the raw secret never travels, only this. */
+async function hmacSha256Base64(keyStr, dataBytes) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(keyStr), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+
+/** Exchanges the raw admin key for a session token — same challenge-response index.html uses. */
+async function adminLogin(rawKey) {
+  const challengeRes = await fetch('/api/admin/auth/challenge', { method: 'POST' });
+  if (!challengeRes.ok) {
+    const body = await challengeRes.json().catch(() => ({}));
+    throw new Error(body.message || 'Could not start login — try again.');
+  }
+  const { token, nonce } = await challengeRes.json();
+  const nonceBytes = Uint8Array.from(atob(nonce), c => c.charCodeAt(0));
+  const hash = await hmacSha256Base64(rawKey, nonceBytes);
+
+  const res = await fetch('/api/admin/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, hash })
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || 'Admin key rejected — check the "Admin key" field.');
+  }
+  const { sessionToken } = await res.json();
+  localStorage.setItem('tf_admin_session', sessionToken);
+}
+
+/**
+ * Exchanges the raw backup passcode for a backup session token. Requires an admin session already
+ * (the challenge/login endpoints below are themselves gated by [AdminSession]), sent automatically
+ * by api() via X-Admin-Session.
+ */
+async function backupLogin(rawPasscode) {
+  const challengeRes = await api('/api/admin/backup/auth/challenge', { method: 'POST' });
+  const { token, nonce } = challengeRes;
+  const nonceBytes = Uint8Array.from(atob(nonce), c => c.charCodeAt(0));
+  const hash = await hmacSha256Base64(rawPasscode, nonceBytes);
+
+  const { sessionToken } = await api('/api/admin/backup/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ token, hash })
+  });
+  backupSession = sessionToken;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Session': adminSessionToken(),
+      'X-Backup-Session': backupSessionToken(),
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    let message = res.statusText, code = null;
+    try { const body = await res.json(); message = body.message || message; code = body.code || null; } catch {}
+    if (code === 'ADMIN_UNAUTHORIZED' || code === 'ADMIN_DISABLED') {
+      message = 'Admin session rejected or expired — sign in again.';
+      updateKeyUi();
+    } else if (code === 'BACKUP_UNAUTHORIZED') {
+      message = 'Backup session rejected or expired — re-enter the backup passcode.';
+      backupSession = '';
+      updateKeyUi();
+    } else if (code === 'BACKUP_DISABLED') {
+      message = 'Backup/restore is disabled on the server — no Admin:BackupPasscode is configured yet.';
+    } else if (res.status === 401 || res.status === 403) {
+      message = 'Invalid or missing admin/backup session.';
+    }
+    throw new Error(message);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+/** Same reusable confirm dialog as the main dashboard — its own copy since this is a separate page. */
+function showModal({ title = 'Confirm', message = '', okLabel = 'OK', showCancel = true, danger = false } = {}) {
+  return new Promise(resolve => {
+    const dlg = $('#confirm-dlg'), okBtn = $('#confirm-ok'), cancelBtn = $('#confirm-cancel');
+    let resolved = false;
+    const finish = (result) => {
+      if (resolved) return;
+      resolved = true;
+      okBtn.onclick = null; cancelBtn.onclick = null; dlg.onclose = null;
+      if (dlg.open) dlg.close();
+      resolve(result);
+    };
+    $('#confirm-title').textContent = title;
+    $('#confirm-message').textContent = message;
+    cancelBtn.style.display = showCancel ? '' : 'none';
+    okBtn.textContent = okLabel;
+    okBtn.className = danger ? 'danger' : 'primary';
+    okBtn.onclick = e => { e.preventDefault(); finish(true); };
+    cancelBtn.onclick = e => { e.preventDefault(); finish(false); };
+    dlg.onclose = () => finish(false);
+    dlg.showModal();
+  });
+}
+const showAlert = (message, title = 'Notice') => showModal({ title, message, showCancel: false });
+const showConfirm = (message, title = 'Confirm', danger = false) => showModal({ title, message, showCancel: true, danger });
+
+function showMsg(text, type) {
+  $('#msg').innerHTML = `<div class="msg ${type}">${text}</div>`;
+}
+
+$('#save-key').onclick = async () => {
+  const btn = $('#save-key');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  try {
+    if (!adminSessionToken()) {
+      await adminLogin($('#key').value.trim());
+      $('#key').value = '';
+    }
+    if (!backupSessionToken()) {
+      await backupLogin($('#passcode').value.trim());
+      $('#passcode').value = '';
+    }
+    updateKeyUi();
+    checkLockEnabled();
+    showMsg('', '');
+  } catch (err) {
+    showMsg(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+    updateKeyUi();
+  }
+};
+
+$('#backup-download').onclick = async () => {
+  const btn = $('#backup-download');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Exporting…';
+  try {
+    const data = await api('/api/admin/backup');
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `feedpilot-backup-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showMsg(
+      `Exported ${data.users.length} users, ${data.devices.length} devices, ` +
+      `${data.accounts.length} accounts, ${data.wallets.length} wallets, ` +
+      `${data.appOrders.length} orders, ${data.withdrawals.length} withdrawals, ` +
+      `${data.tasks.length} tasks, ${data.coinTransfers.length} coin transfers.`,
+      'ok');
+  } catch (err) {
+    showMsg('Backup failed: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+};
+
+$('#backup-restore').onclick = async () => {
+  const ok = await showConfirm(
+    'Restore from a backup file? This adds/updates users, devices, accounts, wallets, coin ' +
+    'history, app orders, withdrawals, worker tasks, subscription/password-reset requests, coin ' +
+    'transfers, and runner config from the file — existing rows with matching ids ' +
+    'are overwritten with the file\'s values, everything else is left alone.',
+    'Restore backup', true);
+  if (!ok) return;
+  $('#backup-file').click();
+};
+
+$('#backup-file').onchange = async () => {
+  const file = $('#backup-file').files[0];
+  $('#backup-file').value = '';
+  if (!file) return;
+
+  let payload;
+  try {
+    payload = JSON.parse(await file.text());
+  } catch (err) {
+    showMsg('That file is not valid JSON: ' + err.message, 'err');
+    return;
+  }
+
+  const btn = $('#backup-restore');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Restoring…';
+  try {
+    const result = await api('/api/admin/backup', { method: 'POST', body: JSON.stringify(payload) });
+    $('#restore-result').style.display = '';
+    $('#restore-result').innerHTML = [
+      ['Users', result.usersUpserted], ['Devices', result.devicesUpserted],
+      ['Accounts', result.accountsUpserted], ['Wallets', result.walletsUpserted],
+      ['Coin transactions', result.walletTransactionsUpserted],
+      ['App orders', result.appOrdersUpserted], ['Withdrawals', result.withdrawalsUpserted],
+      ['Worker tasks', result.tasksUpserted],
+      ['Subscription requests', result.subscriptionRequestsUpserted],
+      ['Password reset requests', result.passwordResetRequestsUpserted],
+      ['Coin transfers', result.coinTransfersUpserted],
+      ['Runner settings', result.runnerSettingsUpserted]
+    ].map(([label, n]) => `<li><span>${label}</span><b>${n}</b></li>`).join('');
+    showMsg('Restore complete.', 'ok');
+  } catch (err) {
+    showMsg('Restore failed: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+};
+/**
+ * Same server-verified idle lock as the main dashboard — see index.html's copy of this block for
+ * the full rationale, including why unlocking is a challenge-response round trip
+ * (POST passcode-challenge for a one-time nonce, then POST verify-passcode with
+ * HMAC-SHA256(key: passcode, message: nonce)) rather than sending the passcode itself. Kept as a
+ * duplicate here rather than a shared script file, matching how this page already duplicates its
+ * other helpers (api/$/showConfirm) instead of importing them from index.html. The passcode
+ * itself lives only in Admin:DashboardPasscode on the server.
+ */
+const LOCK_IDLE_MS = 60 * 1000;
+let lockLastActivity = Date.now();
+let lockEnabled = false;
+
+const isLocked = () => $('#lock-screen') && $('#lock-screen').open;
+
+function touchActivity() {
+  if (!isLocked()) {
+    lockLastActivity = Date.now();
+  }
+}
+
+function showLock() {
+  const dlg = $('#lock-screen');
+  if (!dlg) return;
+  $('#lock-error').textContent = '';
+  $('#lock-input').value = '';
+  if (!dlg.open) dlg.showModal();
+  setTimeout(() => $('#lock-input').focus(), 0);
+}
+function hideLock() {
+  const dlg = $('#lock-screen');
+  if (dlg && dlg.open) dlg.close();
+  touchActivity();
+}
+
+async function checkLockEnabled() {
+  if (!adminSessionToken()) { lockEnabled = false; return; }
+  try {
+    const res = await fetch('/api/admin/dashboard/lock-status');
+    lockEnabled = res.ok && !!(await res.json()).enabled;
+  } catch { lockEnabled = false; }
+
+  if (lockEnabled) {
+    showLock();
+  }
+}
+
+async function submitLock() {
+  const value = $('#lock-input').value;
+  const btn = $('#lock-submit');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Verifying…';
+  $('#lock-error').textContent = '';
+  try {
+    const challengeRes = await fetch('/api/admin/dashboard/passcode-challenge', { method: 'POST' });
+    if (!challengeRes.ok) {
+      const body = await challengeRes.json().catch(() => ({}));
+      $('#lock-error').textContent = body.message || 'Could not start verification — try again.';
+      return;
+    }
+    const { token, nonce } = await challengeRes.json();
+    const nonceBytes = Uint8Array.from(atob(nonce), c => c.charCodeAt(0));
+    const hash = await hmacSha256Base64(value, nonceBytes);
+
+    const res = await fetch('/api/admin/dashboard/verify-passcode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, hash })
+    });
+    if (res.ok) {
+      hideLock();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      $('#lock-error').textContent = body.message || 'Incorrect passcode.';
+      $('#lock-input').value = '';
+      $('#lock-input').focus();
+    }
+  } catch {
+    $('#lock-error').textContent = 'Could not reach the server — check your connection and try again.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+$('#lock-submit').onclick = submitLock;
+$('#lock-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitLock(); });
+$('#lock-screen').addEventListener('cancel', e => e.preventDefault());
+
+['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(evt =>
+  document.addEventListener(evt, () => touchActivity(), { passive: true }));
+setInterval(() => {
+  if (lockEnabled && !isLocked() && Date.now() - lockLastActivity >= LOCK_IDLE_MS) showLock();
+}, 1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && lockEnabled && !isLocked() &&
+      Date.now() - lockLastActivity >= LOCK_IDLE_MS) {
+    showLock();
+  }
+});
+
+updateKeyUi();
+checkLockEnabled();
+</script>
+</body>
+</html>
