@@ -38,6 +38,7 @@ import androidx.core.view.doOnLayout
 import com.feedpilot.client.common.BrazilUsernameGenerator
 import com.feedpilot.client.common.DeviceIdentity
 import com.feedpilot.client.common.InstagramCrypto
+import com.feedpilot.client.common.TotpCode
 import com.feedpilot.client.common.WebViewNetworkLogging
 import com.feedpilot.client.data.remote.InstagramWebClient
 import com.feedpilot.client.data.remote.UsernameValidationResult
@@ -177,6 +178,77 @@ private suspend fun WebView.fillUsernameField(
     return false
 }
 
+private fun WebView.fillTwoFactorCodeAttempt(code: String, onResult: (Boolean) -> Unit) {
+    val js = """
+        (function(){
+          try {
+            var text = (document.body && document.body.innerText || '').toLowerCase();
+            var href = String(location.href || '').toLowerCase();
+            var looksLike2fa =
+              href.indexOf('two_factor') !== -1 ||
+              href.indexOf('challenge') !== -1 ||
+              text.indexOf('two-factor') !== -1 ||
+              text.indexOf('authentication code') !== -1 ||
+              text.indexOf('security code') !== -1;
+            if (!looksLike2fa) return false;
+
+            var inputs = Array.prototype.slice.call(document.querySelectorAll('input'));
+            var el = inputs.find(function(input) {
+              var name = String(input.name || '').toLowerCase();
+              var label = String(input.getAttribute('aria-label') || input.placeholder || input.autocomplete || '').toLowerCase();
+              var type = String(input.type || '').toLowerCase();
+              if (name === 'username' || name === 'password') return false;
+              return name.indexOf('verification') !== -1 ||
+                name.indexOf('security') !== -1 ||
+                name.indexOf('code') !== -1 ||
+                label.indexOf('code') !== -1 ||
+                input.autocomplete === 'one-time-code' ||
+                type === 'tel' ||
+                type === 'number' ||
+                type === 'text';
+            });
+            if (!el) return false;
+
+            el.focus();
+            var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            setter.call(el, ${JSONObject.quote(code)});
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+
+            var buttons = Array.prototype.slice.call(document.querySelectorAll('button, div[role="button"]'));
+            var submit = buttons.find(function(button) {
+              var value = (button.innerText || button.textContent || '').trim().toLowerCase();
+              return !button.disabled && (
+                value === 'confirm' ||
+                value === 'continue' ||
+                value === 'submit' ||
+                value === 'log in' ||
+                value === 'next'
+              );
+            });
+            if (submit) submit.click();
+            return true;
+          } catch (e) { return false; }
+        })();
+    """.trimIndent()
+    evaluateJavascript(js) { result -> onResult(result == "true") }
+}
+
+private suspend fun WebView.fillTwoFactorCode(
+    code: String,
+    attempts: Int = 8,
+    intervalMs: Long = 500
+): Boolean {
+    repeat(attempts) { attempt ->
+        val filled = suspendCancellableCoroutine<Boolean> { cont ->
+            fillTwoFactorCodeAttempt(code) { success -> cont.resume(success) }
+        }
+        if (filled) return true
+        if (attempt < attempts - 1) delay(intervalMs)
+    }
+    return false
+}
+
 /**
  * Reads the logged-in handle straight off the page. The cookie jar only carries the numeric
  * `ds_user_id`, and Instagram does not always expose `_sharedData`, so a blank result is normal —
@@ -236,6 +308,7 @@ private const val VIEWER_USERNAME_JS =
 fun WebLoginScreen(
     onBack: () -> Unit,
     onSessionCaptured: (username: String, sessionCookies: String) -> Unit,
+    twoFactorSecret: String = "",
     errorMessage: String? = null
 ) {
     val context = LocalContext.current
@@ -245,6 +318,7 @@ fun WebLoginScreen(
     var loadError by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var showSuggestionPanel by remember { mutableStateOf(false) }
+    var lastSubmittedTotpCode by remember { mutableStateOf<String?>(null) }
     val reset = remember { ResetState() }
 
     // The client below is built once inside the AndroidView factory, so it would otherwise close
@@ -446,6 +520,19 @@ fun WebLoginScreen(
                                 if (captured) return
 
                                 val cookies = getAllInstagramCookies()
+                                val totpSecret = twoFactorSecret.trim()
+                                if (view != null && reset.startedLoggedOut && totpSecret.isNotBlank()) {
+                                    val code = TotpCode.generate(totpSecret)
+                                    if (code == null) {
+                                        loadError = "The 2FA secret key is not a valid authenticator secret."
+                                    } else if (lastSubmittedTotpCode != code) {
+                                        coroutineScope.launch {
+                                            if (view.fillTwoFactorCode(code)) {
+                                                lastSubmittedTotpCode = code
+                                            }
+                                        }
+                                    }
+                                }
 
                                 // ds_user_id is only issued once Instagram has authenticated the
                                 // user, so requiring it — not just a sessionid, which exists for

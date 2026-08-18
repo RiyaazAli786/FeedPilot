@@ -40,6 +40,7 @@ import androidx.lifecycle.viewModelScope
 import com.feedpilot.client.data.remote.InstagramLoginResult
 import com.feedpilot.client.data.repository.AccountRepository
 import com.feedpilot.client.data.repository.AddAccountOutcome
+import com.feedpilot.client.common.TotpCode
 import com.feedpilot.client.ui.components.LoginColors
 import com.feedpilot.client.feature.login.UsernameSuggestionPanel
 import com.feedpilot.client.ui.components.PurpleTopBar
@@ -55,6 +56,7 @@ import javax.inject.Inject
 data class AddAccountUiState(
     val username: String = "",
     val sessionToken: String = "",
+    val twoFactorSecret: String = "",
     val isSaving: Boolean = false,
     val error: String? = null,
     val saved: Boolean = false,
@@ -91,6 +93,7 @@ class AddAccountViewModel @Inject constructor(
 
     fun onUsername(v: String) = _state.update { it.copy(username = v, error = null) }
     fun onToken(v: String) = _state.update { it.copy(sessionToken = v) }
+    fun onTwoFactorSecret(v: String) = _state.update { it.copy(twoFactorSecret = v, error = null) }
 
     /**
      * Stores a session captured by the web-login flow, reusing the form's own state so the
@@ -116,7 +119,7 @@ class AddAccountViewModel @Inject constructor(
                 s.username.trim(),
                 s.sessionToken.ifBlank { null }
             )
-            applyOutcome(outcome)
+            applyOutcomeWithOptionalTotp(outcome, s.twoFactorSecret)
         }
     }
 
@@ -204,7 +207,7 @@ class AddAccountViewModel @Inject constructor(
                 )
 
                 is AddAccountOutcome.Failed -> if (retryOf != null) {
-                    s.copy(twoFactor = retryOf.copy(submitting = false, error = outcome.message))
+                    s.copy(isSaving = false, twoFactor = retryOf.copy(submitting = false, error = outcome.message))
                 } else {
                     s.copy(isSaving = false, error = outcome.message)
                 }
@@ -219,6 +222,49 @@ class AddAccountViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun applyOutcomeWithOptionalTotp(
+        outcome: AddAccountOutcome,
+        twoFactorSecret: String,
+        attemptsLeft: Int = 1
+    ) {
+        if (outcome is AddAccountOutcome.NeedsTwoFactor && twoFactorSecret.isNotBlank()) {
+            val code = TotpCode.generate(twoFactorSecret)
+            if (code == null) {
+                _state.update {
+                    it.copy(
+                        isSaving = false,
+                        error = null,
+                        twoFactor = TwoFactorUiState(
+                            challenge = outcome.challenge,
+                            error = "The 2FA secret key is not a valid authenticator secret."
+                        )
+                    )
+                }
+                return
+            }
+
+            _state.update {
+                it.copy(
+                    isSaving = true,
+                    twoFactor = TwoFactorUiState(
+                        challenge = outcome.challenge,
+                        code = code,
+                        submitting = true
+                    )
+                )
+            }
+            val submitted = accountRepository.submitTwoFactorCode(outcome.challenge, code)
+            if (submitted is AddAccountOutcome.NeedsTwoFactor && attemptsLeft > 0) {
+                applyOutcomeWithOptionalTotp(submitted, twoFactorSecret, attemptsLeft - 1)
+            } else {
+                applyOutcome(submitted, retryOf = _state.value.twoFactor)
+            }
+            return
+        }
+
+        applyOutcome(outcome)
     }
 }
 
@@ -391,7 +437,7 @@ fun InstagramIcon(modifier: Modifier = Modifier) {
 fun AddAccountScreen(
     onBack: () -> Unit,
     onAccountAdded: (() -> Unit)? = null,
-    onWebLogin: (() -> Unit)? = null,
+    onWebLogin: ((twoFactorSecret: String) -> Unit)? = null,
     viewModel: AddAccountViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -551,8 +597,35 @@ fun AddAccountScreen(
 
                     Spacer(Modifier.height(28.dp))
 
+                    OutlinedTextField(
+                        value = state.twoFactorSecret,
+                        onValueChange = viewModel::onTwoFactorSecret,
+                        placeholder = {
+                            Text(
+                                "2FA secret key (optional)",
+                                color = LoginColors.muted,
+                                fontSize = 14.sp
+                            )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.VerifiedUser,
+                                contentDescription = null,
+                                tint = LoginColors.muted
+                            )
+                        },
+                        colors = loginTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
                     Button(
-                        onClick = { onWebLogin?.invoke() },
+                        onClick = { onWebLogin?.invoke(state.twoFactorSecret) },
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AppTheme.brand.orange,

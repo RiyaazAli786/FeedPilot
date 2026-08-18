@@ -436,7 +436,12 @@ private fun MainScreenLayout(hasAccounts: Boolean?) {
                 composable(Routes.ADD_ACCOUNT) {
                     AddAccountScreen(
                         onBack = { navController.popBackStack() },
-                        onWebLogin = { navController.navigate(Routes.WEB_LOGIN) },
+                        onWebLogin = { twoFactorSecret ->
+                            navController.currentBackStackEntry
+                                ?.savedStateHandle
+                                ?.set("web_login_totp_secret", twoFactorSecret)
+                            navController.navigate(Routes.WEB_LOGIN)
+                        },
                         onAccountAdded = {
                             navController.navigate(Routes.TASKS) {
                                 popUpTo(Routes.START) { inclusive = true }
@@ -447,6 +452,10 @@ private fun MainScreenLayout(hasAccounts: Boolean?) {
                 composable(Routes.WEB_LOGIN) {
                     val addAccountViewModel: com.feedpilot.client.feature.accounts.AddAccountViewModel = hiltViewModel()
                     val addState by addAccountViewModel.state.collectAsStateWithLifecycle()
+                    val webLoginTotpSecret = navController.previousBackStackEntry
+                        ?.savedStateHandle
+                        ?.get<String>("web_login_totp_secret")
+                        .orEmpty()
 
                     // Only leave the screen once the account is actually stored. Navigating as
                     // soon as the session arrived meant a failed link still landed on Tasks with
@@ -464,6 +473,7 @@ private fun MainScreenLayout(hasAccounts: Boolean?) {
                         onSessionCaptured = { username, cookies ->
                             addAccountViewModel.saveWebSession(cookies, username)
                         },
+                        twoFactorSecret = webLoginTotpSecret,
                         errorMessage = addState.error
                     )
                 }
