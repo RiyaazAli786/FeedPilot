@@ -520,7 +520,7 @@ fun WebLoginScreen(
                                 if (captured) return
 
                                 val cookies = getAllInstagramCookies()
-                                val totpSecret = twoFactorSecret.trim()
+                                val totpSecret = TotpCode.normalizeSecret(twoFactorSecret)
                                 if (view != null && reset.startedLoggedOut && totpSecret.isNotBlank()) {
                                     val code = TotpCode.generate(totpSecret)
                                     if (code == null) {

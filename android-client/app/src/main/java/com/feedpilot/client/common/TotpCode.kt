@@ -10,6 +10,14 @@ object TotpCode {
     private const val TIME_STEP_SECONDS = 30L
     private const val CODE_DIGITS = 6
 
+    fun normalizeSecret(secret: String): String =
+        secret
+            .trim()
+            .substringAfter("secret=", secret)
+            .substringBefore('&')
+            .filterNot { it.isWhitespace() || it == '-' || it == '=' }
+            .uppercase(Locale.US)
+
     fun generate(secret: String, timeMillis: Long = System.currentTimeMillis()): String? {
         val key = decodeBase32(secret) ?: return null
         val counter = timeMillis / 1000L / TIME_STEP_SECONDS
@@ -29,15 +37,7 @@ object TotpCode {
 
     private fun decodeBase32(raw: String): ByteArray? {
         val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-        val normalized = raw
-            .trim()
-            .removePrefix("otpauth://")
-            .substringAfter("secret=", raw)
-            .substringBefore('&')
-            .replace(" ", "")
-            .replace("-", "")
-            .replace("=", "")
-            .uppercase(Locale.US)
+        val normalized = normalizeSecret(raw)
         if (normalized.isBlank()) return null
 
         var buffer = 0

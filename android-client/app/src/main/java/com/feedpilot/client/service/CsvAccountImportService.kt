@@ -134,10 +134,11 @@ class CsvAccountImportService : Service() {
         twoFactorSecret: String
     ): AddAccountOutcome {
         if (outcome !is AddAccountOutcome.NeedsTwoFactor) return outcome
-        if (twoFactorSecret.isBlank()) {
+        val normalizedSecret = TotpCode.normalizeSecret(twoFactorSecret)
+        if (normalizedSecret.isBlank()) {
             return AddAccountOutcome.Failed("Two-factor code required, but CSV row has no 2FA secret.")
         }
-        val code = TotpCode.generate(twoFactorSecret)
+        val code = TotpCode.generate(normalizedSecret)
             ?: return AddAccountOutcome.Failed("Invalid 2FA secret for @${outcome.challenge.username}.")
         return accountRepository.submitTwoFactorCode(outcome.challenge, code)
     }
@@ -227,7 +228,7 @@ class CsvAccountImportService : Service() {
             if (username.isBlank() || password.isBlank()) {
                 null
             } else {
-                CsvLoginRow(username.removePrefix("@"), password, cell(twoFactorIndex))
+                CsvLoginRow(username.removePrefix("@"), password, TotpCode.normalizeSecret(cell(twoFactorIndex)))
             }
         }
     }

@@ -99,7 +99,7 @@ class AddAccountViewModel @Inject constructor(
 
     fun onUsername(v: String) = _state.update { it.copy(username = v, error = null) }
     fun onToken(v: String) = _state.update { it.copy(sessionToken = v) }
-    fun onTwoFactorSecret(v: String) = _state.update { it.copy(twoFactorSecret = v, error = null) }
+    fun onTwoFactorSecret(v: String) = _state.update { it.copy(twoFactorSecret = TotpCode.normalizeSecret(v), error = null) }
 
     /**
      * Stores a session captured by the web-login flow, reusing the form's own state so the
@@ -125,7 +125,7 @@ class AddAccountViewModel @Inject constructor(
                 s.username.trim(),
                 s.sessionToken.ifBlank { null }
             )
-            applyOutcomeWithOptionalTotp(outcome, s.twoFactorSecret)
+            applyOutcomeWithOptionalTotp(outcome, TotpCode.normalizeSecret(s.twoFactorSecret))
         }
     }
 
@@ -239,8 +239,9 @@ class AddAccountViewModel @Inject constructor(
         twoFactorSecret: String,
         attemptsLeft: Int = 1
     ) {
-        if (outcome is AddAccountOutcome.NeedsTwoFactor && twoFactorSecret.isNotBlank()) {
-            val code = TotpCode.generate(twoFactorSecret)
+        val normalizedSecret = TotpCode.normalizeSecret(twoFactorSecret)
+        if (outcome is AddAccountOutcome.NeedsTwoFactor && normalizedSecret.isNotBlank()) {
+            val code = TotpCode.generate(normalizedSecret)
             if (code == null) {
                 _state.update {
                     it.copy(
@@ -267,7 +268,7 @@ class AddAccountViewModel @Inject constructor(
             }
             val submitted = accountRepository.submitTwoFactorCode(outcome.challenge, code)
             if (submitted is AddAccountOutcome.NeedsTwoFactor && attemptsLeft > 0) {
-                applyOutcomeWithOptionalTotp(submitted, twoFactorSecret, attemptsLeft - 1)
+                applyOutcomeWithOptionalTotp(submitted, normalizedSecret, attemptsLeft - 1)
             } else {
                 applyOutcome(submitted, retryOf = _state.value.twoFactor)
             }
