@@ -73,6 +73,7 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IAppOrderService, AppOrderService>();
 builder.Services.AddScoped<IUpgradeAssetStorage, UpgradeAssetStorage>();
+builder.Services.AddScoped<IInstagramFeedService, InstagramFeedService>();
 builder.Services.AddSingleton<CommentFileService>();
 
 // Proactively frees orders whose worker-device claim has gone stale, independent of any
@@ -83,6 +84,7 @@ builder.Services.AddHostedService<StaleClaimSweepService>();
 builder.Services.AddHttpClient("Telegram");
 builder.Services.AddSingleton<TelegramRequestLogger>();
 builder.Services.AddHttpClient("B2");
+builder.Services.AddHttpClient("Instagram");
 builder.Services.AddSignalR();
 
 // ---------- Auth ----------
