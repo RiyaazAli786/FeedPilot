@@ -11,6 +11,10 @@ using FeedPilot.Api.Data;
 using FeedPilot.Api.Domain;
 using FeedPilot.Api.Services;
 
+// Render's Linux instances have a low inotify watcher limit. ASP.NET Core's default
+// config reload watchers can exhaust it during startup, so keep deployed config static.
+Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Hosts like Render tell the app which port to listen on via $PORT. Honour it; locally Kestrel

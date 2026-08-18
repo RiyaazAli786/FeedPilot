@@ -19,6 +19,7 @@ WORKDIR /app
 COPY --from=build /app .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false
 # Render provides $PORT at runtime; Program.cs binds to it. 8080 is only the documented default.
 EXPOSE 8080
 
