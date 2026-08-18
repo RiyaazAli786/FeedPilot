@@ -243,7 +243,9 @@ interface WithdrawalDao {
 
 @Dao
 interface AccountLogDao {
-    @Query("SELECT * FROM account_logs WHERE accountId = :accountId ORDER BY timestampMs DESC LIMIT :limit")
+    // Hide backend-history backfill rows from the live Action Log. They still remain in the
+    // table for duplicate-target protection through the queries below.
+    @Query("SELECT * FROM account_logs WHERE accountId = :accountId AND message != 'Restored from backend history' ORDER BY timestampMs DESC LIMIT :limit")
     fun observeForAccount(accountId: String, limit: Int = 50): Flow<List<AccountLogEntity>>
 
     @Query("SELECT COUNT(*) > 0 FROM account_logs WHERE accountId = :accountId AND target = :target")

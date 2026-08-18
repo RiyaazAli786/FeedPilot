@@ -50,6 +50,7 @@ public class AdminRunnerSettingsController : ControllerBase
         s.CoinsPerInr = body.CoinsPerInr;
         s.MinWithdrawalInr = body.MinWithdrawalInr;
         s.ClaimBatchSize = Math.Clamp(body.ClaimBatchSize, 1, 50);
+        s.ClaimTimeoutMinutes = Math.Clamp(body.ClaimTimeoutMinutes, 1, 60);
 
         s.FollowCoinsNormal = Math.Max(1, body.FollowCoinsNormal);
         s.FollowCoinsUpgraded = Math.Max(1, body.FollowCoinsUpgraded);
@@ -107,6 +108,7 @@ public class AdminRunnerSettingsController : ControllerBase
     public static RunnerSettingsDto ToDto(Domain.RunnerSettings s) => new(
         s.ActionDelayMinMs, s.ActionDelayMaxMs, s.FetchDelayMs, s.CooldownSeconds,
         s.AutoPartialCancelledTasks, s.CoinsPerInr, s.MinWithdrawalInr, s.ClaimBatchSize,
+        s.ClaimTimeoutMinutes,
         s.FollowCoinsNormal, s.FollowCoinsUpgraded,
         s.LikeCoinsNormal, s.LikeCoinsUpgraded,
         s.CommentCoinsNormal, s.CommentCoinsUpgraded,

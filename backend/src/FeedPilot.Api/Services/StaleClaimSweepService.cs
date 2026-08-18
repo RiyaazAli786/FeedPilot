@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using FeedPilot.Api.Data;
 using FeedPilot.Api.Domain;
 
@@ -20,16 +19,13 @@ namespace FeedPilot.Api.Services;
 public class StaleClaimSweepService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly OrderPricingSettings _settings;
     private readonly ILogger<StaleClaimSweepService> _logger;
 
     public StaleClaimSweepService(
         IServiceScopeFactory scopeFactory,
-        IOptions<OrderPricingSettings> settings,
         ILogger<StaleClaimSweepService> logger)
     {
         _scopeFactory = scopeFactory;
-        _settings = settings.Value;
         _logger = logger;
     }
 
@@ -37,7 +33,8 @@ public class StaleClaimSweepService : BackgroundService
     {
         // Sweep every 15s — halves the worst-case gap between a claim going stale and another
         // device being able to pick it up, while still being far lighter than tight polling.
-        // The timeout itself (ClaimTimeoutMinutes = 2) remains the dominant factor.
+        // The timeout itself (dashboard-configured RunnerSettings.ClaimTimeoutMinutes) remains
+        // the dominant factor.
         var interval = TimeSpan.FromSeconds(15);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -60,7 +57,8 @@ public class StaleClaimSweepService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var staleBefore = DateTime.UtcNow.AddMinutes(-_settings.ClaimTimeoutMinutes);
+        var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(db, ct);
+        var staleBefore = DateTime.UtcNow.AddMinutes(-runnerSettings.ClaimTimeoutMinutes);
 
         var stale = await db.AppOrders
             .Where(o =>

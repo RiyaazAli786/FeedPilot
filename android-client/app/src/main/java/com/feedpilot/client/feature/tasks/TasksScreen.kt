@@ -1070,9 +1070,12 @@ private fun AccountTaskCard(
                     shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(
-                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        contentAlignment = Alignment.CenterStart
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
                         val remainingSeconds by produceState(initialValue = 0L, runnerWaitUntilMs) {
                             while (true) {
@@ -1089,13 +1092,28 @@ private fun AccountTaskCard(
                             else -> runnerMessage ?: "${taskMode.label} account"
                         }
                         Text(
-                            text = "$actionStatus · $runnerCompleted completed",
+                            text = actionStatus,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+                        Surface(
+                            color = Color.White.copy(alpha = 0.22f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "$runnerCompleted completed",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Clip,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
                 }
             } else if (isChallenged) {
@@ -1166,6 +1184,7 @@ private fun AccountTaskCard(
     if (showLogs) {
         AccountLogDialog(
             username = account.username,
+            sessionCookies = account.sessionCookies,
             logs = logs,
             hasMoreLogs = hasMoreLogs,
             onClearLogs = onClearLogs,
@@ -1179,6 +1198,7 @@ private fun AccountTaskCard(
 @Composable
 private fun AccountLogDialog(
     username: String,
+    sessionCookies: String,
     logs: List<AccountLogEntity>,
     hasMoreLogs: Boolean,
     onClearLogs: () -> Unit,
@@ -1412,25 +1432,11 @@ private fun AccountLogDialog(
                                             }
                                         }
 
-                                        val displayText = remember(log.target, cleanMessage) {
-                                             val targetStr = log.target.trim()
-                                             val cleanTarget = targetStr.trimStart('@')
-                                             var msg = cleanMessage
-
-                                             if (cleanTarget.isNotEmpty()) {
-                                                 val escapedTarget = Regex.escape(cleanTarget)
-                                                 val pattern1 = Regex("""@$escapedTarget(?=$|[^a-zA-Z0-9_.-])""", RegexOption.IGNORE_CASE)
-                                                 val pattern2 = Regex("""(?<=^|[^a-zA-Z0-9_.-])$escapedTarget(?=$|[^a-zA-Z0-9_.-])""", RegexOption.IGNORE_CASE)
-
-                                                 msg = msg.replace(pattern1, "").replace(pattern2, "")
-                                                 msg = msg.trim()
-                                                 msg = msg.replace(Regex("""^[ :·\-\—]+"""), "")
-                                                 msg = msg.replace(Regex("""[ :·\-\—]+$"""), "")
-                                                 msg = msg.trim()
-                                             }
-
-                                             if (msg.isNotBlank()) {
-                                                 "${log.target} · $msg"
+                                        val displayText = remember(log.target, cleanMessage, log.success) {
+                                             if (log.success) {
+                                                 log.target
+                                             } else if (cleanMessage.isNotBlank()) {
+                                                 "${log.target} · $cleanMessage"
                                              } else {
                                                  log.target
                                              }
@@ -1577,6 +1583,7 @@ private fun AccountLogDialog(
     if (activeWebViewUrl != null) {
         ActionLogWebViewDialog(
             url = activeWebViewUrl!!,
+            sessionCookies = sessionCookies,
             onDismiss = { activeWebViewUrl = null }
         )
     }
@@ -1680,6 +1687,7 @@ private fun resolveActionLogTargetUrl(action: String, target: String, message: S
 @Composable
 private fun ActionLogWebViewDialog(
     url: String,
+    sessionCookies: String,
     onDismiss: () -> Unit
 ) {
     var isLoading by remember { mutableStateOf(true) }
@@ -1745,6 +1753,23 @@ private fun ActionLogWebViewDialog(
                             settings.loadWithOverviewMode = true
                             settings.useWideViewPort = true
                             settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+                            val cookieManager = android.webkit.CookieManager.getInstance()
+                            cookieManager.setAcceptCookie(true)
+                            cookieManager.setAcceptThirdPartyCookies(this, true)
+                            if (sessionCookies.isNotBlank()) {
+                                sessionCookies.split(";").forEach { pair ->
+                                    val trimmed = pair.trim()
+                                    if (trimmed.isNotEmpty()) {
+                                        cookieManager.setCookie(
+                                            "https://www.instagram.com",
+                                            "$trimmed; Domain=.instagram.com; Path=/"
+                                        )
+                                    }
+                                }
+                                cookieManager.flush()
+                            }
+
                             webViewClient = object : android.webkit.WebViewClient() {
                                 override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                     isLoading = true

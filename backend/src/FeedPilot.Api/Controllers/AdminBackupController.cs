@@ -136,7 +136,8 @@ public class AdminBackupController : ControllerBase
             .Select(r => new BackupRunnerSettings(r.Id, r.ActionDelayMinMs, r.ActionDelayMaxMs, r.FetchDelayMs,
                 r.CooldownSeconds, r.UpdatedAt, r.AutoPartialCancelledTasks,
                 r.CoinsPerInr, r.MinWithdrawalInr,
-                r.UpiEnabled, r.BankEnabled, r.UsdtBep20Enabled, r.CoinsPerUsdt, r.MinWithdrawalUsdt))
+                r.UpiEnabled, r.BankEnabled, r.UsdtBep20Enabled, r.CoinsPerUsdt, r.MinWithdrawalUsdt,
+                r.ClaimBatchSize, r.ClaimTimeoutMinutes))
             .ToListAsync(ct);
 
         var smmProviderConfigs = await _db.SmmProviderConfigs.AsNoTracking()
@@ -414,6 +415,8 @@ public class AdminBackupController : ControllerBase
             existing.UsdtBep20Enabled = r.UsdtBep20Enabled;
             existing.CoinsPerUsdt = r.CoinsPerUsdt;
             existing.MinWithdrawalUsdt = r.MinWithdrawalUsdt;
+            existing.ClaimBatchSize = Math.Clamp(r.ClaimBatchSize, 1, 50);
+            existing.ClaimTimeoutMinutes = Math.Clamp(r.ClaimTimeoutMinutes, 1, 60);
             existing.UpdatedAt = r.UpdatedAt;
         }, r => new RunnerSettings
         {
@@ -430,6 +433,8 @@ public class AdminBackupController : ControllerBase
             UsdtBep20Enabled = r.UsdtBep20Enabled,
             CoinsPerUsdt = r.CoinsPerUsdt,
             MinWithdrawalUsdt = r.MinWithdrawalUsdt,
+            ClaimBatchSize = Math.Clamp(r.ClaimBatchSize, 1, 50),
+            ClaimTimeoutMinutes = Math.Clamp(r.ClaimTimeoutMinutes, 1, 60),
             UpdatedAt = r.UpdatedAt
         }, ct);
 

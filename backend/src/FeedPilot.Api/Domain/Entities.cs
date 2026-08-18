@@ -393,6 +393,11 @@ public class RunnerSettings
     /// dashboard to match device load: fewer accounts per device = higher batch is fine;
     /// many accounts per clone = lower batch so all accounts share work evenly.</summary>
     public int ClaimBatchSize { get; set; } = 10;
+    /// <summary>How long a claimed batch survives without a progress report before another
+    /// device may take it over. Must comfortably outlast worst-case pacing for a full batch
+    /// (ClaimBatchSize x (CooldownSeconds + ActionDelayMaxMs)) or honest workers routinely lose
+    /// their claim, and the coins for the action they still perform, to a race.</summary>
+    public int ClaimTimeoutMinutes { get; set; } = 10;
 
     // ----- Per-Action Coin Reward Schema (Dashboard-configurable) -----
     public int FollowCoinsNormal { get; set; } = 1;

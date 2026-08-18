@@ -31,12 +31,6 @@ public class OrderPricingSettings
 
     /// <summary>Orders handed out per claim when a worker does not ask for a specific size.</summary>
     public int DefaultBatchSize { get; set; } = 10;
-
-    /// <summary>
-    /// How long a claim survives without progress before another device may take the order.
-    /// Without this, a device that crashes mid-batch would strand its orders forever.
-    /// </summary>
-    public int ClaimTimeoutMinutes { get; set; } = 2;
 }
 
 public interface IAppOrderService

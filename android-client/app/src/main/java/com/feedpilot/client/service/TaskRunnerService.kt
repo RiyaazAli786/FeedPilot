@@ -346,21 +346,13 @@ class TaskRunnerService : Service() {
                 Log.w(TAG, "[$accountId] Claimed ${batch.size} task(s) in ${System.currentTimeMillis() - claimStartedAt}ms")
 
                 if (batch.isEmpty()) {
-                    if (activeAllowedTypes.size < allowedTypes.size && idleStreak >= 3) {
-                        val queueDryBackoffMs = 2 * 60_000L // 2 minutes short backoff to catch newly arrived orders
-                        // Names the type(s) actually maxed out instead of a generic "empty queue" —
-                        // this branch only exists because at least one type IS capped, and the
-                        // pending orders an operator sees on the dashboard are almost always of
-                        // that exact type, not the ones this account is still polling for.
+                    val baseMessage = if (activeAllowedTypes.size < allowedTypes.size) {
                         val maxedTypes = (allowedTypes - activeAllowedTypes).joinToString("/") { it.wireName }
-                        Log.w(TAG, "[$accountId] Daily limit reached for $maxedTypes; no orders for the remaining allowed types ($activeAllowedTypes). Re-checking queue in 2m...")
-                        runnerState.noteAccount(accountId, "$maxedTypes limit reached for today — retrying in 2m…")
-                        updateNotification()
-                        delay(queueDryBackoffMs)
-                        idleStreak = 0
-                        continue
+                        "$maxedTypes limit reached for today — checking for other orders…"
+                    } else {
+                        "Processing orders…"
                     }
-                    idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, "Processing orders…", settings.fetchDelayMs)
+                    idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, baseMessage, settings.fetchDelayMs)
                     continue
                 }
 
@@ -453,21 +445,13 @@ class TaskRunnerService : Service() {
                     break
                 } else if (claimed.isNotEmpty() && executed == 0) {
                     // Tasks were claimed locally/remote but all were ineligible for this account.
-                    idleStreak++
-                    if (activeAllowedTypes.size < allowedTypes.size && idleStreak >= 3) {
-                        val queueDryBackoffMs = 2 * 60_000L
-                        // Same naming as the batch.isEmpty() branch above — see its comment for
-                        // why pointing at the actual maxed type(s) matters here too.
+                    val baseMessage = if (activeAllowedTypes.size < allowedTypes.size) {
                         val maxedTypes = (allowedTypes - activeAllowedTypes).joinToString("/") { it.wireName }
-                        Log.w(TAG, "[$accountId] Daily limit reached for $maxedTypes; claimed tasks were all ineligible for the remaining allowed types ($activeAllowedTypes). Re-checking in 2m...")
-                        runnerState.noteAccount(accountId, "$maxedTypes limit reached for today — retrying in 2m…")
-                        updateNotification()
-                        delay(queueDryBackoffMs)
-                        idleStreak = 0
+                        "$maxedTypes limit reached for today — checking next orders…"
                     } else {
-                        runnerState.noteAccount(accountId, "Checking next orders…")
-                        delay(1000L)
+                        "Checking next orders…"
                     }
+                    idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, baseMessage, settings.fetchDelayMs)
                 } else if (claimed.isEmpty()) {
                     idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, "Waiting for orders…", settings.fetchDelayMs)
                 } else {

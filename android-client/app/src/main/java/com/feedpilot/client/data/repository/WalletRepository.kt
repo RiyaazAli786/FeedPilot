@@ -117,17 +117,23 @@ class WalletRepository @Inject constructor(
     ) {
         val newTotal = walletMutationMutex.withLock {
             val current = walletDao.get()
+            val mergedTotal = when {
+                current == null -> coins
+                coins < current.lastServerCoins -> coins
+                current.totalCoins > coins -> current.totalCoins
+                else -> coins
+            }
             val updated = (current ?: WalletEntity(
                 id = "user_wallet",
-                totalCoins = coins,
+                totalCoins = mergedTotal,
                 lifetimeCoins = lifetimeCoins,
                 pendingCoins = pendingCoins,
                 withdrawnCoins = withdrawnCoins,
                 updatedAt = updatedAt,
                 lastServerCoins = coins
             )).copy(
-                totalCoins = coins,
-                lifetimeCoins = maxOf(current?.lifetimeCoins ?: 0L, lifetimeCoins),
+                totalCoins = mergedTotal,
+                lifetimeCoins = maxOf(current?.lifetimeCoins ?: 0L, lifetimeCoins, mergedTotal),
                 pendingCoins = pendingCoins,
                 withdrawnCoins = withdrawnCoins,
                 updatedAt = updatedAt,
@@ -178,7 +184,17 @@ class WalletRepository @Inject constructor(
             // server-side decrease — an admin dashboard deduction, a processed withdrawal — be
             // told apart from that credit and always win, instead of being permanently shadowed
             // by it. See WalletEntity.lastServerCoins.
-            val resolved = serverWallet.copy(lastServerCoins = serverWallet.totalCoins)
+            val mergedTotal = when {
+                forceServer || current == null -> serverWallet.totalCoins
+                serverWallet.totalCoins < current.lastServerCoins -> serverWallet.totalCoins
+                current.totalCoins > serverWallet.totalCoins -> current.totalCoins
+                else -> serverWallet.totalCoins
+            }
+            val resolved = serverWallet.copy(
+                totalCoins = mergedTotal,
+                lifetimeCoins = maxOf(current?.lifetimeCoins ?: 0L, serverWallet.lifetimeCoins, mergedTotal),
+                lastServerCoins = serverWallet.totalCoins
+            )
             walletDao.upsert(resolved)
             resolved
         }

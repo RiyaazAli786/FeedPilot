@@ -365,6 +365,7 @@ data class RunnerSettingsDto(
     val coinsPerInr: Int = 5,
     val minWithdrawalInr: Int = 100,
     val claimBatchSize: Int = 10,
+    val claimTimeoutMinutes: Int = 10,
     val followCoinsNormal: Int = 1,
     val followCoinsUpgraded: Int = 2,
     val likeCoinsNormal: Int = 1,

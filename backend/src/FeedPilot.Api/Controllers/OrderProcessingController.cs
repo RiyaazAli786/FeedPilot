@@ -60,7 +60,7 @@ public class OrderProcessingController : ControllerBase
     {
         var identity = this.ClientIdentity();
         var deviceId = identity.DeviceId;
-        var staleBefore = DateTime.UtcNow.AddMinutes(-_settings.ClaimTimeoutMinutes);
+        var staleBefore = await ClaimStaleBeforeAsync(ct);
 
         List<TaskType>? allowedTypes = null;
         if (!string.IsNullOrWhiteSpace(taskTypes))
@@ -93,7 +93,7 @@ public class OrderProcessingController : ControllerBase
         if (string.IsNullOrWhiteSpace(deviceId) || deviceId == ClientIdentityDefaults.Unknown)
             return BadRequest(new ApiError("A device id is required to claim orders.", "missing_device_id"));
 
-        var staleBefore = DateTime.UtcNow.AddMinutes(-_settings.ClaimTimeoutMinutes);
+        var staleBefore = await ClaimStaleBeforeAsync(ct);
         var excludeOrderIds = body.ExcludeOrderIds?.Where(id => id != Guid.Empty).Distinct().ToList();
 
         // Parse the allowed task types the account's mode sent. Null/empty = no restriction (Random mode).
@@ -354,6 +354,16 @@ public class OrderProcessingController : ControllerBase
         await _db.AppOrders
             .Where(o => o.Status == AppOrderStatus.Processing && o.ProcessingDeviceId == deviceId)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.ProcessingStartedAt, DateTime.UtcNow), ct);
+    }
+
+    /// <summary>
+    /// Dashboard-configured claim staleness cutoff (see RunnerSettings.ClaimTimeoutMinutes),
+    /// not the static "Orders" config value, so operators can tune it without redeploying.
+    /// </summary>
+    private async Task<DateTime> ClaimStaleBeforeAsync(CancellationToken ct)
+    {
+        var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
+        return DateTime.UtcNow.AddMinutes(-runnerSettings.ClaimTimeoutMinutes);
     }
 
     /// <summary>

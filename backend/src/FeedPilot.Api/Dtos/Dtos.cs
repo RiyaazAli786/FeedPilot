@@ -263,6 +263,7 @@ public record RunnerSettingsDto(
     int CooldownSeconds, bool AutoPartialCancelledTasks = true,
     int CoinsPerInr = 5, int MinWithdrawalInr = 100,
     int ClaimBatchSize = 10,
+    int ClaimTimeoutMinutes = 10,
     int FollowCoinsNormal = 1, int FollowCoinsUpgraded = 2,
     int LikeCoinsNormal = 1, int LikeCoinsUpgraded = 2,
     int CommentCoinsNormal = 2, int CommentCoinsUpgraded = 4,
@@ -306,6 +307,7 @@ public record UpdateRunnerSettingsRequest(
     [Range(1, 1000)] int CoinsPerInr = 5,
     [Range(1, 10000)] int MinWithdrawalInr = 100,
     [Range(1, 50)] int ClaimBatchSize = 10,
+    [Range(1, 60)] int ClaimTimeoutMinutes = 10,
     [Range(1, 1000)] int FollowCoinsNormal = 1,
     [Range(1, 1000)] int FollowCoinsUpgraded = 2,
     [Range(1, 1000)] int LikeCoinsNormal = 1,
@@ -706,7 +708,8 @@ public record BackupRunnerSettings(
     int CooldownSeconds, DateTime UpdatedAt, bool AutoPartialCancelledTasks = true,
     int CoinsPerInr = 5, int MinWithdrawalInr = 100,
     bool UpiEnabled = true, bool BankEnabled = true, bool UsdtBep20Enabled = false,
-    int CoinsPerUsdt = 400, decimal MinWithdrawalUsdt = 5m);
+    int CoinsPerUsdt = 400, decimal MinWithdrawalUsdt = 5m,
+    int ClaimBatchSize = 10, int ClaimTimeoutMinutes = 10);
 
 /// <summary>The singleton (Id=1) dashboard-editable SMM panel integration config, API key included.</summary>
 public record BackupSmmProviderConfig(

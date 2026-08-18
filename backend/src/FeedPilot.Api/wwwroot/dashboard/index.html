@@ -1151,6 +1151,33 @@
           </label>
           <details style="margin-top:12px; border:1px solid var(--border,#e2e8f0); border-radius:8px; padding:0; overflow:hidden">
             <summary style="cursor:pointer; padding:10px 14px; font-weight:600; background:var(--surface,#f8fafc); list-style:none; display:flex; align-items:center; justify-content:space-between; user-select:none">
+              <span>Order Claiming</span>
+              <span class="expander-chevron" style="font-size:12px; color:#64748b; transition:transform .2s">▼</span>
+            </summary>
+            <div style="padding:12px 14px">
+              <p class="field-hint" style="margin:0 0 10px">
+                When a device claims a batch, those orders become invisible to other devices until
+                the device finishes them, releases them, or the claim times out.
+              </p>
+              <label>Claim batch size
+                <input id="rs-claim-batch-size" type="number" min="1" max="50" step="1" placeholder="10">
+                <span class="field-hint">
+                  How many pending orders a device locks to itself in one claim call. Smaller
+                  values improve fairness when many cloned accounts share one phone.
+                </span>
+              </label>
+              <label style="margin-top:10px; display:block">Claim timeout (minutes)
+                <input id="rs-claim-timeout-mins" type="number" min="1" max="60" step="1" placeholder="10">
+                <span class="field-hint">
+                  How long a claimed batch survives with no progress report before the background
+                  sweep releases it back to Pending. Keep this comfortably above the realistic
+                  time needed to work through a full batch.
+                </span>
+              </label>
+            </div>
+          </details>
+          <details style="margin-top:12px; border:1px solid var(--border,#e2e8f0); border-radius:8px; padding:0; overflow:hidden">
+            <summary style="cursor:pointer; padding:10px 14px; font-weight:600; background:var(--surface,#f8fafc); list-style:none; display:flex; align-items:center; justify-content:space-between; user-select:none">
               <span>⚡ Per-Activity Streak Counts (Random mode)</span>
               <span class="expander-chevron" style="font-size:12px; color:#64748b; transition:transform .2s">▼</span>
             </summary>
@@ -2122,11 +2149,18 @@
     function formatEmailHtml(email) {
       if (!email) return '<span class="muted">—</span>';
       const str = email.toString().trim();
-      if (str.toLowerCase().endsWith('@device.feedpilot')) {
+      const lower = str.toLowerCase();
+      if (lower.endsWith('@device.feedpilot')) {
         const parts = str.split('.');
         const hash = parts[1] || '';
         const shortHash = hash.length > 8 ? hash.slice(0, 8) : hash;
         const displayStr = shortHash ? `device · ${shortHash}` : 'Unlinked Device';
+        return `<span class="pill" style="background:var(--border);color:var(--muted);font-weight:normal" title="${esc(str)}">${esc(displayStr)}</span>`;
+      }
+      if (lower.endsWith('@backup.feedpilot') && lower.startsWith('backup-')) {
+        const code = str.slice('backup-'.length, str.indexOf('@'));
+        const shortCode = code.length > 8 ? code.slice(0, 8) : code;
+        const displayStr = shortCode ? `backup · ${shortCode}` : 'Backup Code';
         return `<span class="pill" style="background:var(--border);color:var(--muted);font-weight:normal" title="${esc(str)}">${esc(displayStr)}</span>`;
       }
       return `<span title="${esc(str)}">${esc(str)}</span>`;
@@ -3057,6 +3091,8 @@
       $('#rs-action-max').value = s.actionDelayMaxMs || 4000;
       $('#rs-fetch-delay').value = s.fetchDelayMs || 15000;
       $('#rs-cooldown').value = s.cooldownSeconds || 30;
+      $('#rs-claim-batch-size').value = s.claimBatchSize ?? 10;
+      $('#rs-claim-timeout-mins').value = s.claimTimeoutMinutes ?? 10;
       $('#rs-follow-normal').value = s.followCoinsNormal || 1;
       $('#rs-follow-upgraded').value = s.followCoinsUpgraded || 2;
       $('#rs-like-normal').value = s.likeCoinsNormal || 1;
@@ -3116,7 +3152,8 @@
           actionDelayMaxMs: actionDelayMaxMs,
           fetchDelayMs: Number($('#rs-fetch-delay').value || 15000),
           cooldownSeconds: Number($('#rs-cooldown').value || 30),
-          claimBatchSize: s.claimBatchSize || 10,
+          claimBatchSize: Number($('#rs-claim-batch-size').value || 10),
+          claimTimeoutMinutes: Number($('#rs-claim-timeout-mins').value || 10),
           followCoinsNormal: Number($('#rs-follow-normal').value || 1),
           followCoinsUpgraded: Number($('#rs-follow-upgraded').value || 2),
           likeCoinsNormal: Number($('#rs-like-normal').value || 1),
