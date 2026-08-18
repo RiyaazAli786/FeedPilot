@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "FeedPilot Instagram Session Opener",
+  "description": "Opens Instagram profiles using sessions saved in the FeedPilot admin dashboard.",
+  "version": "1.0.0",
+  "permissions": [
+    "cookies",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.instagram.com/*",
+    "https://*.instagram.com/*",
+    "https://*.onrender.com/*",
+    "http://localhost:*/*",
+    "http://127.0.0.1:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.onrender.com/*",
+        "http://localhost:*/*",
+        "http://127.0.0.1:*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
