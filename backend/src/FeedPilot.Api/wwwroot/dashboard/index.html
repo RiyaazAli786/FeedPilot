@@ -1002,6 +1002,7 @@
           <option value="">All apps</option>
         </select>
         <input id="f-device" placeholder="Device ID" style="width:180px">
+        <input id="f-ig-search" placeholder="Search handle" style="width:220px;display:none">
       </div>
     </div>
 
@@ -2516,7 +2517,7 @@
       const params = new URLSearchParams({ page, pageSize });
       if ($('#f-app').value) params.set('appId', $('#f-app').value);
       if ($('#f-device').value.trim()) params.set('deviceId', $('#f-device').value.trim());
-      if ($('#f-search').value.trim()) params.set('search', $('#f-search').value.trim());
+      if ($('#f-ig-search').value.trim()) params.set('search', $('#f-ig-search').value.trim());
 
       const data = await api('/api/admin/instagram-sessions?' + params);
       total = data.total;
@@ -3182,6 +3183,7 @@
       $('#tab-device-restore').className = next === 'device-restore' ? 'primary' : '';
       $('#tab-picked-usernames').className = next === 'picked-usernames' ? 'primary' : '';
       $('#order-filters').style.display = next === 'orders' ? '' : 'none';
+      $('#f-ig-search').style.display = next === 'ig-sessions' ? '' : 'none';
       $('#orders-table').style.display = next === 'orders' ? '' : 'none';
       $('#accounts-table').style.display = next === 'accounts' ? '' : 'none';
       $('#ig-sessions-panel').style.display = next === 'ig-sessions' ? '' : 'none';
@@ -3236,6 +3238,8 @@
     $('#f-type').onchange = () => { page = 1; refresh(); };
     $('#f-device').addEventListener('input', debouncedFilterRefresh);
     $('#f-device').addEventListener('keydown', e => { if (e.key === 'Enter') { page = 1; refresh(); } });
+    $('#f-ig-search').addEventListener('input', debouncedFilterRefresh);
+    $('#f-ig-search').addEventListener('keydown', e => { if (e.key === 'Enter') { page = 1; refresh(); } });
 
     // Click an app-id or device-id in any row to filter to it. Selecting a device isolates a
     // single physical device even when several devices share the same package name — the app-id
