@@ -108,8 +108,9 @@ fun ReferralScreen(
                         // Hero Referral Code Card (Compressed & Crisp)
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = CardDefaults.outlinedCardBorder()
                         ) {
                             Box(
                                 modifier = Modifier
@@ -117,12 +118,12 @@ fun ReferralScreen(
                                     .background(
                                         brush = Brush.linearGradient(
                                             colors = listOf(
-                                                Color(0xFF673AB7),
-                                                Color(0xFF3F51B5),
-                                                Color(0xFF2196F3)
+                                                MaterialTheme.colorScheme.surface,
+                                                MaterialTheme.colorScheme.tertiaryContainer,
+                                                MaterialTheme.colorScheme.secondaryContainer
                                             )
                                         ),
-                                        shape = RoundedCornerShape(16.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     )
                                     .padding(horizontal = 16.dp, vertical = 14.dp)
                             ) {
@@ -132,11 +133,11 @@ fun ReferralScreen(
                                 ) {
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
-                                        color = Color.White.copy(alpha = 0.15f)
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                                     ) {
                                         Text(
                                             "YOUR REFERRAL CODE",
-                                            color = Color.White.copy(alpha = 0.95f),
+                                            color = MaterialTheme.colorScheme.primary,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             letterSpacing = 1.sp,
@@ -148,7 +149,7 @@ fun ReferralScreen(
 
                                     Text(
                                         stats.referralCode,
-                                        color = Color.White,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 26.sp,
                                         fontWeight = FontWeight.Black,
                                         letterSpacing = 2.sp
@@ -158,7 +159,7 @@ fun ReferralScreen(
 
                                     Text(
                                         "Earn rewards from the ${stats.referralBonusCoins} coin bonus pool! (L1: ${stats.referralLevel1Percent}% • L2: ${stats.referralLevel2Percent}% • L3: ${stats.referralLevel3Percent}%)",
-                                        color = Color.White.copy(alpha = 0.9f),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Medium,
                                         textAlign = TextAlign.Center
@@ -175,7 +176,10 @@ fun ReferralScreen(
                                                 clipboard.setPrimaryClip(ClipData.newPlainText("Referral Code", stats.referralCode))
                                                 Toast.makeText(context, "Code copied to clipboard!", Toast.LENGTH_SHORT).show()
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF3F51B5)),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                contentColor = MaterialTheme.colorScheme.onPrimary
+                                            ),
                                             shape = RoundedCornerShape(8.dp),
                                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                                             modifier = Modifier.height(34.dp)
@@ -199,7 +203,10 @@ fun ReferralScreen(
                                                 }
                                                 context.startActivity(Intent.createChooser(shareIntent, "Share FeedPilot via"))
                                             },
-                                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.22f), contentColor = Color.White),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.secondary,
+                                                contentColor = MaterialTheme.colorScheme.onSecondary
+                                            ),
                                             shape = RoundedCornerShape(8.dp),
                                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
                                             modifier = Modifier.height(34.dp)
