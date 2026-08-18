@@ -139,6 +139,22 @@ public record AdminInstagramSessionDto(
     bool ProfileSynced);
 
 /// <summary>Admin edit — only the fields supplied are changed. Session data is never editable here.</summary>
+public record AdminInstagramBrowserCookieDto(
+    string Name,
+    string Value,
+    string Domain,
+    string Path,
+    bool Secure,
+    bool HttpOnly,
+    string SameSite,
+    long ExpirationDate);
+
+public record AdminInstagramBrowserSessionDto(
+    Guid AccountId,
+    string Username,
+    string ProfileUrl,
+    List<AdminInstagramBrowserCookieDto> Cookies);
+
 public record UpdateAdminAccountRequest(
     [MaxLength(64)] string? Username, string? ProfilePictureUrl, AccountStatus? Status);
 

@@ -2482,6 +2482,36 @@
       setAppOptions(s.apps);
     }
 
+    function openInstagramWithSavedSession(accountId, profileUrl) {
+      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      let settled = false;
+
+      const onMessage = event => {
+        const data = event.data || {};
+        if (event.source !== window || data.source !== 'feedpilot-instagram-extension' || data.requestId !== requestId)
+          return;
+
+        settled = true;
+        window.removeEventListener('message', onMessage);
+        if (!data.ok) showAlert(data.error || 'Chrome extension could not open this Instagram session.', 'Extension error');
+      };
+
+      window.addEventListener('message', onMessage);
+      window.postMessage({
+        source: 'feedpilot-dashboard',
+        type: 'OPEN_INSTAGRAM_SESSION',
+        requestId,
+        accountId,
+        profileUrl
+      }, window.location.origin);
+
+      setTimeout(() => {
+        if (settled) return;
+        window.removeEventListener('message', onMessage);
+        showAlert('Install and enable the FeedPilot Instagram Session Opener Chrome extension, then click View again.', 'Extension required');
+      }, 8000);
+    }
+
     async function loadInstagramSessions() {
       const params = new URLSearchParams({ page, pageSize });
       if ($('#f-app').value) params.set('appId', $('#f-app').value);
@@ -2512,7 +2542,7 @@
           <div class="muted" title="${esc(a.deviceId || '')}">${esc(a.appId || '')} · ${esc(shortId(a.deviceId))}</div>
           <div class="ig-session-actions">
             ${a.profileSynced ? '<span class="pill Completed">synced</span>' : '<span class="pill Failed">sync failed</span>'}
-            <button type="button" class="ig-open" data-url="${esc(profileUrl)}" title="Open Instagram profile">👁 View</button>
+            <button type="button" class="ig-open" data-id="${esc(a.id)}" data-url="${esc(profileUrl)}" title="Open Instagram profile with saved session">View</button>
           </div>
         </article>`;
       }).join('')
@@ -2525,7 +2555,7 @@
 
       document.querySelectorAll('.ig-open').forEach(b => {
         b.onclick = () => {
-          window.open(b.dataset.url, '_blank', 'noopener,noreferrer');
+          openInstagramWithSavedSession(b.dataset.id, b.dataset.url);
         };
       });
     }

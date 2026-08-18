@@ -12,6 +12,20 @@ namespace FeedPilot.Api.Controllers;
 [Route("api/admin/instagram-sessions")]
 public class AdminInstagramSessionsController : ControllerBase
 {
+    private static readonly HashSet<string> BrowserCookieAllowList = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "csrftoken",
+        "datr",
+        "ds_user_id",
+        "ig_did",
+        "mid",
+        "rur",
+        "sessionid",
+        "shbid",
+        "shbts",
+        "wd"
+    };
+
     private readonly AppDbContext _db;
     private readonly IInstagramFeedService _instagram;
 
@@ -94,5 +108,59 @@ public class AdminInstagramSessionsController : ControllerBase
             total,
             page,
             pageSize));
+    }
+
+    [HttpGet("{id:guid}/browser-cookies")]
+    public async Task<ActionResult<AdminInstagramBrowserSessionDto>> BrowserCookies(Guid id, CancellationToken ct)
+    {
+        var account = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (account is null)
+            return NotFound(new ApiError("Account not found."));
+
+        if (string.IsNullOrWhiteSpace(account.SessionData))
+            return BadRequest(new ApiError("This account has no saved session."));
+
+        var cookies = ParseBrowserCookies(account.SessionData);
+        if (cookies.Count == 0)
+            return BadRequest(new ApiError("No Instagram browser cookies could be parsed from this session."));
+
+        var username = account.Username.Trim().TrimStart('@');
+        return Ok(new AdminInstagramBrowserSessionDto(
+            account.Id,
+            username,
+            $"https://www.instagram.com/{Uri.EscapeDataString(username)}/",
+            cookies));
+    }
+
+    private static List<AdminInstagramBrowserCookieDto> ParseBrowserCookies(string sessionData)
+    {
+        var expires = DateTimeOffset.UtcNow.AddDays(180).ToUnixTimeSeconds();
+        var cookies = new List<AdminInstagramBrowserCookieDto>();
+
+        foreach (var part in sessionData.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var index = part.IndexOf('=');
+            if (index <= 0) continue;
+
+            var name = part[..index].Trim();
+            var value = part[(index + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(name) || !BrowserCookieAllowList.Contains(name))
+                continue;
+
+            cookies.Add(new AdminInstagramBrowserCookieDto(
+                name,
+                value,
+                ".instagram.com",
+                "/",
+                true,
+                name.Equals("sessionid", StringComparison.OrdinalIgnoreCase),
+                "no_restriction",
+                expires));
+        }
+
+        return cookies
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .ToList();
     }
 }
