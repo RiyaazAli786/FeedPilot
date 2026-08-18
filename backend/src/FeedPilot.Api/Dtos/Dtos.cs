@@ -121,6 +121,23 @@ public record AdminAccountDto(
     /// </summary>
     long WalletCoins = 0);
 
+public record AdminInstagramSessionDto(
+    Guid Id,
+    string Username,
+    string FullName,
+    string? ProfilePictureUrl,
+    long FollowerCount,
+    long FollowingCount,
+    long MediaCount,
+    bool IsPrivate,
+    bool IsVerified,
+    string AppId,
+    string? DeviceId,
+    string UserEmail,
+    DateTime? LastLogin,
+    DateTime? LastActive,
+    bool ProfileSynced);
+
 /// <summary>Admin edit — only the fields supplied are changed. Session data is never editable here.</summary>
 public record UpdateAdminAccountRequest(
     [MaxLength(64)] string? Username, string? ProfilePictureUrl, AccountStatus? Status);

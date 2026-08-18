@@ -10,6 +10,7 @@ namespace FeedPilot.Api.Services;
 public interface IInstagramFeedService
 {
     Task<InstagramJsonFeedResponse> FetchJsonFeedAsync(string username, int limit, CancellationToken ct);
+    Task<InstagramFeedProfile?> FetchProfileSnapshotAsync(string username, string sessionCookies, CancellationToken ct);
 }
 
 public class InstagramFeedService : IInstagramFeedService
@@ -49,6 +50,18 @@ public class InstagramFeedService : IInstagramFeedService
             posts = await FetchWebProfileTimelinePostsAsync(profile.Username, session, limit, ct);
         }
         return BuildJsonFeed(profile, posts);
+    }
+
+    public async Task<InstagramFeedProfile?> FetchProfileSnapshotAsync(
+        string username,
+        string sessionCookies,
+        CancellationToken ct)
+    {
+        var cleanUsername = NormalizeUsername(username);
+        if (string.IsNullOrWhiteSpace(cleanUsername) || string.IsNullOrWhiteSpace(sessionCookies))
+            return null;
+
+        return await FetchProfileAsync(cleanUsername, sessionCookies, ct);
     }
 
     private async Task<string?> PickRandomSessionAsync(CancellationToken ct)
