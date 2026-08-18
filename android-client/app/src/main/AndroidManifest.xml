@@ -14,6 +14,7 @@
     <!-- Task runner keeps completing orders while the app is backgrounded -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
         android:name=".FeedPilotApp"
@@ -71,6 +72,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Automated Checklist Task Execution" />
+        </service>
+
+        <!-- Imports Instagram accounts from a selected CSV one by one, even if the screen closes. -->
+        <service
+            android:name=".service.CsvAccountImportService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse|dataSync">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="CSV Account Login Import" />
         </service>
 
         <!-- FileProvider for delivering downloaded update APKs to the package installer -->

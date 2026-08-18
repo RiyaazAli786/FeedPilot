@@ -24,4 +24,7 @@ object Constants {
 
     /** Notification channel for incoming coin transfers landing in this wallet. */
     const val WALLET_CHANNEL_ID = "wallet_transfers"
+
+    /** Notification channel for CSV account login imports. */
+    const val CSV_IMPORT_CHANNEL_ID = "csv_account_import"
 }
