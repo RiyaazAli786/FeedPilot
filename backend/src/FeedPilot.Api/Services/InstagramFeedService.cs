@@ -44,6 +44,10 @@ public class InstagramFeedService : IInstagramFeedService
             ?? throw new InvalidOperationException($"Instagram profile @{cleanUsername} could not be resolved.");
 
         var posts = await FetchPostsAsync(profile.Id, profile.Username, session, limit, ct);
+        if (posts.Count == 0)
+        {
+            posts = await FetchWebProfileTimelinePostsAsync(profile.Username, session, limit, ct);
+        }
         return BuildJsonFeed(profile, posts);
     }
 
@@ -108,10 +112,55 @@ public class InstagramFeedService : IInstagramFeedService
         int limit,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(userId)) return new List<InstagramFeedPost>();
-
         var client = _http.CreateClient("Instagram");
-        var url = $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(userId)}/username/?count={limit}";
+        var identifiers = new[] { userId, username }
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var identifier in identifiers)
+        {
+            var url = $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(identifier)}/username/?count={limit}";
+            using var request = CreateInstagramGet(url, sessionCookies, $"https://www.instagram.com/{username}/");
+            using var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+
+            if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body) || body.TrimStart().StartsWith("<"))
+            {
+                _logger.LogWarning(
+                    "Instagram feed request failed for {Username}/{Identifier}: HTTP {StatusCode}",
+                    username,
+                    identifier,
+                    (int)response.StatusCode);
+                continue;
+            }
+
+            using var doc = JsonDocument.Parse(StripJsonPrefix(body));
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                continue;
+
+            var posts = new List<InstagramFeedPost>();
+            foreach (var item in items.EnumerateArray())
+            {
+                var post = ParsePost(item);
+                if (!string.IsNullOrWhiteSpace(post.Id) || !string.IsNullOrWhiteSpace(post.Code))
+                    posts.Add(post);
+            }
+
+            if (posts.Count > 0) return posts;
+        }
+
+        return new List<InstagramFeedPost>();
+    }
+
+    private async Task<List<InstagramFeedPost>> FetchWebProfileTimelinePostsAsync(
+        string username,
+        string sessionCookies,
+        int limit,
+        CancellationToken ct)
+    {
+        var client = _http.CreateClient("Instagram");
+        var url = $"https://www.instagram.com/api/v1/users/web_profile_info/?username={Uri.EscapeDataString(username)}";
         using var request = CreateInstagramGet(url, sessionCookies, $"https://www.instagram.com/{username}/");
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -119,23 +168,26 @@ public class InstagramFeedService : IInstagramFeedService
         if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body) || body.TrimStart().StartsWith("<"))
         {
             _logger.LogWarning(
-                "Instagram feed request failed for {Username}/{UserId}: HTTP {StatusCode}",
+                "Instagram web profile timeline fallback failed for {Username}: HTTP {StatusCode}",
                 username,
-                userId,
                 (int)response.StatusCode);
             return new List<InstagramFeedPost>();
         }
 
         using var doc = JsonDocument.Parse(StripJsonPrefix(body));
-        if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+        var edges = TryGet(doc.RootElement, "data", "user", "edge_owner_to_timeline_media", "edges");
+        if (edges is null || edges.Value.ValueKind != JsonValueKind.Array)
             return new List<InstagramFeedPost>();
 
         var posts = new List<InstagramFeedPost>();
-        foreach (var item in items.EnumerateArray())
+        foreach (var edge in edges.Value.EnumerateArray())
         {
-            var post = ParsePost(item);
+            var node = TryGet(edge, "node");
+            if (node is null) continue;
+            var post = ParseTimelineNodePost(node.Value);
             if (!string.IsNullOrWhiteSpace(post.Id) || !string.IsNullOrWhiteSpace(post.Code))
                 posts.Add(post);
+            if (posts.Count >= limit) break;
         }
 
         return posts;
@@ -208,6 +260,35 @@ public class InstagramFeedService : IInstagramFeedService
             RepostCount: GetLong(item, "media_repost_count", GetLong(item, "reshare_count", GetLong(item, "repost_count"))),
             TakenAt: GetLong(item, "taken_at"),
             MediaId: GetString(item, "pk") ?? (GetString(item, "id") ?? string.Empty).Split('_')[0]);
+    }
+
+    private static InstagramFeedPost ParseTimelineNodePost(JsonElement node)
+    {
+        var caption = TryGetFirstItem(TryGet(node, "edge_media_to_caption"), "edges") is { } captionEdge
+            ? GetString(TryGet(captionEdge, "node"), "text")
+            : null;
+
+        var typeName = GetString(node, "__typename") ?? string.Empty;
+        var mediaType = typeName switch
+        {
+            "GraphVideo" => 2,
+            "GraphSidecar" => 8,
+            _ => 1
+        };
+
+        return new InstagramFeedPost(
+            Id: GetString(node, "id") ?? string.Empty,
+            Code: GetString(node, "shortcode") ?? GetString(node, "code") ?? string.Empty,
+            Caption: caption,
+            MediaType: mediaType,
+            DisplayUrl: GetString(node, "display_url")
+                ?? (TryGetFirstItem(node, "thumbnail_resources") is { } thumbnail ? GetString(thumbnail, "src") : null),
+            VideoUrl: GetString(node, "video_url"),
+            LikeCount: TryGet(node, "edge_liked_by") is { } likes ? GetLong(likes, "count") : 0L,
+            CommentCount: TryGet(node, "edge_media_to_comment") is { } comments ? GetLong(comments, "count") : 0L,
+            RepostCount: 0L,
+            TakenAt: GetLong(node, "taken_at_timestamp"),
+            MediaId: GetString(node, "id") ?? string.Empty);
     }
 
     private static InstagramJsonFeedResponse BuildJsonFeed(InstagramFeedProfile profile, List<InstagramFeedPost> posts)
