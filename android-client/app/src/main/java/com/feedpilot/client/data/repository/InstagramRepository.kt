@@ -158,6 +158,11 @@ class InstagramRepository @Inject constructor(
         return instagramWebClient.searchUsers(query, cookies)
     }
 
+    suspend fun fetchSuggestedUsers(customCookies: String? = null, maxNumberToDisplay: Int = 50): List<InstagramSuggestedUser> {
+        val cookies = customCookies ?: getActiveAccountCookies() ?: return emptyList()
+        return instagramWebClient.fetchSuggestedUsers(cookies, maxNumberToDisplay)
+    }
+
     suspend fun uploadPhoto(photoBytes: ByteArray, uploadId: String, isStory: Boolean, customCookies: String? = null): Boolean {
         val cookies = customCookies ?: getActiveAccountCookies() ?: return false
         return instagramWebClient.uploadPhoto(photoBytes, uploadId, isStory, cookies)

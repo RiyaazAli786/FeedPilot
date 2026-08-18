@@ -226,6 +226,15 @@ data class InstagramSearchUser(
     val isVerified: Boolean
 )
 
+data class InstagramSuggestedUser(
+    val id: String,
+    val username: String,
+    val fullName: String?,
+    val profilePicUrl: String?,
+    val isPrivate: Boolean,
+    val isVerified: Boolean
+)
+
 @Singleton
 class InstagramWebClient @Inject constructor(
     // A clean client with no backend interceptors/authenticator (see @InstagramClient), so our
@@ -2684,6 +2693,118 @@ class InstagramWebClient @Inject constructor(
             Log.w(TAG, "Instagram user search failed for $clean", e)
             emptyList()
         }
+    }
+
+    suspend fun fetchSuggestedUsers(
+        sessionCookies: String,
+        maxNumberToDisplay: Int = 50,
+        maxId: String = "[]"
+    ): List<InstagramSuggestedUser> = withContext(Dispatchers.IO) {
+        if (sessionCookies.isBlank()) return@withContext emptyList()
+        try {
+            val csrfToken = extractCookie(sessionCookies, "csrftoken") ?: ""
+            val viewerId = extractCookie(sessionCookies, "ds_user_id")?.ifBlank { null }
+            val fbDtsg = fetchFbDtsg(sessionCookies, "explore/people")
+            val formBuilder = FormBody.Builder()
+                .add("max_id", maxId)
+                .add("max_number_to_display", maxNumberToDisplay.coerceIn(1, 100).toString())
+                .add("module", "discover_people")
+                .add("paginate", "true")
+                .add("jazoest", InstagramCrypto.createJazoest(csrfToken.ifBlank { viewerId ?: maxId }))
+
+            if (!fbDtsg.isNullOrBlank()) {
+                formBuilder.add("fb_dtsg", fbDtsg)
+            }
+
+            val request = Request.Builder()
+                .url("https://www.instagram.com/api/v1/discover/ayml/")
+                .post(formBuilder.build())
+                .applyDeviceHeaders()
+                .header("Accept", "*/*")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("X-CSRFToken", csrfToken)
+                .header("X-Instagram-AJAX", InstagramCrypto.generateInstagramAjax())
+                .header("X-Web-Session-ID", java.util.UUID.randomUUID().toString())
+                .header("X-IG-Max-Touch-Points", "0")
+                .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
+                .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+                .header("Origin", "https://www.instagram.com")
+                .header("Referer", "https://www.instagram.com/explore/people/")
+                .header("Sec-Fetch-Site", "same-origin")
+                .header("Sec-Fetch-Mode", "cors")
+                .header("Sec-Fetch-Dest", "empty")
+                .header("Cookie", sessionCookies)
+                .build()
+
+            http.newCall(request).execute().use { response ->
+                val bodyText = response.body?.string().orEmpty()
+                if (!response.isSuccessful || bodyText.isBlank()) {
+                    Log.w(TAG, "fetchSuggestedUsers failed: HTTP ${response.code} ${bodyText.take(300)}")
+                    return@withContext emptyList()
+                }
+                val suggestions = parseSuggestedUsers(JSONObject(bodyText), viewerId)
+                Log.i(TAG, "fetchSuggestedUsers returned ${suggestions.size} user(s)")
+                suggestions
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchSuggestedUsers failed", e)
+            emptyList()
+        }
+    }
+
+    private fun parseSuggestedUsers(root: JSONObject, viewerId: String?): List<InstagramSuggestedUser> {
+        val found = linkedMapOf<String, InstagramSuggestedUser>()
+
+        fun addUser(obj: JSONObject) {
+            val username = obj.optString("username").trim().removePrefix("@")
+            val id = listOf("pk", "id", "user_id")
+                .firstNotNullOfOrNull { key -> obj.optString(key).trim().takeIf { it.isNotBlank() } }
+                ?: return
+            if (username.isBlank() || id == viewerId) return
+            found.putIfAbsent(
+                username.lowercase(Locale.US),
+                InstagramSuggestedUser(
+                    id = id,
+                    username = username,
+                    fullName = obj.optString("full_name").ifBlank { obj.optString("fullName").ifBlank { null } },
+                    profilePicUrl = obj.optString("profile_pic_url").ifBlank { obj.optString("profilePicUrl").ifBlank { null } },
+                    isPrivate = obj.optBoolean("is_private", false),
+                    isVerified = obj.optBoolean("is_verified", false)
+                )
+            )
+        }
+
+        val suggestions = root.optJSONObject("suggested_users")?.optJSONArray("suggestions")
+        if (suggestions != null) {
+            for (i in 0 until suggestions.length()) {
+                suggestions.optJSONObject(i)
+                    ?.optJSONObject("user")
+                    ?.let(::addUser)
+            }
+            if (found.isNotEmpty()) return found.values.toList()
+        }
+
+        fun walk(value: Any?) {
+            when (value) {
+                is JSONObject -> {
+                    addUser(value)
+                    val keys = value.keys()
+                    while (keys.hasNext()) {
+                        walk(value.opt(keys.next()))
+                    }
+                }
+                is org.json.JSONArray -> {
+                    for (i in 0 until value.length()) {
+                        walk(value.opt(i))
+                    }
+                }
+            }
+        }
+
+        walk(root)
+        return found.values.toList()
     }
 
     suspend fun uploadPhoto(

@@ -1,6 +1,7 @@
 package com.feedpilot.client
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -73,20 +74,41 @@ import androidx.compose.ui.graphics.toArgb
 import com.feedpilot.client.feature.start.StartScreen
 import com.feedpilot.client.feature.guard.AppGuardBannerDialog
 import com.feedpilot.client.feature.updates.LaunchUpdateDialog
+import com.feedpilot.client.service.CsvAccountImportService
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private val launchDestination = mutableStateOf<String?>(null)
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* runner works either way */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureLaunchDestination(intent)
         enableEdgeToEdge()
         requestNotificationPermission()
-        setContent { FeedPilotRoot() }
+        setContent {
+            FeedPilotRoot(
+                launchDestination = launchDestination.value,
+                onLaunchDestinationConsumed = { launchDestination.value = null }
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureLaunchDestination(intent)
+    }
+
+    private fun captureLaunchDestination(intent: Intent?) {
+        launchDestination.value = when (intent?.action) {
+            CsvAccountImportService.ACTION_OPEN_CSV_IMPORT_STATUS -> Routes.CSV_IMPORT_STATUS
+            else -> null
+        }
     }
 
     /** The task runner posts an ongoing notification; on Android 13+ that needs user consent. */
@@ -99,7 +121,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun FeedPilotRoot(rootViewModel: RootViewModel = hiltViewModel()) {
+private fun FeedPilotRoot(
+    launchDestination: String?,
+    onLaunchDestinationConsumed: () -> Unit,
+    rootViewModel: RootViewModel = hiltViewModel()
+) {
     val themeMode by rootViewModel.themeMode.collectAsStateWithLifecycle()
 
     val darkTheme = when (themeMode) {
@@ -126,7 +152,11 @@ private fun FeedPilotRoot(rootViewModel: RootViewModel = hiltViewModel()) {
         LaunchUpdateDialog()
         AppGuardBannerDialog()
         when (gate) {
-            AuthGate.Ready -> MainScreenLayout(hasAccounts = hasAccounts)
+            AuthGate.Ready -> MainScreenLayout(
+                hasAccounts = hasAccounts,
+                launchDestination = launchDestination,
+                onLaunchDestinationConsumed = onLaunchDestinationConsumed
+            )
             AuthGate.Checking -> AuthCheckingScreen()
             AuthGate.Offline -> AuthOfflineScreen(onRetry = rootViewModel::authenticate)
         }
@@ -278,13 +308,18 @@ private val LOGIN_ROUTES = setOf(
     Routes.SPLASH,
     Routes.START,
     Routes.ADD_ACCOUNT,
+    Routes.ADD_ACCOUNT_CSV_IMPORT,
     Routes.ACCOUNT_LOGIN,
     Routes.WEB_LOGIN,
     Routes.VERIFY_CODE
 )
 
 @Composable
-private fun MainScreenLayout(hasAccounts: Boolean?) {
+private fun MainScreenLayout(
+    hasAccounts: Boolean?,
+    launchDestination: String?,
+    onLaunchDestinationConsumed: () -> Unit
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination
@@ -306,6 +341,17 @@ private fun MainScreenLayout(hasAccounts: Boolean?) {
             // login screen for an account that is linked.
             hasAccounts == true && route == Routes.START ->
                 navController.navigate(Routes.TASKS) { popUpTo(0) { inclusive = true } }
+        }
+    }
+
+    LaunchedEffect(launchDestination) {
+        when (launchDestination) {
+            Routes.CSV_IMPORT_STATUS -> {
+                navController.navigate(Routes.ADD_ACCOUNT_CSV_IMPORT) {
+                    launchSingleTop = true
+                }
+                onLaunchDestinationConsumed()
+            }
         }
     }
 
@@ -435,6 +481,23 @@ private fun MainScreenLayout(hasAccounts: Boolean?) {
                 }
                 composable(Routes.ADD_ACCOUNT) {
                     AddAccountScreen(
+                        onBack = { navController.popBackStack() },
+                        onWebLogin = { twoFactorSecret ->
+                            navController.currentBackStackEntry
+                                ?.savedStateHandle
+                                ?.set("web_login_totp_secret", twoFactorSecret)
+                            navController.navigate(Routes.WEB_LOGIN)
+                        },
+                        onAccountAdded = {
+                            navController.navigate(Routes.TASKS) {
+                                popUpTo(Routes.START) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Routes.ADD_ACCOUNT_CSV_IMPORT) {
+                    AddAccountScreen(
+                        openLoginTab = true,
                         onBack = { navController.popBackStack() },
                         onWebLogin = { twoFactorSecret ->
                             navController.currentBackStackEntry

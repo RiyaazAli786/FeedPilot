@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CheckCircle
@@ -87,7 +89,15 @@ fun TasksScreen(
     var accountToDelete by remember { mutableStateOf<AccountEntity?>(null) }
     var accountToLogin by remember { mutableStateOf<AccountEntity?>(null) }
     var accountToUpdateProfile by remember { mutableStateOf<AccountEntity?>(null) }
+    var accountPage by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
+    val accountsPerPage = 8
+    val pageCount = ((state.accounts.size + accountsPerPage - 1) / accountsPerPage).coerceAtLeast(1)
+    val visibleAccounts = state.accounts.drop(accountPage * accountsPerPage).take(accountsPerPage)
+
+    LaunchedEffect(state.accounts.size, pageCount) {
+        if (accountPage > pageCount - 1) accountPage = (pageCount - 1).coerceAtLeast(0)
+    }
 
     if (!loginMessage.isNullOrBlank()) {
         val warningText = loginMessage!!
@@ -148,26 +158,26 @@ fun TasksScreen(
         Column(
             Modifier
                 .weight(1f)
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            // ----- Action tiles -----
+            // ----- Compact Actions -----
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 1.5.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    Modifier.padding(vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                    Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    ActionTile("Upgrade Account", Icons.Filled.WorkspacePremium, onClick = onUpgrade)
-                    ActionTile("Add Account", Icons.Filled.PersonAdd, onClick = onAddAccount)
-                    ActionTile("LeaderBoard", Icons.Filled.EmojiEvents, badge = "New", onClick = onLeaderboard)
+                    ActionTile("Upgrade", Icons.Filled.WorkspacePremium, onClick = onUpgrade)
+                    ActionTile("Add", Icons.Filled.PersonAdd, onClick = onAddAccount)
+                    ActionTile("Leaders", Icons.Filled.EmojiEvents, badge = "New", onClick = onLeaderboard)
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
 
             // Battery optimization warning — shown only while the runner is active and the
             // app is not yet excluded from Doze mode, which cuts network access during long
@@ -213,10 +223,10 @@ fun TasksScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
-            // ----- Select All Accounts Card -----
+            // ----- Select + Pagination -----
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -225,26 +235,59 @@ fun TasksScreen(
             ) {
                 Row(
                     Modifier
-                        .padding(horizontal = 10.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .height(44.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.clickable { viewModel.toggleSelectAll() }
                     ) {
                         Checkbox(
                             checked = state.accounts.isNotEmpty() && state.enabledAccountIds.size == state.accounts.size,
                             onCheckedChange = { viewModel.toggleSelectAll() },
                             colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.scale(0.85f)
+                            modifier = Modifier.scale(0.78f)
                         )
-                        Text("Select All", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("All", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    Text(
+                        "${state.enabledAccountIds.size}/${state.accounts.size} selected",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (state.accounts.size > accountsPerPage) {
+                        IconButton(
+                            onClick = { if (accountPage > 0) accountPage-- },
+                            enabled = accountPage > 0,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous page", modifier = Modifier.size(20.dp))
+                        }
+                        Text(
+                            "${accountPage + 1}/$pageCount",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        IconButton(
+                            onClick = { if (accountPage < pageCount - 1) accountPage++ },
+                            enabled = accountPage < pageCount - 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next page", modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
 
             // ----- Accounts Cards List -----
             if (state.accounts.isEmpty()) {
@@ -260,9 +303,9 @@ fun TasksScreen(
             } else {
                 LazyColumn(
                     Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(state.accounts, key = { it.id }) { account ->
+                    items(visibleAccounts, key = { it.id }) { account ->
                         val isAccountEnabled = account.id in state.enabledAccountIds
                         var logLimit by remember(account.id) { mutableIntStateOf(50) }
                         val logs by viewModel.logsForAccount(account.id, logLimit).collectAsStateWithLifecycle(initialValue = emptyList())
@@ -419,10 +462,10 @@ fun TasksScreen(
                 containerColor = if (state.running) MaterialTheme.colorScheme.error else AppTheme.brand.orange
             ),
             modifier = Modifier
-                .width(160.dp)
+                .width(148.dp)
                 .align(Alignment.CenterHorizontally)
-                .padding(bottom = 16.dp)
-                .height(40.dp)
+                .padding(bottom = 8.dp)
+                .height(38.dp)
         ) {
             Text(
                 text = if (state.running) "Stop" else "Start",
@@ -436,22 +479,24 @@ fun TasksScreen(
 
 @Composable
 private fun RowScope.ActionTile(label: String, icon: ImageVector, badge: String? = null, onClick: () -> Unit) {
-    Column(
+    Row(
         Modifier
             .weight(1f)
             .clip(RoundedCornerShape(8.dp))
             .clickableSurface(onClick)
-            .padding(horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .height(42.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
         Box {
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier.size(30.dp)
             ) {
-                Box(Modifier.padding(10.dp)) {
+                Box(Modifier.padding(6.dp)) {
                     Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -464,22 +509,21 @@ private fun RowScope.ActionTile(label: String, icon: ImageVector, badge: String?
                     Text(
                         badge,
                         color = Color.White,
-                        fontSize = 8.sp,
+                        fontSize = 7.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
                     )
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             label,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
-            textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth()
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -882,9 +926,9 @@ private fun AccountTaskCard(
         }
 
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp,
+        shadowElevation = 1.dp,
         modifier = Modifier
             .fillMaxWidth()
             .then(loginClickModifier)
@@ -893,20 +937,19 @@ private fun AccountTaskCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 2.dp),
+                    .padding(start = 6.dp, end = 6.dp, top = 5.dp, bottom = 0.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
                     checked = enabled,
                     onCheckedChange = { onToggle() },
                     colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.scale(0.85f)
+                    modifier = Modifier.scale(0.76f)
                 )
-                Spacer(Modifier.width(2.dp))
                 Box(contentAlignment = Alignment.Center) {
                     Avatar(
                         account.profilePictureUrl,
-                        size = 36,
+                        size = 32,
                         isActive = account.isLoggedIn,
                         isUpgraded = isUpgraded,
                         modifier = if (!account.isLoggedIn && !isVerifying && !isValidating) {
@@ -915,32 +958,32 @@ private fun AccountTaskCard(
                     )
                     if (isVerifying || isValidating || isRunning) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier.size(36.dp),
                             strokeWidth = 2.dp,
                             color = AppTheme.brand.orange
                         )
                     }
                 }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(7.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             account.username,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
-                        Spacer(Modifier.width(4.dp))
                         com.feedpilot.client.ui.components.CopyUsernameButton(account.username)
                         AccountActionButton(
                             icon = Icons.Filled.Edit,
                             contentDescription = "Update profile",
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                             tint = AppTheme.brand.orange,
-                            size = 24,
-                            iconSize = 13,
+                            size = 22,
+                            iconSize = 12,
                             onClick = onUpdateProfile
                         )
                         if (isChallenged) {
@@ -981,7 +1024,7 @@ private fun AccountTaskCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            CoinDot(size = 11)
+                            CoinDot(size = 10)
                             Text(account.coinsEarned.formatCoins(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
@@ -997,7 +1040,7 @@ private fun AccountTaskCard(
                         contentDescription = if (isRunningOrValidating) "Pause Task Runner" else "Start Task Runner",
                         color = if (isRunningOrValidating) AppTheme.brand.orange else MaterialTheme.colorScheme.primaryContainer,
                         tint = if (isRunningOrValidating) Color.White else MaterialTheme.colorScheme.primary,
-                        size = 32,
+                        size = 34,
                         iconSize = 16,
                         onClick = onStartSingle
                     )
@@ -1008,9 +1051,9 @@ private fun AccountTaskCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 50.dp, end = 8.dp, bottom = 6.dp),
+                    .padding(start = 48.dp, end = 6.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 ModeSelector(
                     selected = taskMode,
@@ -1023,14 +1066,14 @@ private fun AccountTaskCard(
                 Spacer(Modifier.weight(1f))
 
                 // Utility buttons row
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                     AccountActionButton(
                         icon = Icons.Filled.Refresh,
                         contentDescription = "Refresh Profile Picture",
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 28,
-                        iconSize = 14,
+                        size = 26,
+                        iconSize = 13,
                         onClick = onRefreshProfile
                     )
                     AccountActionButton(
@@ -1038,8 +1081,8 @@ private fun AccountTaskCard(
                         contentDescription = "Open in browser",
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 28,
-                        iconSize = 14,
+                        size = 26,
+                        iconSize = 13,
                         onClick = onOpenSession
                     )
                     AccountActionButton(
@@ -1047,8 +1090,8 @@ private fun AccountTaskCard(
                         contentDescription = "View Action Log",
                         color = if (logs.isNotEmpty()) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                         tint = if (logs.isNotEmpty()) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 28,
-                        iconSize = 14,
+                        size = 26,
+                        iconSize = 13,
                         onClick = { showLogs = true }
                     )
                     AccountActionButton(
@@ -1056,8 +1099,8 @@ private fun AccountTaskCard(
                         contentDescription = "Remove Account",
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        size = 28,
-                        iconSize = 14,
+                        size = 26,
+                        iconSize = 13,
                         onClick = onRemove
                     )
                 }

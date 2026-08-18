@@ -450,6 +450,7 @@ fun AddAccountScreen(
     onBack: () -> Unit,
     onAccountAdded: (() -> Unit)? = null,
     onWebLogin: ((twoFactorSecret: String) -> Unit)? = null,
+    openLoginTab: Boolean = false,
     viewModel: AddAccountViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -492,7 +493,7 @@ fun AddAccountScreen(
         }
     }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(if (openLoginTab) 1 else 0) }
 
     Box(
         modifier = Modifier

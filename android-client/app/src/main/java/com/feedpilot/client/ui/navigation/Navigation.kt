@@ -24,6 +24,8 @@ object Routes {
     const val LEADERBOARD = "leaderboard"
     const val UPGRADE = "upgrade"
     const val ADD_ACCOUNT = "add_account"
+    const val ADD_ACCOUNT_CSV_IMPORT = "add_account/csv_import"
+    const val CSV_IMPORT_STATUS = "csv_import_status"
     const val UPDATES = "updates"
     const val CONNECT_INSTAGRAM = "connect_instagram"
     const val VERIFY_CODE = "verify_code"

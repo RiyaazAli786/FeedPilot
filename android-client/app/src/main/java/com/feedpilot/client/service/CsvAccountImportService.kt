@@ -46,7 +46,7 @@ class CsvAccountImportService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (running) return START_NOT_STICKY
         val filePath = intent?.getStringExtra(EXTRA_FILE_PATH).orEmpty()
-        startForegroundCompat(buildNotification("Starting CSV import..."))
+        startForegroundCompat(buildNotification("Starting CSV import...", ongoing = true))
         running = true
         scope.launch {
             try {
@@ -140,7 +140,7 @@ class CsvAccountImportService : Service() {
         }
         val code = TotpCode.generate(normalizedSecret)
             ?: return AddAccountOutcome.Failed("Invalid 2FA secret for @${outcome.challenge.username}.")
-        return accountRepository.submitTwoFactorCode(outcome.challenge, code)
+        return accountRepository.submitTwoFactorCode(outcome.challenge, code, requirePicked = false)
     }
 
     private fun importOutcomeMessage(username: String, outcome: AddAccountOutcome): String = when (outcome) {
@@ -153,22 +153,25 @@ class CsvAccountImportService : Service() {
 
     private fun notify(stats: CsvAccountImportStats) {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIFICATION_ID, buildNotification(stats.message ?: "CSV import"))
+        nm.notify(NOTIFICATION_ID, buildNotification(stats.message ?: "CSV import", ongoing = stats.running))
     }
 
-    private fun buildNotification(text: String): Notification {
+    private fun buildNotification(text: String, ongoing: Boolean): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            Intent(this, MainActivity::class.java)
+                .setAction(ACTION_OPEN_CSV_IMPORT_STATUS)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         return NotificationCompat.Builder(this, Constants.CSV_IMPORT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("CSV Account Login")
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(openIntent)
-            .setOngoing(running)
+            .setOngoing(ongoing)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -265,6 +268,7 @@ class CsvAccountImportService : Service() {
     )
 
     companion object {
+        const val ACTION_OPEN_CSV_IMPORT_STATUS = "com.feedpilot.client.OPEN_CSV_IMPORT_STATUS"
         private const val EXTRA_FILE_PATH = "csv_file_path"
         private const val NOTIFICATION_ID = 4309
 

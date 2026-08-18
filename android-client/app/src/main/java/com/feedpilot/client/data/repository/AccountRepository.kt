@@ -557,11 +557,12 @@ class AccountRepository @Inject constructor(
      */
     suspend fun submitTwoFactorCode(
         challenge: InstagramLoginResult.TwoFactorRequired,
-        code: String
+        code: String,
+        requirePicked: Boolean = true
     ): AddAccountOutcome =
         when (val result = instagramRepository.submitTwoFactorCode(challenge, code)) {
             is InstagramLoginResult.Success ->
-                storeAccount(challenge.username.trim().removePrefix("@"), result.sessionData ?: "")
+                storeAccount(challenge.username.trim().removePrefix("@"), result.sessionData ?: "", requirePicked = requirePicked)
             is InstagramLoginResult.Failure -> AddAccountOutcome.Failed(result.message)
             // Instagram re-challenged (a code can expire mid-flow) — carry the newer challenge.
             is InstagramLoginResult.TwoFactorRequired -> AddAccountOutcome.NeedsTwoFactor(result)
@@ -574,11 +575,12 @@ class AccountRepository @Inject constructor(
      */
     suspend fun submitEmailCode(
         challenge: InstagramLoginResult.EmailCodeRequired,
-        code: String
+        code: String,
+        requirePicked: Boolean = true
     ): AddAccountOutcome =
         when (val result = instagramRepository.submitEmailCode(challenge, code)) {
             is InstagramLoginResult.Success ->
-                storeAccount(challenge.username.trim().removePrefix("@"), result.sessionData ?: "")
+                storeAccount(challenge.username.trim().removePrefix("@"), result.sessionData ?: "", requirePicked = requirePicked)
             is InstagramLoginResult.Failure -> AddAccountOutcome.Failed(result.message)
             is InstagramLoginResult.TwoFactorRequired -> AddAccountOutcome.NeedsTwoFactor(result)
             is InstagramLoginResult.EmailCodeRequired -> AddAccountOutcome.NeedsEmailCode(result)

@@ -28,6 +28,7 @@ import com.feedpilot.client.common.Resource
 import com.feedpilot.client.data.local.TaskEntity
 import com.feedpilot.client.data.repository.AppSettings
 import com.feedpilot.client.data.repository.ClaimOutcome
+import com.feedpilot.client.data.repository.InstagramRepository
 import com.feedpilot.client.data.repository.SettingsRepository
 import com.feedpilot.client.data.repository.TaskRepository
 import com.feedpilot.client.data.repository.WalletRepository
@@ -37,6 +38,7 @@ import com.feedpilot.client.task.TaskOutcome
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountLogDao
 import com.feedpilot.client.data.local.AccountLogEntity
+import com.feedpilot.client.data.remote.InstagramSuggestedUser
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +80,7 @@ class TaskRunnerService : Service() {
     @Inject lateinit var runnerState: TaskRunnerState
     @Inject lateinit var accountLogDao: AccountLogDao
     @Inject lateinit var accountDao: AccountDao
+    @Inject lateinit var instagramRepository: InstagramRepository
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var appGuardRepository: com.feedpilot.client.data.repository.AppGuardRepository
     @Inject lateinit var deviceIdentity: DeviceIdentity
@@ -346,6 +349,21 @@ class TaskRunnerService : Service() {
                 Log.w(TAG, "[$accountId] Claimed ${batch.size} task(s) in ${System.currentTimeMillis() - claimStartedAt}ms")
 
                 if (batch.isEmpty()) {
+                    if (
+                        claimResult.outcome is ClaimOutcome.Success &&
+                        EngagementTaskType.FOLLOW in effectiveAllowedTypes
+                    ) {
+                        val suggestedResult = processSuggestedFollow(accountId, currentAccount.sessionCookies)
+                        if (suggestedResult.ran) {
+                            idleStreak = 0
+                            delay(actionDelay(settings))
+                            if (suggestedResult.sessionDead) {
+                                endMessage = "Stopped: Instagram session needs attention - log in via globe icon"
+                                break
+                            }
+                            continue
+                        }
+                    }
                     val baseMessage = if (activeAllowedTypes.size < allowedTypes.size) {
                         val maxedTypes = (allowedTypes - activeAllowedTypes).joinToString("/") { it.wireName }
                         "$maxedTypes limit reached for today — checking for other orders…"
@@ -603,6 +621,85 @@ class TaskRunnerService : Service() {
                 // not this key) — only this dedup/display value was wrong.
                 InstagramCrypto.getCodeFromUrl(targetId)
             null -> targetId.trim().lowercase()
+        }
+    }
+
+    private suspend fun processSuggestedFollow(accountId: String, sessionCookies: String): ProcessResult {
+        runnerState.noteAccount(accountId, "Finding suggested users...")
+        updateNotification()
+
+        val completed = completedTargetsPerAccount.getOrPut(accountId) { ConcurrentHashMap.newKeySet() }
+        val suggestions = instagramRepository.fetchSuggestedUsers(
+            customCookies = sessionCookies,
+            maxNumberToDisplay = SUGGESTED_USERS_BATCH_SIZE
+        )
+            .shuffled(Random)
+        var candidate: InstagramSuggestedUser? = null
+        var candidateKey = ""
+        for (suggested in suggestions) {
+            val key = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, suggested.username)
+            if (key in completed || accountLogDao.hasAccountCompletedTarget(accountId, key)) continue
+            candidate = suggested
+            candidateKey = key
+            break
+        }
+        val selected = candidate ?: return ProcessResult(ran = false)
+
+        val targetKey = candidateKey
+        runnerState.working(accountId, "Follow")
+        Log.w(TAG, "[$accountId] No order available; following suggested user @${selected.username} (${selected.id})")
+
+        val result = instagramRepository.follow(
+            targetUserId = selected.id,
+            targetUsername = selected.username,
+            customCookies = sessionCookies
+        )
+        if (!result.updatedCookies.isNullOrBlank()) {
+            runCatching { accountDao.updateSessionCookies(accountId, result.updatedCookies) }
+                .onFailure { Log.w(TAG, "[$accountId] Could not persist rotated Instagram cookies", it) }
+        }
+
+        completed.add(targetKey)
+        val message = if (result.ok) {
+            "Followed suggested @${selected.username}"
+        } else {
+            result.reason ?: "Instagram rejected suggested follow"
+        }
+
+        runCatching {
+            accountLogDao.insert(AccountLogEntity(
+                id = if (result.ok) {
+                    "success_${accountId}_${EngagementTaskType.FOLLOW.wireName}_$targetKey"
+                } else {
+                    UUID.randomUUID().toString()
+                },
+                accountId = accountId,
+                action = EngagementTaskType.FOLLOW.wireName,
+                target = targetKey,
+                success = result.ok,
+                message = message,
+                timestampMs = System.currentTimeMillis()
+            ))
+        }
+
+        return if (result.ok) {
+            runnerState.recordSuccess(accountId, 0, message)
+            updateNotification()
+            ProcessResult(ran = true)
+        } else {
+            runnerState.recordFailure(accountId, message)
+            val isChallenge = isChallengeFailure(result.reason)
+            val isLoggedOut = !isChallenge &&
+                result.reason?.contains("Session logged out", ignoreCase = true) == true
+            if (isChallenge) {
+                runCatching { accountDao.updateStatus(accountId, "CHALLENGE_REQUIRED") }
+                runnerState.noteAccount(accountId, "Challenge Required")
+            } else if (isLoggedOut) {
+                runCatching { accountDao.updateStatus(accountId, "SESSION_LOGGED_OUT") }
+                runnerState.noteAccount(accountId, "Session logged out - log in via globe icon")
+            }
+            updateNotification()
+            ProcessResult(ran = true, sessionDead = isChallenge || isLoggedOut)
         }
     }
 
@@ -986,6 +1083,7 @@ class TaskRunnerService : Service() {
         private const val BACKEND_TASK_PREFIX = "backend_order_"
 
         private const val BATCH_SIZE = 20
+        private const val SUGGESTED_USERS_BATCH_SIZE = 50
         /** Fallback streak length for buildStreakOrderedBatch — see its doc comment. */
         private const val DEFAULT_STREAK_LENGTH = 5
 
