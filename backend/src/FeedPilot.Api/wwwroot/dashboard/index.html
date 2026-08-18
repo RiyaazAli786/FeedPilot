@@ -381,33 +381,6 @@
       gap: 8px;
     }
 
-    .dashboard-ig-summary {
-      margin: 0 0 14px 0;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-    }
-
-    .dashboard-section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 10px;
-    }
-
-    .dashboard-section-head h2 {
-      margin: 0;
-      font-size: 15px;
-      line-height: 1.2;
-    }
-
-    .dashboard-ig-summary .ig-session-grid {
-      padding: 0;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    }
-
     table {
       border-collapse: collapse;
       width: 100%;
@@ -1066,14 +1039,6 @@
    </div>
 
    <div class="dashboard-content">
-    <section id="dashboard-ig-summary" class="dashboard-ig-summary">
-      <div class="dashboard-section-head">
-        <h2>Logged-in Instagram Accounts</h2>
-        <button id="ig-summary-view-all" type="button">View all</button>
-      </div>
-      <div id="dashboard-ig-grid" class="ig-session-grid"></div>
-    </section>
-
     <div class="wrap">
       <table id="orders-table">
         <thead>
@@ -2517,43 +2482,6 @@
       setAppOptions(s.apps);
     }
 
-    async function loadDashboardInstagramSessions() {
-      const params = new URLSearchParams({ page: 1, pageSize: 6 });
-      if ($('#f-app').value) params.set('appId', $('#f-app').value);
-      if ($('#f-device').value.trim()) params.set('deviceId', $('#f-device').value.trim());
-
-      const data = await api('/api/admin/instagram-sessions?' + params);
-      $('#dashboard-ig-grid').innerHTML = data.items.length ? data.items.map(a => {
-        const profileUrl = `https://www.instagram.com/${encodeURIComponent(a.username)}/`;
-        const avatar = a.profilePictureUrl
-          ? `<img class="ig-session-avatar" src="${esc(a.profilePictureUrl)}" alt="">`
-          : `<div class="ig-session-avatar"></div>`;
-        return `<article class="ig-session-card">
-          <div class="ig-session-head">
-            ${avatar}
-            <div class="ig-session-name">
-              <b>@${esc(a.username)} ${a.isVerified ? '<span class="pill Completed">verified</span>' : ''}</b>
-              <span class="muted">${esc(a.fullName || a.userEmail || '')}</span>
-            </div>
-          </div>
-          <div class="ig-session-metrics">
-            <div class="ig-session-metric"><b>${num(a.followerCount)}</b><span>Followers</span></div>
-            <div class="ig-session-metric"><b>${num(a.followingCount)}</b><span>Following</span></div>
-            <div class="ig-session-metric"><b>${num(a.mediaCount)}</b><span>Posts</span></div>
-          </div>
-          <div class="ig-session-actions">
-            ${a.profileSynced ? '<span class="pill Completed">synced</span>' : '<span class="pill Failed">sync failed</span>'}
-            <button type="button" class="ig-open" data-url="${esc(profileUrl)}" title="Open Instagram profile">View</button>
-          </div>
-        </article>`;
-      }).join('')
-        : '<div class="empty" style="grid-column:1/-1">No logged-in Instagram sessions yet.</div>';
-
-      $('#dashboard-ig-grid').querySelectorAll('.ig-open').forEach(b => {
-        b.onclick = () => window.open(b.dataset.url, '_blank', 'noopener,noreferrer');
-      });
-    }
-
     async function loadInstagramSessions() {
       const params = new URLSearchParams({ page, pageSize });
       if ($('#f-app').value) params.set('appId', $('#f-app').value);
@@ -3224,7 +3152,6 @@
       $('#tab-device-restore').className = next === 'device-restore' ? 'primary' : '';
       $('#tab-picked-usernames').className = next === 'picked-usernames' ? 'primary' : '';
       $('#order-filters').style.display = next === 'orders' ? '' : 'none';
-      $('#dashboard-ig-summary').style.display = next === 'orders' ? '' : 'none';
       $('#orders-table').style.display = next === 'orders' ? '' : 'none';
       $('#accounts-table').style.display = next === 'accounts' ? '' : 'none';
       $('#ig-sessions-panel').style.display = next === 'ig-sessions' ? '' : 'none';
@@ -3252,7 +3179,6 @@
     $('#tab-orders').onclick = () => setTab('orders');
     $('#tab-accounts').onclick = () => setTab('accounts');
     $('#tab-ig-sessions').onclick = () => setTab('ig-sessions');
-    $('#ig-summary-view-all').onclick = () => setTab('ig-sessions');
     $('#tab-devices').onclick = () => setTab('devices');
     $('#tab-handles').onclick = () => setTab('handles');
     $('#tab-withdrawals').onclick = () => setTab('withdrawals');
@@ -4030,7 +3956,7 @@
         else if (tab === 'referrals') await loadAllReferrals(1);
         else if (tab === 'device-restore') await loadDeviceRestore();
         else if (tab === 'picked-usernames') await loadPickedUsernames();
-        else await Promise.all([loadStats(), loadOrders(), loadDashboardInstagramSessions()]);
+        else await Promise.all([loadStats(), loadOrders()]);
         $('#conn').textContent = '';
       } catch (e) {
         // A rejected or expired session is worth recovering from: drop it and bring the key box back.
@@ -4217,9 +4143,7 @@
     $('#next').onclick = () => { if (page * pageSize < total) { page++; refresh(); } };
 
     setInterval(() => {
-      if (document.visibilityState !== 'visible' || !sessionToken()) return;
-      if (tab === 'ig-sessions') refresh();
-      else if (tab === 'orders') loadDashboardInstagramSessions();
+      if (tab === 'ig-sessions' && document.visibilityState === 'visible' && sessionToken()) refresh();
     }, 15000);
 
     // Wire up every filter so any dropdown or input change updates results immediately

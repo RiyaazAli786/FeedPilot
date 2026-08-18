@@ -61,7 +61,16 @@ public class InstagramFeedService : IInstagramFeedService
         if (string.IsNullOrWhiteSpace(cleanUsername) || string.IsNullOrWhiteSpace(sessionCookies))
             return null;
 
-        return await FetchProfileAsync(cleanUsername, sessionCookies, ct);
+        var userId = ExtractCookie(sessionCookies, "ds_user_id");
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            var profileById = await FetchProfileByUserIdAsync(userId, cleanUsername, sessionCookies, ct);
+            if (HasProfileSnapshot(profileById))
+                return profileById;
+        }
+
+        var profileByUsername = await FetchProfileAsync(cleanUsername, sessionCookies, ct);
+        return HasProfileSnapshot(profileByUsername) ? profileByUsername : null;
     }
 
     private async Task<string?> PickRandomSessionAsync(CancellationToken ct)
@@ -87,6 +96,29 @@ public class InstagramFeedService : IInstagramFeedService
         var feedProfileUrl =
             $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(username)}/username/?count=1";
         return await FetchProfileFromUrlAsync(client, feedProfileUrl, username, sessionCookies, ct);
+    }
+
+    private async Task<InstagramFeedProfile?> FetchProfileByUserIdAsync(
+        string userId,
+        string fallbackUsername,
+        string sessionCookies,
+        CancellationToken ct)
+    {
+        var client = _http.CreateClient("Instagram");
+        var escapedUserId = Uri.EscapeDataString(userId);
+        var urls = new[]
+        {
+            $"https://www.instagram.com/api/v1/users/{escapedUserId}/info/",
+            $"https://i.instagram.com/api/v1/users/{escapedUserId}/info/"
+        };
+
+        foreach (var url in urls)
+        {
+            var profile = await FetchProfileFromUrlAsync(client, url, fallbackUsername, sessionCookies, ct);
+            if (profile is not null) return profile;
+        }
+
+        return null;
     }
 
     private async Task<InstagramFeedProfile?> FetchProfileFromUrlAsync(
@@ -465,6 +497,13 @@ public class InstagramFeedService : IInstagramFeedService
 
     private static string FirstNonBlank(params string[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+
+    private static bool HasProfileSnapshot(InstagramFeedProfile? profile) =>
+        profile is not null &&
+        (!string.IsNullOrWhiteSpace(profile.ProfilePicUrl) ||
+         profile.FollowerCount > 0 ||
+         profile.FollowingCount > 0 ||
+         profile.MediaCount > 0);
 }
 
 public sealed record InstagramFeedProfile(
