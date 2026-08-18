@@ -1,5 +1,7 @@
 package com.feedpilot.client.feature.accounts
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -63,7 +65,24 @@ data class AddAccountUiState(
     /** Non-null while Instagram is waiting for a one-time code for this login attempt. */
     val twoFactor: TwoFactorUiState? = null,
     /** Set once, for the screen to show as a toast and then consume — see [consumeDuplicateToast]. */
-    val duplicateToast: String? = null
+    val duplicateToast: String? = null,
+    val csvImport: CsvImportUiState? = null
+)
+
+data class CsvImportUiState(
+    val running: Boolean = false,
+    val total: Int = 0,
+    val processed: Int = 0,
+    val added: Int = 0,
+    val failed: Int = 0,
+    val currentUsername: String? = null,
+    val message: String? = null
+)
+
+private data class CsvLoginRow(
+    val username: String,
+    val password: String,
+    val twoFactorSecret: String
 )
 
 /** The code prompt Instagram's two-factor or email verification challenge puts in front of the login. */
@@ -183,6 +202,79 @@ class AddAccountViewModel @Inject constructor(
         _state.update { it.copy(duplicateToast = null) }
     }
 
+    fun importAccountsFromCsv(csvText: String) {
+        viewModelScope.launch {
+            val rows = parseCsvLoginRows(csvText)
+            if (rows.isEmpty()) {
+                _state.update { it.copy(csvImport = CsvImportUiState(message = "No usable rows found in CSV.")) }
+                return@launch
+            }
+
+            var added = 0
+            var failed = 0
+            _state.update {
+                it.copy(csvImport = CsvImportUiState(running = true, total = rows.size, message = "Starting CSV import..."))
+            }
+
+            rows.forEachIndexed { index, row ->
+                _state.update {
+                    it.copy(
+                        csvImport = CsvImportUiState(
+                            running = true,
+                            total = rows.size,
+                            processed = index,
+                            added = added,
+                            failed = failed,
+                            currentUsername = row.username,
+                            message = "Logging in @${row.username}"
+                        )
+                    )
+                }
+
+                val outcome = runCatching {
+                    val login = accountRepository.addImportedAccountWithCredentials(row.username, row.password)
+                    submitTotpIfAvailable(login, row.twoFactorSecret)
+                }.getOrElse { AddAccountOutcome.Failed(it.message ?: "Import failed") }
+
+                when (outcome) {
+                    AddAccountOutcome.Added -> added++
+                    else -> failed++
+                }
+
+                _state.update {
+                    it.copy(
+                        csvImport = CsvImportUiState(
+                            running = true,
+                            total = rows.size,
+                            processed = index + 1,
+                            added = added,
+                            failed = failed,
+                            currentUsername = row.username,
+                            message = importOutcomeMessage(row.username, outcome)
+                        )
+                    )
+                }
+            }
+
+            _state.update {
+                it.copy(
+                    csvImport = CsvImportUiState(
+                        running = false,
+                        total = rows.size,
+                        processed = rows.size,
+                        added = added,
+                        failed = failed,
+                        message = "CSV import complete: $added added, $failed failed."
+                    )
+                )
+            }
+        }
+    }
+
+    fun clearCsvImportStatus() {
+        _state.update { it.copy(csvImport = null) }
+    }
+
     /**
      * @param retryOf the prompt this outcome answers, when it came from submitting a code. A
      *   failure then belongs on the prompt — reporting it on the form behind a dismissed dialog is
@@ -265,6 +357,82 @@ class AddAccountViewModel @Inject constructor(
         }
 
         applyOutcome(outcome)
+    }
+
+    private suspend fun submitTotpIfAvailable(
+        outcome: AddAccountOutcome,
+        twoFactorSecret: String
+    ): AddAccountOutcome {
+        if (outcome !is AddAccountOutcome.NeedsTwoFactor) return outcome
+        if (twoFactorSecret.isBlank()) {
+            return AddAccountOutcome.Failed("Two-factor code required, but CSV row has no 2FA secret.")
+        }
+        val code = TotpCode.generate(twoFactorSecret)
+            ?: return AddAccountOutcome.Failed("Invalid 2FA secret for @${outcome.challenge.username}.")
+        return accountRepository.submitTwoFactorCode(outcome.challenge, code)
+    }
+
+    private fun importOutcomeMessage(username: String, outcome: AddAccountOutcome): String = when (outcome) {
+        AddAccountOutcome.Added -> "Added @$username"
+        is AddAccountOutcome.AlreadyExists -> "@$username already exists"
+        is AddAccountOutcome.Failed -> "@$username failed: ${outcome.message}"
+        is AddAccountOutcome.NeedsTwoFactor -> "@$username needs a valid 2FA secret"
+        is AddAccountOutcome.NeedsEmailCode -> "@$username needs email verification"
+    }
+
+    private fun parseCsvLoginRows(csvText: String): List<CsvLoginRow> {
+        val lines = csvText.lineSequence().filter { it.isNotBlank() }.toList()
+        if (lines.isEmpty()) return emptyList()
+        val headers = parseCsvLine(lines.first()).map { it.trim().uppercase() }
+        fun column(vararg names: String): Int =
+            names.firstNotNullOfOrNull { name -> headers.indexOf(name).takeIf { it >= 0 } } ?: -1
+
+        val usernameIndex = column("USERNAME", "USER", "HANDLE")
+        val emailIndex = column("EMAIL")
+        val passwordIndex = column("PASSWORD", "PASS")
+        val twoFactorIndex = column("2FA CODE", "2FA SECRET", "TWO FACTOR SECRET", "TOTP SECRET")
+        if (passwordIndex < 0 || (usernameIndex < 0 && emailIndex < 0)) return emptyList()
+
+        return lines.drop(1).mapNotNull { line ->
+            val cells = parseCsvLine(line)
+            fun cell(index: Int): String = if (index >= 0) cells.getOrNull(index)?.trim().orEmpty() else ""
+            val username = cell(usernameIndex).ifBlank { cell(emailIndex) }
+            val password = cell(passwordIndex)
+            if (username.isBlank() || password.isBlank()) {
+                null
+            } else {
+                CsvLoginRow(
+                    username = username.removePrefix("@"),
+                    password = password,
+                    twoFactorSecret = cell(twoFactorIndex)
+                )
+            }
+        }
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val cells = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val char = line[i]
+            when {
+                char == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> {
+                    current.append('"')
+                    i++
+                }
+                char == '"' -> inQuotes = !inQuotes
+                char == ',' && !inQuotes -> {
+                    cells.add(current.toString())
+                    current.clear()
+                }
+                else -> current.append(char)
+            }
+            i++
+        }
+        cells.add(current.toString())
+        return cells
     }
 }
 
@@ -459,6 +627,13 @@ fun AddAccountScreen(
     var showJsonDialog by remember { mutableStateOf(false) }
     var jsonInput by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    val csvPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val csvText = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }.getOrDefault("")
+        viewModel.importAccountsFromCsv(csvText)
+    }
 
     LaunchedEffect(state.saved) {
         if (state.saved) {
@@ -646,6 +821,76 @@ fun AddAccountScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            csvPicker.launch(arrayOf("text/*", "text/csv", "application/vnd.ms-excel", "*/*"))
+                        },
+                        enabled = state.csvImport?.running != true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Load Accounts from CSV", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    state.csvImport?.let { import ->
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "CSV Login",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (!import.running) {
+                                        IconButton(onClick = viewModel::clearCsvImportStatus, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Filled.Close, contentDescription = "Dismiss", modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+                                if (import.total > 0) {
+                                    LinearProgressIndicator(
+                                        progress = { import.processed.toFloat() / import.total.toFloat() },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+                                    )
+                                    Text(
+                                        "${import.processed}/${import.total} processed • ${import.added} added • ${import.failed} failed",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                import.message?.let { message ->
+                                    Text(
+                                        message,
+                                        fontSize = 12.sp,
+                                        color = if (import.failed > 0 && !import.running) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(20.dp))

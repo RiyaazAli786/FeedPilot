@@ -534,6 +534,23 @@ class AccountRepository @Inject constructor(
         }
     }
 
+    suspend fun addImportedAccountWithCredentials(
+        username: String,
+        password: String
+    ): AddAccountOutcome {
+        val cleanUsername = username.trim().removePrefix("@")
+        val input = password.trim()
+        if (cleanUsername.isBlank()) return AddAccountOutcome.Failed("Username is required")
+        if (input.isBlank()) return AddAccountOutcome.Failed("Password is required")
+
+        return when (val loginRes = instagramRepository.login(cleanUsername, input)) {
+            is InstagramLoginResult.Success -> storeAccount(cleanUsername, loginRes.sessionData ?: "", requirePicked = false)
+            is InstagramLoginResult.Failure -> AddAccountOutcome.Failed(loginRes.message)
+            is InstagramLoginResult.TwoFactorRequired -> AddAccountOutcome.NeedsTwoFactor(loginRes)
+            is InstagramLoginResult.EmailCodeRequired -> AddAccountOutcome.NeedsEmailCode(loginRes)
+        }
+    }
+
     /**
      * Finishes an add that [addAccountWithCredentials] reported as [AddAccountOutcome.NeedsTwoFactor].
      * A rejected code comes back as [AddAccountOutcome.Failed] and `challenge` can be retried.
@@ -616,7 +633,11 @@ class AccountRepository @Inject constructor(
     }
 
     /** Persists a resolved account locally, then registers it with the backend. */
-    private suspend fun storeAccount(cleanUsername: String, sessionCookies: String): AddAccountOutcome {
+    private suspend fun storeAccount(
+        cleanUsername: String,
+        sessionCookies: String,
+        requirePicked: Boolean = true
+    ): AddAccountOutcome {
         return try {
             var profilePic: String? = null
             var finalUsername = cleanUsername
@@ -639,7 +660,7 @@ class AccountRepository @Inject constructor(
                 }
             } catch (_: Throwable) { }
 
-            if (!isUsernamePicked(finalUsername) && !isUsernamePicked(cleanUsername)) {
+            if (requirePicked && !isUsernamePicked(finalUsername) && !isUsernamePicked(cleanUsername)) {
                 return AddAccountOutcome.Failed(
                     "You cannot login with your own username. Please use our Username Suggestion Picker to pick a suggested username, create an account with that handle, and then return to log in."
                 )
