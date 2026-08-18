@@ -217,6 +217,35 @@ public class OrdersController : ControllerBase
         return Ok(ToDto(order));
     }
 
+    /// <summary>Deletes a terminal order from the user's backend history.</summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var order = await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id && o.UserId == userId, ct);
+        if (order is null) return NotFound(new ApiError("Order not found."));
+
+        if (order.Status is AppOrderStatus.Pending or AppOrderStatus.Approved
+            or AppOrderStatus.Submitted or AppOrderStatus.InProgress)
+        {
+            return BadRequest(new ApiError(
+                "Cancel this order before deleting it from history.",
+                "ORDER_STILL_ACTIVE"));
+        }
+
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+
+        await _db.Tasks
+            .Where(t => t.OrderId == id)
+            .ExecuteDeleteAsync(ct);
+
+        _db.AppOrders.Remove(order);
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        return NoContent();
+    }
+
     /// <summary>
     /// Swaps status of an order that has not been sent to a provider yet.
     /// </summary>

@@ -228,15 +228,24 @@ class HistoryViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Hides a row from local history. The backend still owns the order — reloading this page
-     * (paging away and back, or refreshing) will surface it again — so this is a "clear my local
-     * clutter" action, not a way to make the order disappear for good.
-     */
-    fun deleteLog(id: String) = viewModelScope.launch {
-        orderHistoryRepository.deleteLog(id)
-        pageLogs.value = pageLogs.value.filterNot { it.id == id }
-        message.value = "Order removed from this view"
+    /** Deletes an app order from the backend first, then removes its cached local history row. */
+    fun deleteLog(log: OrderHistoryEntity) = viewModelScope.launch {
+        val backendOrderId = log.smmOrderId
+        if (log.orderSource == OrderSource.APP && !backendOrderId.isNullOrBlank()) {
+            message.value = "Deleting order..."
+            when (val res = appOrderRepository.deleteOrder(backendOrderId)) {
+                is Resource.Success -> Unit
+                is Resource.Error -> {
+                    message.value = res.message ?: "Could not delete the order"
+                    return@launch
+                }
+                Resource.Loading -> Unit
+            }
+        }
+
+        orderHistoryRepository.deleteLog(log.id)
+        pageLogs.value = pageLogs.value.filterNot { it.id == log.id }
+        message.value = "Order deleted"
     }
 
     fun consumeMessage() {

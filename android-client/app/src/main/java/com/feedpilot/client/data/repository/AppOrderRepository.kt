@@ -118,6 +118,18 @@ class AppOrderRepository @Inject constructor(
         Resource.Error(readApiError(t), t)
     }
 
+    suspend fun deleteOrder(id: String): Resource<Unit> = try {
+        if (!signedIn()) {
+            Resource.Error(NO_ACCOUNT)
+        } else {
+            val res = api.deleteAppOrder(id)
+            if (res.isSuccessful) Resource.Success(Unit)
+            else Resource.Error(readApiError(HttpException(res)))
+        }
+    } catch (t: Throwable) {
+        Resource.Error(readApiError(t), t)
+    }
+
     /**
      * Claims up to [batchSize] pending orders from the backend queue for this device to execute.
      *

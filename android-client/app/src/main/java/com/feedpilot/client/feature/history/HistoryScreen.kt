@@ -234,7 +234,7 @@ fun OrderHistoryContent(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteLog(log.id)
+                        viewModel.deleteLog(log)
                         orderToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

@@ -103,6 +103,9 @@ interface ApiService {
     @POST("api/orders/{id}/cancel")
     suspend fun cancelAppOrder(@Path("id") id: String): AppOrderDto
 
+    @DELETE("api/orders/{id}")
+    suspend fun deleteAppOrder(@Path("id") id: String): retrofit2.Response<Unit>
+
     // ---------- Order processing ----------
     @POST("api/orders/processing/claim")
     suspend fun claimOrders(@Body body: ClaimOrdersRequest): List<ClaimedOrderDto>
