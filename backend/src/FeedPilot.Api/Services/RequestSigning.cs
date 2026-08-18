@@ -101,7 +101,7 @@ public class RequestSigningMiddleware
 
 public static class RequestSigningMiddlewareExtensions
 {
-    /// <summary>Applies to everything except /api/admin/**, /api/generator**, /api/comments**, /api/version**, /api/apk**, and non-API paths.</summary>
+    /// <summary>Applies to everything except public/browser-facing endpoints and non-API paths.</summary>
     public static IApplicationBuilder UseRequestSigning(this IApplicationBuilder app) =>
         app.UseWhen(
             ctx =>
@@ -109,6 +109,7 @@ public static class RequestSigningMiddlewareExtensions
                 var path = ctx.Request.Path.Value ?? "";
                 return path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) &&
                        !path.StartsWith("/api/admin", StringComparison.OrdinalIgnoreCase) &&
+                       !path.StartsWith("/api/feedpilot/feed", StringComparison.OrdinalIgnoreCase) &&
                        !path.StartsWith("/api/generator", StringComparison.OrdinalIgnoreCase) &&
                        !path.StartsWith("/api/comments", StringComparison.OrdinalIgnoreCase) &&
                        !path.StartsWith("/api/version", StringComparison.OrdinalIgnoreCase) &&

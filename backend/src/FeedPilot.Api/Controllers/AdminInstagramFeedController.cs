@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using FeedPilot.Api.Dtos;
 using FeedPilot.Api.Services;
 
 namespace FeedPilot.Api.Controllers;
 
 [ApiController]
-[AdminSession]
+[AllowAnonymous]
 [Route("api/feedpilot/feed")]
 public class AdminInstagramFeedController : ControllerBase
 {
