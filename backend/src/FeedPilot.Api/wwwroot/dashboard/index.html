@@ -2615,17 +2615,18 @@
       );
     }
 
-    async function loadDevices() {
-      const params = new URLSearchParams({ page, pageSize });
-      if ($('#f-search').value.trim()) params.set('search', $('#f-search').value.trim());
+    function deviceGroupKey(d) {
+      return (d.installationId || d.deviceId || d.id || '').toString();
+    }
 
-      const data = await api('/api/admin/devices?' + params);
-      total = data.total;
+    function deviceLoggedAccountsButton(d) {
+      return (d.loggedInAccounts && d.loggedInAccounts.length)
+        ? `<button type="button" class="view-la-btn pill Approved" data-device="${esc(d.deviceId)}" data-accounts="${esc(JSON.stringify(d.loggedInAccounts))}" style="cursor:pointer; border:1px solid rgba(46,144,250,0.4); background:rgba(46,144,250,0.12); color:#175cd3; padding:4px 10px; font-weight:700">${d.loggedInAccounts.length} ${d.loggedInAccounts.length === 1 ? 'Account' : 'Accounts'}</button>`
+        : '<span class="muted">-</span>';
+    }
 
-      $('#d-rows').innerHTML = data.items.length ? data.items.map(d => `
-    <tr>
-      <td class="muted">${fmt(d.lastSeenAt)}</td>
-      <td class="idf devid" data-dev="${esc(d.deviceId)}">
+    function renderDeviceIdBlock(d, groupSize = 1) {
+      return `
         <div class="id-line">
           <b title="${esc(d.deviceId)}">${esc(shortId(d.deviceId))}</b>
           <button type="button" class="copy-btn copy-id" data-copy="${esc(d.deviceId)}" title="Copy device id">⧉</button>
@@ -2636,22 +2637,96 @@
         </div>
         <div class="id-line muted">
           <span title="${esc(d.installationId)}">${esc(shortId(d.installationId))}</span>
-          <button type="button" class="copy-btn copy-id" data-copy="${esc(d.installationId)}" title="Copy installation id">⧉</button>
-          ${d.cloneCount > 1 ? `<button type="button" class="pill Pending clone-badge" data-installation="${esc(d.installationId)}" title="${d.cloneCount} clones share this device's hardware id — click to filter to just them" style="cursor:pointer; padding:2px 8px; font-size:11px; font-weight:700">${d.cloneCount} clones</button>` : ''}
-        </div>
-      </td>
-      <td>${esc(d.deviceModel) || '<span class="muted">—</span>'}</td>
-      <td><b>${esc(d.activeAccount || '—')}</b></td>
-      <td>${(d.loggedInAccounts && d.loggedInAccounts.length) ? `<button type="button" class="view-la-btn pill Approved" data-device="${esc(d.deviceId)}" data-accounts="${esc(JSON.stringify(d.loggedInAccounts))}" style="cursor:pointer; border:1px solid rgba(46,144,250,0.4); background:rgba(46,144,250,0.12); color:#175cd3; padding:4px 10px; font-weight:700">${d.loggedInAccounts.length} ${d.loggedInAccounts.length === 1 ? 'Account' : 'Accounts'}</button>` : '<span class="muted">—</span>'}</td>
+          <button type="button" class="copy-btn copy-id" data-copy="${esc(d.installationId)}" title="Copy hardware id">⧉</button>
+          ${groupSize > 1 ? `<span class="pill Pending" title="${groupSize} installs share this physical device" style="padding:2px 8px; font-size:11px; font-weight:700">${groupSize} installs</span>` : ''}
+        </div>`;
+    }
+
+    function renderSingleDeviceRow(d) {
+      return `
+    <tr>
+      <td class="muted">${fmt(d.lastSeenAt)}</td>
+      <td class="idf devid" data-dev="${esc(d.deviceId)}">${renderDeviceIdBlock(d)}</td>
+      <td>${esc(d.deviceModel) || '<span class="muted">-</span>'}</td>
+      <td><b>${esc(d.activeAccount || '-')}</b></td>
+      <td>${deviceLoggedAccountsButton(d)}</td>
       <td class="email-cell">${formatEmailHtml(d.userEmail)}</td>
       <td><b>${num(d.coins)}</b></td>
-      <td>${esc(d.appVersion || '—')}</td>
-      <td>${esc(d.androidVersion || '—')}</td>
+      <td>${esc(d.appVersion || '-')}</td>
+      <td>${esc(d.androidVersion || '-')}</td>
       <td style="white-space:nowrap">
         <button data-email="${esc(d.userEmail || '')}" data-coins="${d.coins}" data-dev="${esc(d.deviceId)}" data-model="${esc(d.deviceModel || '')}" class="d-coins" ${d.userEmail ? '' : 'disabled title="No linked account for this device yet"'}>Coins</button>
         <button data-id="${d.id}" class="d-delete" style="color:var(--danger)">Delete</button>
       </td>
-    </tr>`).join('')
+    </tr>`;
+    }
+
+    function renderGroupedDeviceRows(items) {
+      const groups = new Map();
+      items.forEach(d => {
+        const key = deviceGroupKey(d);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(d);
+      });
+
+      return Array.from(groups.values()).map(group => {
+        group.sort((a, b) => new Date(a.registeredAt || 0) - new Date(b.registeredAt || 0));
+        if (group.length === 1) return renderSingleDeviceRow(group[0]);
+
+        const parent = group[0];
+        const latestSeen = group.map(d => d.lastSeenAt).filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || parent.lastSeenAt;
+        const activeAccounts = group.map(d => d.activeAccount).filter(Boolean);
+        const loggedAccounts = Array.from(new Set(group.flatMap(d => d.loggedInAccounts || [])));
+        const coinsTotal = group.reduce((sum, d) => sum + Number(d.coins || 0), 0);
+        const versions = Array.from(new Set(group.map(d => d.appVersion).filter(Boolean)));
+
+        const cloneRows = group.map((d, index) => `
+          <tr>
+            <td>${index === 0 ? '<b>Original</b>' : `<b>Clone ${index}</b>`}<div class="muted">${fmt(d.lastSeenAt)}</div></td>
+            <td class="idf">${renderDeviceIdBlock(d)}</td>
+            <td><b>${esc(d.activeAccount || '-')}</b><div class="muted">${formatEmailHtml(d.userEmail)}</div></td>
+            <td>${deviceLoggedAccountsButton(d)}</td>
+            <td><b>${num(d.coins)}</b></td>
+            <td>${esc(d.appVersion || '-')}</td>
+            <td style="white-space:nowrap">
+              <button data-email="${esc(d.userEmail || '')}" data-coins="${d.coins}" data-dev="${esc(d.deviceId)}" data-model="${esc(d.deviceModel || '')}" class="d-coins" ${d.userEmail ? '' : 'disabled title="No linked account for this device yet"'}>Coins</button>
+              <button data-id="${d.id}" class="d-delete" style="color:var(--danger)">Delete</button>
+            </td>
+          </tr>`).join('');
+
+        return `
+    <tr>
+      <td class="muted">${fmt(latestSeen)}</td>
+      <td class="idf devid" data-dev="${esc(parent.deviceId)}">${renderDeviceIdBlock(parent, group.length)}</td>
+      <td>${esc(parent.deviceModel) || '<span class="muted">-</span>'}</td>
+      <td><b>${activeAccounts.length ? `${activeAccounts.length} active` : '-'}</b></td>
+      <td>${loggedAccounts.length ? `<button type="button" class="view-la-btn pill Approved" data-device="${esc(parent.installationId || parent.deviceId)}" data-accounts="${esc(JSON.stringify(loggedAccounts))}" style="cursor:pointer; border:1px solid rgba(46,144,250,0.4); background:rgba(46,144,250,0.12); color:#175cd3; padding:4px 10px; font-weight:700">${loggedAccounts.length} ${loggedAccounts.length === 1 ? 'Account' : 'Accounts'}</button>` : '<span class="muted">-</span>'}</td>
+      <td class="email-cell">${group.length} installs</td>
+      <td><b>${num(coinsTotal)}</b></td>
+      <td>${esc(versions.join(', ') || '-')}</td>
+      <td>${esc(parent.androidVersion || '-')}</td>
+      <td></td>
+    </tr>
+    <tr>
+      <td colspan="10" style="padding:0 16px 16px 16px; background:rgba(148,163,184,0.05)">
+        <div style="font-size:12px; font-weight:700; margin:10px 0 8px">Clone installs</div>
+        <table style="margin:0; border:1px solid var(--border); border-radius:8px; overflow:hidden">
+          <thead><tr><th>Install</th><th>IDs</th><th>Account</th><th>Logged-In</th><th>Coins</th><th>App Ver</th><th></th></tr></thead>
+          <tbody>${cloneRows}</tbody>
+        </table>
+      </td>
+    </tr>`;
+      }).join('');
+    }
+
+    async function loadDevices() {
+      const params = new URLSearchParams({ page, pageSize });
+      if ($('#f-search').value.trim()) params.set('search', $('#f-search').value.trim());
+
+      const data = await api('/api/admin/devices?' + params);
+      total = data.total;
+
+      $('#d-rows').innerHTML = data.items.length ? renderGroupedDeviceRows(data.items)
         : `<tr><td colspan="10" class="empty">No devices registered.</td></tr>`;
 
       const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
