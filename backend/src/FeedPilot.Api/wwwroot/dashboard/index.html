@@ -2067,6 +2067,9 @@
   <script>
     const $ = s => document.querySelector(s);
     let page = 1, pageSize = 25, total = 0, editingId = null;
+    const expandedDeviceGroups = new Set();
+    const cloneGroupPages = new Map();
+    const cloneGroupPageSize = 5;
 
     // The raw admin key is never stored — only the session token minted by POST /api/admin/auth/login
     // (see adminLogin below) lives in localStorage, and it expires server-side on its own.
@@ -2139,8 +2142,8 @@
      */
     function applyResponsiveLabels(table) {
       if (!table) return;
-      const heads = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-      table.querySelectorAll('tbody tr').forEach((tr) => {
+      const heads = [...(table.tHead?.rows?.[0]?.cells || [])].map((th) => th.textContent.trim());
+      [...(table.tBodies?.[0]?.rows || [])].forEach((tr) => {
         [...tr.children].forEach((cell, i) => {
           // A cell spanning the row (the empty-state message) needs no label.
           if (cell.hasAttribute('colspan')) return;
@@ -2669,20 +2672,28 @@
         groups.get(key).push(d);
       });
 
-      return Array.from(groups.values()).map(group => {
+      return Array.from(groups.entries()).map(([key, group]) => {
         group.sort((a, b) => new Date(a.registeredAt || 0) - new Date(b.registeredAt || 0));
         if (group.length === 1) return renderSingleDeviceRow(group[0]);
 
         const parent = group[0];
+        const isExpanded = expandedDeviceGroups.has(key);
+        const totalClonePages = Math.max(1, Math.ceil(group.length / cloneGroupPageSize));
+        const clonePage = Math.min(Math.max(cloneGroupPages.get(key) || 1, 1), totalClonePages);
+        cloneGroupPages.set(key, clonePage);
+        const cloneStart = (clonePage - 1) * cloneGroupPageSize;
+        const visibleClones = group.slice(cloneStart, cloneStart + cloneGroupPageSize);
         const latestSeen = group.map(d => d.lastSeenAt).filter(Boolean).sort((a, b) => new Date(b) - new Date(a))[0] || parent.lastSeenAt;
         const activeAccounts = group.map(d => d.activeAccount).filter(Boolean);
         const loggedAccounts = Array.from(new Set(group.flatMap(d => d.loggedInAccounts || [])));
         const coinsTotal = group.reduce((sum, d) => sum + Number(d.coins || 0), 0);
         const versions = Array.from(new Set(group.map(d => d.appVersion).filter(Boolean)));
 
-        const cloneRows = group.map((d, index) => `
+        const cloneRows = visibleClones.map((d, index) => {
+          const absoluteIndex = cloneStart + index;
+          return `
           <tr>
-            <td>${index === 0 ? '<b>Original</b>' : `<b>Clone ${index}</b>`}<div class="muted">${fmt(d.lastSeenAt)}</div></td>
+            <td>${absoluteIndex === 0 ? '<b>Original</b>' : `<b>Clone ${absoluteIndex}</b>`}<div class="muted">${fmt(d.lastSeenAt)}</div></td>
             <td class="idf">${renderDeviceIdBlock(d)}</td>
             <td><b>${esc(d.activeAccount || '-')}</b><div class="muted">${formatEmailHtml(d.userEmail)}</div></td>
             <td>${deviceLoggedAccountsButton(d)}</td>
@@ -2692,7 +2703,8 @@
               <button data-email="${esc(d.userEmail || '')}" data-coins="${d.coins}" data-dev="${esc(d.deviceId)}" data-model="${esc(d.deviceModel || '')}" class="d-coins" ${d.userEmail ? '' : 'disabled title="No linked account for this device yet"'}>Coins</button>
               <button data-id="${d.id}" class="d-delete" style="color:var(--danger)">Delete</button>
             </td>
-          </tr>`).join('');
+          </tr>`;
+        }).join('');
 
         return `
     <tr>
@@ -2705,17 +2717,24 @@
       <td><b>${num(coinsTotal)}</b></td>
       <td>${esc(versions.join(', ') || '-')}</td>
       <td>${esc(parent.androidVersion || '-')}</td>
-      <td></td>
+      <td><button type="button" class="device-group-toggle" data-group="${esc(key)}">${isExpanded ? 'Hide' : 'Show'}</button></td>
     </tr>
+    ${isExpanded ? `
     <tr>
       <td colspan="10" style="padding:0 16px 16px 16px; background:rgba(148,163,184,0.05)">
-        <div style="font-size:12px; font-weight:700; margin:10px 0 8px">Clone installs</div>
+        <div style="display:flex; align-items:center; gap:10px; margin:10px 0 8px">
+          <div style="font-size:12px; font-weight:700">Clone installs</div>
+          <span class="muted">${cloneStart + 1}-${Math.min(cloneStart + cloneGroupPageSize, group.length)} of ${group.length}</span>
+          <span class="grow"></span>
+          <button type="button" class="clone-page-prev" data-group="${esc(key)}" ${clonePage <= 1 ? 'disabled' : ''}>Prev</button>
+          <button type="button" class="clone-page-next" data-group="${esc(key)}" ${clonePage >= totalClonePages ? 'disabled' : ''}>Next</button>
+        </div>
         <table style="margin:0; border:1px solid var(--border); border-radius:8px; overflow:hidden">
           <thead><tr><th>Install</th><th>IDs</th><th>Account</th><th>Logged-In</th><th>Coins</th><th>App Ver</th><th></th></tr></thead>
           <tbody>${cloneRows}</tbody>
         </table>
       </td>
-    </tr>`;
+    </tr>` : ''}`;
       }).join('');
     }
 
@@ -2769,6 +2788,28 @@
         btn.onclick = () => {
           $('#f-search').value = btn.dataset.installation;
           page = 1;
+          loadDevices();
+        };
+      });
+
+      document.querySelectorAll('.device-group-toggle').forEach(btn => {
+        btn.onclick = () => {
+          const key = btn.dataset.group || '';
+          if (expandedDeviceGroups.has(key)) {
+            expandedDeviceGroups.delete(key);
+          } else {
+            expandedDeviceGroups.add(key);
+            cloneGroupPages.set(key, cloneGroupPages.get(key) || 1);
+          }
+          loadDevices();
+        };
+      });
+
+      document.querySelectorAll('.clone-page-prev, .clone-page-next').forEach(btn => {
+        btn.onclick = () => {
+          const key = btn.dataset.group || '';
+          const current = cloneGroupPages.get(key) || 1;
+          cloneGroupPages.set(key, btn.classList.contains('clone-page-prev') ? current - 1 : current + 1);
           loadDevices();
         };
       });
