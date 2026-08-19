@@ -233,6 +233,17 @@ Runtime rules:
 - Request headers continue to send `X-App-Id`, `X-Device-Id`, and `X-Hardware-Id`; backend rows
   remain separated by app id/device id.
 
+Original auto-restore order:
+
+1. If secure tokens still exist, keep the current session.
+2. If app-private data was cleared, read the newest `FeedPilot_Backup_Code_*.txt` from Downloads
+   and restore that account automatically.
+3. If no backup-code file exists, use passwordless device auth with the original app identity.
+
+This order matters because generating a backup code converts the backend user from
+`@device.feedpilot` to `@backup.feedpilot`. After that conversion, plain device auth can no
+longer find the old user row, so the original app must try the saved backup code first.
+
 Limit: some virtualization-style clone tools can report the same runtime package name as the
 original app. Android does not provide a universal signal to distinguish those from the original
 package. For reliable "clone has no restore" behavior, use clone tools that rewrite the package

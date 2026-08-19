@@ -118,8 +118,8 @@ public class DevicesController : ControllerBase
     }
 
     private async Task<Device?> FindDeviceAsync(string appId, string deviceId, string installationId, CancellationToken ct) =>
-        await _db.Devices.FirstOrDefaultAsync(d => d.InstallationId == installationId, ct)
-        ?? await _db.Devices.FirstOrDefaultAsync(d => d.AppId == appId && d.DeviceId == deviceId, ct)
+        await _db.Devices.FirstOrDefaultAsync(d => d.AppId == appId && d.DeviceId == deviceId, ct)
+        ?? await _db.Devices.FirstOrDefaultAsync(d => d.AppId == appId && d.InstallationId == installationId && d.DeviceId == deviceId, ct)
         ?? await _db.Devices.FirstOrDefaultAsync(d => d.AppId == ClientIdentityDefaults.Unknown && d.DeviceId == deviceId, ct);
 
     private async Task MergeDuplicateDeviceRowsAsync(Device canonical, string appId, string deviceId, CancellationToken ct)

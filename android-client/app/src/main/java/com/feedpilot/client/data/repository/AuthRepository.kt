@@ -121,6 +121,14 @@ class AuthRepository @Inject constructor(
             ensureBackupCode()
             return true
         }
+        if (deviceIdentity.isOriginalApp) {
+            val restored = backupCodeFileStore.readLatestCode()
+                ?.let { restoreWithBackupCode(it) } is Resource.Success
+            if (restored) {
+                registerDevice(appVersion)
+                return true
+            }
+        }
         return try {
             persist(api.deviceAuth(
                 DeviceAuthRequest(

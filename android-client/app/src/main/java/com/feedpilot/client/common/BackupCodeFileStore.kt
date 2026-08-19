@@ -2,6 +2,7 @@ package com.feedpilot.client.common
 
 import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -63,6 +64,49 @@ class BackupCodeFileStore @Inject constructor(
         }
     }
 
+    fun readLatestCode(): String? = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            readLatestFromMediaStore()
+        } else {
+            readLatestFromLegacyStorage()
+        }
+    }.getOrNull()
+
+    private fun readLatestFromMediaStore(): String? {
+        val resolver = context.contentResolver
+        val contentUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID,
+            MediaStore.MediaColumns.DATE_MODIFIED
+        )
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+        val selectionArgs = arrayOf("FeedPilot_Backup_Code_%.txt")
+        val sort = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC"
+
+        resolver.query(contentUri, projection, selection, selectionArgs, sort)?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idIndex)
+                val uri = Uri.withAppendedPath(contentUri, id.toString())
+                val code = resolver.openInputStream(uri)?.use { stream ->
+                    extractCode(stream.bufferedReader().readText())
+                }
+                if (!code.isNullOrBlank()) return code
+            }
+        }
+        return null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readLatestFromLegacyStorage(): String? {
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return dir.listFiles { file ->
+            file.isFile && file.name.startsWith("FeedPilot_Backup_Code_") && file.name.endsWith(".txt")
+        }
+            ?.sortedByDescending { it.lastModified() }
+            ?.firstNotNullOfOrNull { file -> extractCode(file.readText()) }
+    }
+
     private fun writeToMediaStore(fileName: String, content: String) {
         val resolver = context.contentResolver
         val contentUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
@@ -84,4 +128,12 @@ class BackupCodeFileStore @Inject constructor(
         if (!dir.exists()) dir.mkdirs()
         File(dir, fileName).writeText(content)
     }
+
+    private fun extractCode(content: String): String? =
+        Regex("""BACKUP CODE:\s*([A-Za-z0-9._-]+)""")
+            .find(content)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
 }
