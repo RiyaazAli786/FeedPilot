@@ -6,6 +6,7 @@ import android.util.Log
 import com.feedpilot.client.common.InstagramCrypto
 import com.feedpilot.client.di.InstagramClient
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
@@ -22,6 +23,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
 
 sealed class InstagramLoginResult {
     data class Success(
@@ -117,6 +119,12 @@ data class IgActionResult(
             return IgActionResult(false, reason)
         }
     }
+}
+
+private sealed interface FollowStateCheck {
+    data object Confirmed : FollowStateCheck
+    data object Dropped : FollowStateCheck
+    data class Inconclusive(val reason: String) : FollowStateCheck
 }
 
 data class PreLoginData(
@@ -953,9 +961,24 @@ class InstagramWebClient @Inject constructor(
 
     /**
      * Follows an Instagram account given numeric user ID or target handle.
-     * Uses complete, realistic Chrome/131 web headers. Falls back to GraphQL mutation if rejected.
+     * Uses Instagram's current web GraphQL mutation first, then falls back to the older
+     * friendships/create API if GraphQL does not confirm the follow.
      */
     suspend fun follow(
+        targetUserId: String,
+        targetUsername: String = "",
+        sessionCookies: String
+    ): IgActionResult = withContext(Dispatchers.IO) {
+        val graphqlResult = followViaGraphQL(targetUserId, targetUsername, sessionCookies)
+        if (graphqlResult.ok) {
+            return@withContext graphqlResult
+        }
+
+        Log.w(TAG, "GraphQL follow did not confirm for $targetUserId (${graphqlResult.reason}); trying REST friendships/create fallback...")
+        followViaRest(targetUserId, targetUsername, graphqlResult.updatedCookies ?: sessionCookies)
+    }
+
+    private suspend fun followViaRest(
         targetUserId: String,
         targetUsername: String = "",
         sessionCookies: String
@@ -1016,7 +1039,12 @@ class InstagramWebClient @Inject constructor(
                 val isSuccess = response.isSuccessful && !hasErrorSignatures && isFollowingConfirmed
                 Log.i(TAG, "Follow REST HTTP ${response.code} for $targetUserId: $isSuccess (followingConfirmed=$isFollowingConfirmed)")
                 val rotated = mergeSetCookiesAndClaim(sessionCookies, response)
-                if (isSuccess) IgActionResult.Ok.copy(updatedCookies = rotated)
+                if (isSuccess) confirmFollowStillPresent(
+                    targetUserId = targetUserId,
+                    targetUsername = targetUsername,
+                    sessionCookies = rotated ?: sessionCookies,
+                    updatedCookies = rotated
+                )
                 else null // Trigger GraphQL fallback
             }
 
@@ -1024,12 +1052,12 @@ class InstagramWebClient @Inject constructor(
                 return@withContext firstResult
             }
 
-            Log.w(TAG, "Standard REST follow rejected/failed for $targetUserId. Executing GraphQL usePolarisFollowMutation fallback...")
-            return@withContext followViaGraphQL(targetUserId, targetUsername, sessionCookies)
+            Log.w(TAG, "REST friendships/create did not confirm follow for $targetUserId")
+            return@withContext IgActionResult.fail("Instagram rejected the follow")
 
         } catch (e: Exception) {
-            Log.e(TAG, "Standard REST follow failed for $targetUserId, trying GraphQL fallback...", e)
-            return@withContext followViaGraphQL(targetUserId, targetUsername, sessionCookies)
+            Log.e(TAG, "REST friendships/create follow failed for $targetUserId", e)
+            return@withContext IgActionResult.fail("REST follow error: ${e.message ?: e.javaClass.simpleName}")
         }
     }
 
@@ -1108,12 +1136,114 @@ class InstagramWebClient @Inject constructor(
                 val isSuccess = response.isSuccessful && !hasErrorSignatures && isFollowingConfirmed
                 Log.i(TAG, "GraphQL Follow HTTP ${response.code} for $targetUserId: $isSuccess (followingConfirmed=$isFollowingConfirmed)")
                 val rotated = mergeSetCookiesAndClaim(sessionCookies, response)
-                if (isSuccess) IgActionResult.Ok.copy(updatedCookies = rotated)
+                if (isSuccess) confirmFollowStillPresent(
+                    targetUserId = targetUserId,
+                    targetUsername = targetUsername,
+                    sessionCookies = rotated ?: sessionCookies,
+                    updatedCookies = rotated
+                )
                 else IgActionResult.classify("follow", response.code, bodyText).copy(updatedCookies = rotated)
             }
         } catch (e: Exception) {
             Log.e(TAG, "GraphQL Follow fallback failed for user $targetUserId", e)
             IgActionResult.fail("GraphQL follow error: ${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * Instagram can briefly accept a follow mutation and then remove it server-side when trust,
+     * friction, or rate-limit checks finish. Verify once after a small human-sized pause. A failed
+     * verification request is treated as inconclusive so a transient network issue does not undo
+     * a response that already confirmed `following` / `outgoing_request`.
+     */
+    private suspend fun confirmFollowStillPresent(
+        targetUserId: String,
+        targetUsername: String,
+        sessionCookies: String,
+        updatedCookies: String?
+    ): IgActionResult {
+        delay(Random.nextLong(FOLLOW_VERIFY_MIN_DELAY_MS, FOLLOW_VERIFY_MAX_DELAY_MS + 1))
+        return when (val state = fetchFollowState(targetUserId, targetUsername, sessionCookies)) {
+            FollowStateCheck.Confirmed -> {
+                Log.i(TAG, "Follow verification confirmed for $targetUserId")
+                IgActionResult.Ok.copy(updatedCookies = updatedCookies)
+            }
+            FollowStateCheck.Dropped -> {
+                Log.w(TAG, "Follow verification shows Instagram dropped follow for $targetUserId")
+                IgActionResult.fail("Instagram accepted then dropped the follow; cooling this account down is recommended")
+                    .copy(updatedCookies = updatedCookies)
+            }
+            is FollowStateCheck.Inconclusive -> {
+                Log.w(TAG, "Follow verification inconclusive for $targetUserId: ${state.reason}")
+                IgActionResult.Ok.copy(updatedCookies = updatedCookies)
+            }
+        }
+    }
+
+    private fun fetchFollowState(
+        targetUserId: String,
+        targetUsername: String,
+        sessionCookies: String
+    ): FollowStateCheck {
+        val csrfToken = extractCookie(sessionCookies, "csrftoken") ?: ""
+        val refererUrl = if (targetUsername.isNotBlank()) "https://www.instagram.com/$targetUsername/"
+        else "https://www.instagram.com/"
+
+        val request = Request.Builder()
+            .url("https://www.instagram.com/api/v1/friendships/show/$targetUserId/")
+            .get()
+            .applyDeviceHeaders()
+            .header("Accept", "*/*")
+            .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+            .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("X-CSRFToken", csrfToken)
+            .header("Cookie", sessionCookies)
+            .header("Referer", refererUrl)
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Site", "same-origin")
+            .build()
+
+        return try {
+            http.newCall(request).execute().use { response ->
+                val bodyText = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    return@use FollowStateCheck.Inconclusive("HTTP ${response.code}")
+                }
+
+                val json = runCatching { JSONObject(bodyText) }.getOrNull()
+                    ?: return@use classifyFollowStateFromText(bodyText)
+
+                val following = json.optBoolean("following", false)
+                val outgoingRequest = json.optBoolean("outgoing_request", false)
+                val blocking = json.optBoolean("blocking", false)
+                val restricted = json.optBoolean("restricted_by_viewer", false)
+
+                when {
+                    following || outgoingRequest -> FollowStateCheck.Confirmed
+                    blocking || restricted -> FollowStateCheck.Dropped
+                    json.has("following") || json.has("outgoing_request") -> FollowStateCheck.Dropped
+                    else -> classifyFollowStateFromText(bodyText)
+                }
+            }
+        } catch (e: Exception) {
+            FollowStateCheck.Inconclusive(e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    private fun classifyFollowStateFromText(bodyText: String): FollowStateCheck {
+        val lower = bodyText.lowercase(Locale.ROOT)
+        return when {
+            lower.contains("\"following\":true") || lower.contains("\"following\": true") ||
+                lower.contains("\"outgoing_request\":true") || lower.contains("\"outgoing_request\": true") ->
+                FollowStateCheck.Confirmed
+            lower.contains("\"following\":false") || lower.contains("\"following\": false") ||
+                lower.contains("\"outgoing_request\":false") || lower.contains("\"outgoing_request\": false") ->
+                FollowStateCheck.Dropped
+            lower.contains("login_required") || lower.contains("checkpoint_required") || lower.contains("challenge_required") ->
+                FollowStateCheck.Inconclusive("session challenge while verifying follow")
+            else -> FollowStateCheck.Inconclusive("missing relationship fields")
         }
     }
 
@@ -3722,6 +3852,8 @@ class InstagramWebClient @Inject constructor(
         val LSD_TOKEN_REGEX = Regex(""""LSD"\s*,\s*\[.*?\]\s*,\s*\{\s*"token"\s*:\s*"([^"]+)"""")
         val LSD_TOKEN_FALLBACK_REGEX = Regex(""""LSD"\s*:?\s*,\s*\{\s*"token"\s*:\s*"([^"]+)"""")
         const val DEFAULT_LSD_TOKEN = "AdRDeaOf3ijEZn0sa3wXaPAZQ_Y"
+        const val FOLLOW_VERIFY_MIN_DELAY_MS = 4_000L
+        const val FOLLOW_VERIFY_MAX_DELAY_MS = 8_000L
 
     }
 }
