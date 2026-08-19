@@ -123,7 +123,7 @@ class DeviceIdentity @Inject constructor(
      * flow for the replacement recovery path.
      */
     val stableAppInstallationId: String by lazy {
-        sha256Hex("$appId|user_$userHandleId|$deviceUuid")
+        sha256Hex("$appId|user_$userHandleId|$deviceUuid|install_$installationId")
     }
 
     /**

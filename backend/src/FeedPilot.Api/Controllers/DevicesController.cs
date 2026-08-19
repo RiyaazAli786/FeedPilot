@@ -101,6 +101,7 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(req.ActiveAccount)) device.ActiveAccount = req.ActiveAccount;
         if (req.LoggedInAccounts is not null)
             device.LoggedInAccountsJson = JsonSerializer.Serialize(req.LoggedInAccounts);
+        device.AppInstanceId = req.AppInstanceId;
 
         device.LastSeenAt = DateTime.UtcNow;
         if (userId.HasValue)
@@ -171,7 +172,12 @@ public class DevicesController : ControllerBase
                         (d.AppId == appId || d.AppId == ClientIdentityDefaults.Unknown))
             .ToListAsync(ct);
 
-        foreach (var duplicate in duplicates)
+        var canonicalInstance = canonical.AppInstanceId?.Trim();
+        var mergeable = duplicates
+            .Where(d => ShouldMergeDeviceRows(canonicalInstance, d.AppInstanceId))
+            .ToList();
+
+        foreach (var duplicate in mergeable)
         {
             canonical.UserId ??= duplicate.UserId;
             canonical.ActiveAccount ??= duplicate.ActiveAccount;
@@ -182,9 +188,19 @@ public class DevicesController : ControllerBase
             if (duplicate.LastSeenAt > canonical.LastSeenAt) canonical.LastSeenAt = duplicate.LastSeenAt;
         }
 
-        if (duplicates.Count > 0)
+        if (mergeable.Count > 0)
         {
-            _db.Devices.RemoveRange(duplicates);
+            _db.Devices.RemoveRange(mergeable);
         }
+    }
+
+    private static bool ShouldMergeDeviceRows(string? canonicalInstance, string? duplicateInstance)
+    {
+        var otherInstance = duplicateInstance?.Trim();
+        if (string.IsNullOrWhiteSpace(canonicalInstance))
+            return string.IsNullOrWhiteSpace(otherInstance);
+
+        return string.IsNullOrWhiteSpace(otherInstance) ||
+               string.Equals(canonicalInstance, otherInstance, StringComparison.Ordinal);
     }
 }

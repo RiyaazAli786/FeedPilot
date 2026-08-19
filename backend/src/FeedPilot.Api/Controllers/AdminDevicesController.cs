@@ -565,8 +565,19 @@ public class AdminDevicesController : ControllerBase
         var deviceId = device.DeviceId?.Trim();
         if (!string.IsNullOrWhiteSpace(deviceId))
         {
+            var appInstanceId = device.AppInstanceId?.Trim();
+            if (!string.IsNullOrWhiteSpace(appInstanceId))
+            {
+                return _db.Devices.Where(d =>
+                    d.DeviceId == deviceId &&
+                    d.AppInstanceId == appInstanceId &&
+                    (d.AppId == appId ||
+                     (appId != ClientIdentityDefaults.Unknown && d.AppId == ClientIdentityDefaults.Unknown)));
+            }
+
             return _db.Devices.Where(d =>
                 d.DeviceId == deviceId &&
+                string.IsNullOrWhiteSpace(d.AppInstanceId) &&
                 (d.AppId == appId ||
                  (appId != ClientIdentityDefaults.Unknown && d.AppId == ClientIdentityDefaults.Unknown)));
         }
@@ -580,6 +591,9 @@ public class AdminDevicesController : ControllerBase
         var appId = string.IsNullOrWhiteSpace(device.AppId)
             ? ClientIdentityDefaults.Unknown
             : device.AppId.Trim().ToLowerInvariant();
+        var appInstanceId = device.AppInstanceId?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(appInstanceId)) return $"{appId}|instance|{appInstanceId}";
+
         var deviceId = device.DeviceId?.Trim().ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(deviceId)) return $"{appId}|device|{deviceId}";
 

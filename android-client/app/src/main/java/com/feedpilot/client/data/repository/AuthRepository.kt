@@ -280,8 +280,9 @@ class AuthRepository @Inject constructor(
         runCatching {
             api.registerDevice(
                 RegisterDeviceRequest(
-                    // Dashboard/device rows use the same stable id as order claims and request
-                    // headers. The value survives app data clears/reinstalls through MediaStore.
+                    // Dashboard/device rows use the same clone-scoped id as order claims and
+                    // request headers. Original app recovery happens before this through the
+                    // backup-code restore path; clones intentionally get a fresh private id.
                     deviceId = deviceIdentity.stableAppInstallationId,
                     installationId = deviceIdentity.hardwareDeviceId,
                     appInstanceId = deviceIdentity.appInstanceId,

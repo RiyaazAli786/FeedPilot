@@ -2244,7 +2244,7 @@
       if (lower.endsWith('@backup.feedpilot') && lower.startsWith('backup-')) {
         const code = str.slice('backup-'.length, str.indexOf('@'));
         const shortCode = code.length > 8 ? code.slice(0, 8) : code;
-        const displayStr = shortCode ? `backup · ${shortCode}` : 'Backup Code';
+        const displayStr = shortCode ? `device · ${shortCode}` : 'Device Account';
         return `<span class="pill" style="background:var(--border);color:var(--muted);font-weight:normal" title="${esc(str)}">${esc(displayStr)}</span>`;
       }
       return `<span title="${esc(str)}">${esc(str)}</span>`;
