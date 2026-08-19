@@ -85,7 +85,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
             e.HasIndex(x => x.DeviceId);
             e.HasIndex(x => new { x.AppId, x.DeviceId });
-            e.HasIndex(x => x.InstallationId).IsUnique();
+            e.HasIndex(x => x.InstallationId);
         });
 
         b.Entity<PasswordResetRequest>(e =>
