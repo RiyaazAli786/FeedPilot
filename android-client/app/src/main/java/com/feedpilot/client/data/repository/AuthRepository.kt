@@ -83,6 +83,9 @@ class AuthRepository @Inject constructor(
      * living in storage a same-package clone could otherwise reach.
      */
     suspend fun generateBackupCode(): Resource<String> {
+        if (!deviceIdentity.isOriginalApp) {
+            return Resource.Error("Backup and restore are only available in the original FeedPilot app.")
+        }
         val code = java.util.UUID.randomUUID().toString()
         val (email, password) = backupCredentialsFor(code)
         return when (val res = claimAccount(email, password)) {
@@ -97,6 +100,9 @@ class AuthRepository @Inject constructor(
 
     /** Restores the account tied to a previously generated Backup Code — see [generateBackupCode]. */
     suspend fun restoreWithBackupCode(code: String): Resource<Unit> {
+        if (!deviceIdentity.isOriginalApp) {
+            return Resource.Error("Restore is only available in the original FeedPilot app.")
+        }
         val trimmed = code.trim()
         if (trimmed.isEmpty()) return Resource.Error("Enter a backup code.")
         val (email, password) = backupCredentialsFor(trimmed)
@@ -151,6 +157,7 @@ class AuthRepository @Inject constructor(
      * a manual Settings tap — since [AuthController.Claim] rejects a second claim outright.
      */
     private suspend fun ensureBackupCode() {
+        if (!deviceIdentity.isOriginalApp) return
         if (secureStorage.get(SecureStorage.KEY_BACKUP_CODE) != null) return
         if (!isDeviceAccountSession()) return
         when (val res = generateBackupCode()) {

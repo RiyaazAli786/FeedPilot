@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.feedpilot.client.common.Resource
 import com.feedpilot.client.common.SecureStorage
+import com.feedpilot.client.common.DeviceIdentity
 import com.feedpilot.client.data.repository.AccountRepository
 import com.feedpilot.client.data.repository.AuthRepository
 import com.feedpilot.client.data.repository.SettingsRepository
@@ -52,8 +53,11 @@ class StartViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val walletRepository: WalletRepository,
     private val accountRepository: AccountRepository,
-    private val secureStorage: SecureStorage
+    private val secureStorage: SecureStorage,
+    private val deviceIdentity: DeviceIdentity
 ) : ViewModel() {
+
+    val isOriginalApp: Boolean get() = deviceIdentity.isOriginalApp
 
     val termsAccepted: StateFlow<Boolean> = settingsRepository.settings
         .map { it.termsAccepted }
@@ -99,6 +103,7 @@ fun StartScreen(
     viewModel: StartViewModel = hiltViewModel()
 ) {
     val termsAccepted by viewModel.termsAccepted.collectAsStateWithLifecycle()
+    val isOriginalApp = remember { viewModel.isOriginalApp }
     var showTermsDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var isRestoring by remember { mutableStateOf(false) }
@@ -274,25 +279,27 @@ fun StartScreen(
                 // on — see StartViewModel.restoreWithBackupCode for why a fresh install, a data
                 // clear, and a reinstall can't be told apart here, so this can't be shown only
                 // when it's "needed".
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(
-                            width = 1.5.dp,
-                            color = Color.White.copy(alpha = 0.35f),
-                            shape = RoundedCornerShape(14.dp)
+                if (isOriginalApp) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(
+                                width = 1.5.dp,
+                                color = Color.White.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .clickable { showRestoreDialog = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Restore a previous account",
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        .clickable { showRestoreDialog = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Restore a previous account",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    }
                 }
             }
         }

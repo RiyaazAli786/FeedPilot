@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feedpilot.client.common.Resource
 import com.feedpilot.client.common.SecureStorage
+import com.feedpilot.client.common.DeviceIdentity
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountLogDao
 import com.feedpilot.client.data.local.TaskDao
@@ -43,6 +44,7 @@ class SettingsViewModel @Inject constructor(
     private val orderHistoryDao: OrderHistoryDao,
     private val referralRepository: ReferralRepository,
     private val secureStorage: SecureStorage,
+    private val deviceIdentity: DeviceIdentity,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -75,6 +77,7 @@ class SettingsViewModel @Inject constructor(
 
     val isLoggedIn: StateFlow<Boolean> = authRepository.isLoggedIn
     val userEmail: StateFlow<String?> = authRepository.userEmail
+    val isOriginalApp: Boolean get() = deviceIdentity.isOriginalApp
 
     fun setTheme(mode: ThemeMode) = viewModelScope.launch { settingsRepository.setTheme(mode) }
     fun setNotifications(v: Boolean) = viewModelScope.launch { settingsRepository.setNotifications(v) }

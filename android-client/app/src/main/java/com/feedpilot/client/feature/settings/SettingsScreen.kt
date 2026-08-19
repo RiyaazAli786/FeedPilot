@@ -63,6 +63,7 @@ fun SettingsScreen(
     val referralCode by viewModel.referralCode.collectAsStateWithLifecycle()
     val referralBonusCoins by viewModel.referralBonusCoins.collectAsStateWithLifecycle()
     val updatesState by updatesViewModel.state.collectAsStateWithLifecycle()
+    val isOriginalApp = remember { viewModel.isOriginalApp }
     val isOnline by com.feedpilot.client.common.rememberConnectivityState()
     var userTriggeredCheck by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -307,6 +308,7 @@ fun SettingsScreen(
             // hardware/clone fingerprint, which a data clear or reinstall can start fresh from —
             // this is the one-tap way to protect against that without ever asking for an email
             // or password: a single generated code stands in for both.
+            if (isOriginalApp) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -398,6 +400,7 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
             }
 
             SettingsRow("History", Icons.Filled.History, onClick = onHistory)

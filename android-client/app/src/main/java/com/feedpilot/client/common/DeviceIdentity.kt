@@ -5,7 +5,6 @@ import android.content.Context
 import android.media.MediaDrm
 import android.os.Build
 import android.os.Process
-import com.feedpilot.client.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
 import java.util.UUID
@@ -33,11 +32,22 @@ class DeviceIdentity @Inject constructor(
     /** Android Multi-User / Dual App UID tag (UserHandle ID). Differentiates dual apps on the same hardware. */
     val userHandleId: Int get() = Process.myUserHandle().hashCode()
 
-    /** Stable UUID persisted outside app-private storage so it survives clear data and reinstall. */
+    val isOriginalApp: Boolean get() = context.packageName == ORIGINAL_PACKAGE_NAME
+
+    /** Stable UUID for original app recovery; local-only UUID for disposable clone apps. */
     val deviceUuid: String
-        get() = prefs.getString(KEY_DEVICE_UUID, null) ?: mediaStoreStore.readToken(appId, userHandleId) ?: UUID.randomUUID().toString().also { newUuid ->
-            prefs.edit().putString(KEY_DEVICE_UUID, newUuid).apply()
-            mediaStoreStore.writeToken(appId, userHandleId, newUuid)
+        get() {
+            prefs.getString(KEY_DEVICE_UUID, null)?.let { return it }
+            val restored = if (isOriginalApp) mediaStoreStore.readToken(appId, userHandleId) else null
+            if (restored != null) {
+                prefs.edit().putString(KEY_DEVICE_UUID, restored).apply()
+                return restored
+            }
+
+            val fresh = UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_DEVICE_UUID, fresh).apply()
+            if (isOriginalApp) mediaStoreStore.writeToken(appId, userHandleId, fresh)
+            return fresh
         }
 
     /**
@@ -72,7 +82,14 @@ class DeviceIdentity @Inject constructor(
      * BuildConfig value. So each clone reports a distinct app id automatically, with no
      * per-clone source change.
      */
-    val appId: String get() = BuildConfig.APPLICATION_ID
+    val appId: String
+        get() {
+            if (isOriginalApp) return ORIGINAL_PACKAGE_NAME
+            prefs.getString(KEY_CLONE_APP_ID, null)?.let { return it }
+            val fresh = "clone.${UUID.randomUUID()}"
+            prefs.edit().putString(KEY_CLONE_APP_ID, fresh).apply()
+            return fresh
+        }
 
     /** Regenerated each process start; identifies a running app instance. */
     val appInstanceId: String = UUID.randomUUID().toString()
@@ -180,6 +197,8 @@ class DeviceIdentity @Inject constructor(
     companion object {
         private const val KEY_DEVICE_UUID = "device_uuid"
         private const val KEY_INSTALLATION_ID = "installation_id"
+        private const val KEY_CLONE_APP_ID = "clone_app_id"
+        private const val ORIGINAL_PACKAGE_NAME = "com.feedpilot.client"
         private val WIDEVINE_UUID = UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L)
     }
 }
