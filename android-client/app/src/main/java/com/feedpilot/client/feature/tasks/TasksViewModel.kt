@@ -490,7 +490,7 @@ class TasksViewModel @Inject constructor(
                             accountId = account.id,
                             taskType = taskType.wireName,
                             target = target,
-                            message = outcome.message
+                            message = "Manual retry succeeded for $target"
                         )
                         val rewardCoins = when (credit) {
                             is Resource.Success -> credit.data.toLong()
