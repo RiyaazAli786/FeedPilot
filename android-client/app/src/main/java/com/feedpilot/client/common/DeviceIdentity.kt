@@ -35,7 +35,7 @@ class DeviceIdentity @Inject constructor(
     val isOriginalApp: Boolean get() =
         context.packageName == ORIGINAL_PACKAGE_NAME && !isLikelyVirtualCloneRuntime()
 
-    /** Stable UUID for original app recovery; local-only UUID for disposable clone apps. */
+    /** Stable UUID for original app recovery, and for detectable virtual-clone recovery. */
     val deviceUuid: String
         get() {
             prefs.getString(KEY_DEVICE_UUID, null)?.let { return it }
@@ -55,17 +55,14 @@ class DeviceIdentity @Inject constructor(
     /**
      * Distinct per clone / installation.
      *
-     * Deliberately NOT recovered from MediaStore. That store is keyed by (appId, userHandleId)
-     * alone — both identical across "clones" produced by MuMu's built-in cloner and most
-     * parallel-space style APK cloner tools, which virtualize the app's private storage but
-     * leave the reported package name and Android user handle untouched. Recovering from it here
-     * would silently hand a brand-new clone the same installationId — and therefore the same
-     * backend account/wallet — as whatever install last wrote that slot, which is exactly the
-     * "clone picks up the same data" symptom this used to cause. Always minting fresh on an empty
-     * SharedPreferences read is what makes every install, real or cloned, automatically distinct
-     * with no manual step. Cross-reinstall data recovery is handled by the Backup Code flow
-     * (SettingsViewModel.generateBackupCode/restoreWithBackupCode) instead, which doesn't depend
-     * on any OS-level signal a cloner tool can transparently share.
+     * Recovered only when the persistence key is precise enough for this runtime:
+     * the original app uses the official package namespace, while detectable virtual-clone
+     * runtimes use a hash of their container/runtime signals.
+     *
+     * Plain cloned APKs that simply change the package name still mint a fresh local ID on an
+     * empty SharedPreferences read, which keeps separate clones from silently sharing the same
+     * backend account/wallet. Cross-install account recovery remains the Backup Code flow
+     * (SettingsViewModel.generateBackupCode/restoreWithBackupCode).
      */
     val installationId: String
         get() {
@@ -130,15 +127,14 @@ class DeviceIdentity @Inject constructor(
     }
 
     /**
-     * Stable per physical device + app package + user container + install, for as long as this
-     * install's own SharedPreferences survive.
+     * Stable per physical device + app package + user container + install/runtime.
      *
      * Folds in [installationId] alongside the hardware/package/user-handle components: those
      * three alone are identical across clones produced by virtualization-style cloner tools
      * (see [installationId]'s doc), which used to let two clones share one claim-lock identity
-     * even after they'd been given separate backend accounts. No longer persists across a true
-     * uninstall/reinstall or App Data Clear — see [installationId] for why, and the Backup Code
-     * flow for the replacement recovery path.
+     * even after they'd been given separate backend accounts. For the original app this
+     * intentionally stays hardware-tied so a data clear/reinstall returns to the same device
+     * account; clones keep [installationId] in the hash so clone installs remain distinct.
      */
     val stableAppInstallationId: String by lazy {
         if (isOriginalApp) {

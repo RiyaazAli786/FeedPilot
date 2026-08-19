@@ -58,6 +58,7 @@ class InstagramRepositoryTest {
             override suspend fun getById(id: String): AccountEntity? = getAll().firstOrNull()
             override suspend fun upsertAll(accounts: List<AccountEntity>) {}
             override suspend fun incrementCoinsEarned(id: String, increment: Long) {}
+            override suspend fun updateStatus(id: String, status: String) {}
             override suspend fun updateSessionCookies(id: String, sessionCookies: String) {}
             override suspend fun updateLoginStatus(id: String, isLoggedIn: Boolean) {}
             override suspend fun clearLoginStatusExcept(exceptId: String) {}
