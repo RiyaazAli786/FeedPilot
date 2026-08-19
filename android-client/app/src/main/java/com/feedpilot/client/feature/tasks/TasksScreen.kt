@@ -87,6 +87,7 @@ fun TasksScreen(
     val profileUpdateState by viewModel.profileUpdateState.collectAsStateWithLifecycle()
     val loginMessage by viewModel.loginMessage.collectAsStateWithLifecycle()
     var accountToDelete by remember { mutableStateOf<AccountEntity?>(null) }
+    var showBulkRemoveDialog by remember { mutableStateOf(false) }
     var accountToLogin by remember { mutableStateOf<AccountEntity?>(null) }
     var accountToUpdateProfile by remember { mutableStateOf<AccountEntity?>(null) }
     var accountPage by remember { mutableIntStateOf(0) }
@@ -94,6 +95,7 @@ fun TasksScreen(
     val accountsPerPage = 8
     val pageCount = ((state.accounts.size + accountsPerPage - 1) / accountsPerPage).coerceAtLeast(1)
     val visibleAccounts = state.accounts.drop(accountPage * accountsPerPage).take(accountsPerPage)
+    val selectedAccounts = state.accounts.filter { it.id in state.enabledAccountIds }
 
     LaunchedEffect(state.accounts.size, pageCount) {
         if (accountPage > pageCount - 1) accountPage = (pageCount - 1).coerceAtLeast(0)
@@ -261,6 +263,19 @@ fun TasksScreen(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
+                    if (state.enabledAccountIds.isNotEmpty()) {
+                        IconButton(
+                            onClick = { showBulkRemoveDialog = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Remove selected accounts",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                     if (state.accounts.size > accountsPerPage) {
                         IconButton(
                             onClick = { if (accountPage > 0) accountPage-- },
@@ -343,6 +358,50 @@ fun TasksScreen(
                     }
                 }
             }
+        }
+
+        if (showBulkRemoveDialog) {
+            AlertDialog(
+                onDismissRequest = { showBulkRemoveDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text("Remove Selected Accounts?", fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    Text(
+                        "Remove ${selectedAccounts.size} selected account(s) from your active accounts list? You can add them back anytime.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.removeSelectedAccounts()
+                            showBulkRemoveDialog = false
+                        },
+                        enabled = selectedAccounts.isNotEmpty(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Remove All", fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBulkRemoveDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         accountToDelete?.let { account ->

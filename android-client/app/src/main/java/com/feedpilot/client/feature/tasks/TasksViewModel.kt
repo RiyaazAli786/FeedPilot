@@ -238,6 +238,22 @@ class TasksViewModel @Inject constructor(
         accountRepository.removeAccount(id)
     }
 
+    fun removeAccounts(ids: Collection<String>) = viewModelScope.launch {
+        val targetIds = ids.toSet()
+        if (targetIds.isEmpty()) return@launch
+        validatingAccountIds.value = validatingAccountIds.value - targetIds
+        val runningIds = targetIds.filter { runnerState.isAccountRunning(it) }
+        if (runningIds.isNotEmpty()) {
+            TaskRunnerService.stop(getApplication(), runningIds)
+        }
+        targetIds.forEach { accountRepository.removeAccount(it) }
+        enabled.value = (enabled.value ?: emptySet()) - targetIds
+    }
+
+    fun removeSelectedAccounts() {
+        removeAccounts(state.value.enabledAccountIds)
+    }
+
     /**
      * Starts the background runner, checking requirements first with visual validation feedback.
      */
