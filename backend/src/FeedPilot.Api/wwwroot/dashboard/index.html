@@ -2403,6 +2403,7 @@
             👁️ Accounts
           </button>
         </div>
+        ${d.appInstanceId ? `<div class="id-line muted"><span title="${esc(d.appInstanceId)}">clone ${esc(shortId(d.appInstanceId))}</span><button type="button" class="copy-btn copy-id" data-copy="${esc(d.appInstanceId)}" title="Copy clone instance id">â§‰</button></div>` : ''}
       </td>
       <td>${o.coinsSpent}</td>
       <td>${statusPill(o.status)}${o.status === 'Processing' && o.processingStartedAt ? `<div class="muted">Claimed by ${esc(shortId(o.processingDeviceId))} at ${fmt(o.processingStartedAt)}</div>` : ''}${o.errorMessage ? `<div class="muted">${esc(o.errorMessage)}</div>` : ''}</td>

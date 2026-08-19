@@ -91,8 +91,8 @@ class DeviceIdentity @Inject constructor(
             return fresh
         }
 
-    /** Regenerated each process start; identifies a running app instance. */
-    val appInstanceId: String = UUID.randomUUID().toString()
+    /** Stable private container id. Separates same-package clones in the dashboard. */
+    val appInstanceId: String get() = installationId
 
     /**
      * A stable, hardware-tied key for this physical device.

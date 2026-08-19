@@ -582,7 +582,7 @@ public record RegisterDeviceRequest([Required] string DeviceId, [Required] strin
     string? DeviceModel, string? ActiveAccount, List<string>? LoggedInAccounts);
 
 public record SyncDeviceAccountsRequest([Required] string DeviceId, [Required] string InstallationId,
-    string? ActiveAccount, List<string>? LoggedInAccounts);
+    string? AppInstanceId, string? ActiveAccount, List<string>? LoggedInAccounts);
 
 public record DeviceDto(Guid Id, string AppId, string DeviceId, string InstallationId, string? AppInstanceId,
     string? ActiveAccount, List<string>? LoggedInAccounts, DateTime RegisteredAt);

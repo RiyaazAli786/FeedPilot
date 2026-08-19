@@ -30,7 +30,8 @@ public class DevicesController : ControllerBase
         var deviceId = string.IsNullOrWhiteSpace(req.DeviceId) ? identity.DeviceId : req.DeviceId.Trim();
         var installationId = string.IsNullOrWhiteSpace(req.InstallationId) ? deviceId : req.InstallationId.Trim();
 
-        var device = await FindDeviceAsync(appId, deviceId, installationId, ct);
+        var userId = User.Identity?.IsAuthenticated == true ? User.GetUserId() : (Guid?)null;
+        var device = await FindDeviceAsync(appId, deviceId, installationId, req.AppInstanceId, userId, ct);
         if (device is null)
         {
             device = new Device { InstallationId = installationId };
@@ -52,10 +53,11 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(req.ActiveAccount)) device.ActiveAccount = req.ActiveAccount;
         if (req.LoggedInAccounts is not null)
             device.LoggedInAccountsJson = JsonSerializer.Serialize(req.LoggedInAccounts);
+        device.AppInstanceId = req.AppInstanceId;
 
         device.LastSeenAt = DateTime.UtcNow;
-        if (User.Identity?.IsAuthenticated == true)
-            device.UserId = User.GetUserId();
+        if (userId.HasValue)
+            device.UserId = userId.Value;
 
         await _db.SaveChangesAsync(ct);
 
@@ -76,7 +78,8 @@ public class DevicesController : ControllerBase
         var deviceId = string.IsNullOrWhiteSpace(req.DeviceId) ? identity.DeviceId : req.DeviceId.Trim();
         var installationId = string.IsNullOrWhiteSpace(req.InstallationId) ? deviceId : req.InstallationId.Trim();
 
-        var device = await FindDeviceAsync(appId, deviceId, installationId, ct);
+        var userId = User.Identity?.IsAuthenticated == true ? User.GetUserId() : (Guid?)null;
+        var device = await FindDeviceAsync(appId, deviceId, installationId, req.AppInstanceId, userId, ct);
         if (device is null)
         {
             device = new Device
@@ -100,8 +103,8 @@ public class DevicesController : ControllerBase
             device.LoggedInAccountsJson = JsonSerializer.Serialize(req.LoggedInAccounts);
 
         device.LastSeenAt = DateTime.UtcNow;
-        if (User.Identity?.IsAuthenticated == true)
-            device.UserId = User.GetUserId();
+        if (userId.HasValue)
+            device.UserId = userId.Value;
 
         await _db.SaveChangesAsync(ct);
 
@@ -117,10 +120,48 @@ public class DevicesController : ControllerBase
         catch { return null; }
     }
 
-    private async Task<Device?> FindDeviceAsync(string appId, string deviceId, string installationId, CancellationToken ct) =>
-        await _db.Devices.FirstOrDefaultAsync(d => d.AppId == appId && d.DeviceId == deviceId, ct)
-        ?? await _db.Devices.FirstOrDefaultAsync(d => d.AppId == appId && d.InstallationId == installationId && d.DeviceId == deviceId, ct)
-        ?? await _db.Devices.FirstOrDefaultAsync(d => d.AppId == ClientIdentityDefaults.Unknown && d.DeviceId == deviceId, ct);
+    private async Task<Device?> FindDeviceAsync(
+        string appId,
+        string deviceId,
+        string installationId,
+        string? appInstanceId,
+        Guid? userId,
+        CancellationToken ct)
+    {
+        var instance = appInstanceId?.Trim();
+        if (!string.IsNullOrWhiteSpace(instance))
+        {
+            var exact = await _db.Devices.FirstOrDefaultAsync(d =>
+                d.AppId == appId &&
+                d.DeviceId == deviceId &&
+                d.AppInstanceId == instance, ct);
+            if (exact is not null) return exact;
+        }
+
+        // Original app auto-restore may receive a fresh private appInstanceId after Clear Data
+        // while still recovering the same backend user. Keep that as one original row instead of
+        // counting it as another clone.
+        if (userId.HasValue)
+        {
+            var restoredOriginal = await _db.Devices.FirstOrDefaultAsync(d =>
+                d.AppId == appId &&
+                d.InstallationId == installationId &&
+                d.UserId == userId.Value, ct);
+            if (restoredOriginal is not null) return restoredOriginal;
+        }
+
+        if (string.IsNullOrWhiteSpace(instance))
+        {
+            var legacy = await _db.Devices.FirstOrDefaultAsync(d =>
+                d.AppId == appId &&
+                d.DeviceId == deviceId, ct);
+            if (legacy is not null) return legacy;
+        }
+
+        return await _db.Devices.FirstOrDefaultAsync(d =>
+            d.AppId == ClientIdentityDefaults.Unknown &&
+            d.DeviceId == deviceId, ct);
+    }
 
     private async Task MergeDuplicateDeviceRowsAsync(Device canonical, string appId, string deviceId, CancellationToken ct)
     {
