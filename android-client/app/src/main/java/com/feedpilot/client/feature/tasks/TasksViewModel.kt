@@ -195,10 +195,10 @@ class TasksViewModel @Inject constructor(
                     _loginMessage.value = "Account @${account.username}'s Instagram session is logged out. Tap the browser (🌐) icon on the account card to log in."
                     return@launch
                 }
-                if (account != null && !accountRepository.isUsernamePicked(account.username)) {
-                    _loginMessage.value = "Selected account (@${account.username}) was not created using a picked suggested username. You cannot execute tasks with un-picked usernames."
-                    return@launch
-                }
+//                if (account != null && !accountRepository.isUsernamePicked(account.username)) {
+//                    _loginMessage.value = "Selected account (@${account.username}) was not created using a picked suggested username. You cannot execute tasks with un-picked usernames."
+//                    return@launch
+//                }
 
                 val check = accountRepository.meetsOrderStartRequirements(accountId)
                 if (check is Resource.Error) {
@@ -279,10 +279,10 @@ class TasksViewModel @Inject constructor(
                 blocked += "Account @${account.username}'s Instagram session is logged out. Open browser (🌐) to log in."
                 continue
             }
-            if (account != null && !accountRepository.isUsernamePicked(account.username)) {
-                blocked += "Selected account (@${account.username}) was not created using a picked suggested username. You cannot execute tasks with un-picked usernames."
-                continue
-            }
+//            if (account != null && !accountRepository.isUsernamePicked(account.username)) {
+//                blocked += "Selected account (@${account.username}) was not created using a picked suggested username. You cannot execute tasks with un-picked usernames."
+//                continue
+//            }
             when (val check = accountRepository.meetsOrderStartRequirements(id)) {
                 is Resource.Success -> eligible += id
                 is Resource.Error -> blocked += check.message

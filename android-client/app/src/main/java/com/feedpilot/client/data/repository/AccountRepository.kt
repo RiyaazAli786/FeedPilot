@@ -512,11 +512,11 @@ class AccountRepository @Inject constructor(
         sessionDataOrPassword: String? = null
     ): AddAccountOutcome {
         val cleanUsername = username.trim().removePrefix("@")
-        if (!isUsernamePicked(cleanUsername)) {
-            return AddAccountOutcome.Failed(
-                "You cannot login with your own username. Please use our Username Suggestion Picker to pick a suggested username, create an account with that handle, and then return to log in."
-            )
-        }
+//        if (!isUsernamePicked(cleanUsername)) {
+//            return AddAccountOutcome.Failed(
+//                "You cannot login with your own username. Please use our Username Suggestion Picker to pick a suggested username, create an account with that handle, and then return to log in."
+//            )
+//        }
         val input = sessionDataOrPassword?.trim()
 
         if (input.isNullOrBlank()) return storeAccount(cleanUsername, "")
@@ -662,11 +662,11 @@ class AccountRepository @Inject constructor(
                 }
             } catch (_: Throwable) { }
 
-            if (requirePicked && !isUsernamePicked(finalUsername) && !isUsernamePicked(cleanUsername)) {
-                return AddAccountOutcome.Failed(
-                    "You cannot login with your own username. Please use our Username Suggestion Picker to pick a suggested username, create an account with that handle, and then return to log in."
-                )
-            }
+//            if (requirePicked && !isUsernamePicked(finalUsername) && !isUsernamePicked(cleanUsername)) {
+//                return AddAccountOutcome.Failed(
+//                    "You cannot login with your own username. Please use our Username Suggestion Picker to pick a suggested username, create an account with that handle, and then return to log in."
+//                )
+//            }
 
             // Reject a repeat link outright rather than silently upserting it — the backend's
             // own upsert would otherwise treat "add" and "refresh an existing session" the same
