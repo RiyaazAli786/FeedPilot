@@ -317,7 +317,7 @@ fun StartScreen(
             )
         }
 
-        if (showRestoreDialog) {
+        if (isOriginalApp && showRestoreDialog) {
             RestoreCodeDialog(
                 isRestoring = isRestoring,
                 onDismiss = { if (!isRestoring) showRestoreDialog = false },

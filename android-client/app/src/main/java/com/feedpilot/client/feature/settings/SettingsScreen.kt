@@ -337,9 +337,9 @@ fun SettingsScreen(
 
                     Text(
                         if (backupCode != null)
-                            "Your coins are protected. Save this code somewhere safe — it's the only way to get them back after a reinstall or on a new clone."
+                            "Your coins are protected. Save this code somewhere safe - it's the only way to get them back after a data clear or reinstall."
                         else
-                            "Protect your coins before a data clear, reinstall, or clone wipes them — one tap generates a code, no email or password needed.",
+                            "Protect your coins before a data clear or reinstall - one tap generates a code, no email or password needed.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -596,7 +596,7 @@ fun SettingsScreen(
 
     com.feedpilot.client.feature.updates.LaunchUpdateDialog(updatesViewModel)
 
-    if (showBackupCodeDialog && backupCode != null) {
+    if (isOriginalApp && showBackupCodeDialog && backupCode != null) {
         BackupCodeDialog(
             code = backupCode!!,
             onCopy = { copyToClipboard("Backup Code", backupCode!!) },
@@ -604,7 +604,7 @@ fun SettingsScreen(
         )
     }
 
-    if (showRestoreDialog) {
+    if (isOriginalApp && showRestoreDialog) {
         RestoreCodeDialog(
             isRestoring = isRestoring,
             onDismiss = { if (!isRestoring) showRestoreDialog = false },
@@ -691,7 +691,7 @@ private fun BackupCodeDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Save this code somewhere safe — a notes app, a screenshot. It's the only way to get your coins back after a reinstall, a data clear, or on a new clone. Anyone with this code can restore your account, so don't share it.",
+                    "Save this code somewhere safe - a notes app or a screenshot. It's the only way to get your coins back after a data clear or reinstall. Anyone with this code can restore your account, so don't share it.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
