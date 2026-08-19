@@ -111,6 +111,23 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(install) || install == ClientIdentity.Unknown)
             return BadRequest(new ApiError("A device installation id is required.", "missing_install_id"));
 
+        var existingDeviceUserId = await _db.Devices
+            .Where(d => d.AppId == identity.AppId &&
+                        d.DeviceId == install &&
+                        d.UserId != null)
+            .OrderByDescending(d => d.LastSeenAt)
+            .Select(d => d.UserId)
+            .FirstOrDefaultAsync(ct);
+        if (existingDeviceUserId.HasValue)
+        {
+            var existingDeviceUser = await _db.Users.FirstOrDefaultAsync(u => u.Id == existingDeviceUserId.Value, ct);
+            if (existingDeviceUser is not null)
+            {
+                await _wallets.GetOrCreateAsync(existingDeviceUser.Id, ct);
+                return Ok(await IssueTokens(existingDeviceUser, ct));
+            }
+        }
+
         // Deterministic identity per (clone, install). The reserved @device.feedpilot domain
         // can never collide with a real user's email, and the empty password hash means this
         // account can only be reached through device auth, never a password login.
