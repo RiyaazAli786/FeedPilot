@@ -137,6 +137,14 @@ data class TaskResultRequest(
 )
 
 @Serializable
+data class ManualActionResultRequest(
+    val accountId: String,
+    val taskType: String,
+    val target: String,
+    val message: String? = null
+)
+
+@Serializable
 data class CompletedTaskDto(
     val accountId: String,
     val taskType: String,

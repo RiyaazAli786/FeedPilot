@@ -104,7 +104,7 @@ class PostsViewModel @Inject constructor(
     private val content = MutableStateFlow(Content())
 
     val state: StateFlow<PostsUiState> =
-        combine(walletRepository.wallet, settingsRepository.settings, content) { wallet, settings, c ->
+        combine(walletRepository.spendableWallet, settingsRepository.settings, content) { wallet, settings, c ->
             PostsUiState(
                 coins = wallet?.totalCoins ?: 0,
                 targetUsername = c.targetUsername,

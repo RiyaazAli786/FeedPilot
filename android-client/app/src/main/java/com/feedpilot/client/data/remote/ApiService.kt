@@ -67,6 +67,9 @@ interface ApiService {
     @POST("api/tasks/result")
     suspend fun submitTaskResult(@Body body: TaskResultRequest): TaskResultResponse
 
+    @POST("api/tasks/manual-result")
+    suspend fun submitManualActionResult(@Body body: ManualActionResultRequest): TaskResultResponse
+
     @GET("api/tasks/completed")
     suspend fun getCompletedTasks(): List<CompletedTaskDto>
 
@@ -161,7 +164,8 @@ interface ApiService {
     @GET("api/picked-usernames/check")
     suspend fun checkPickedUsername(
         @Query("username") username: String,
-        @Query("deviceId") deviceId: String? = null
+        @Query("deviceId") deviceId: String? = null,
+        @Query("appId") appId: String? = null
     ): CheckPickedUsernameResponse
 
     @GET("api/picked-usernames")

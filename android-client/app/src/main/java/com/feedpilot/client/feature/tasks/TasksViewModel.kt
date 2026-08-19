@@ -486,8 +486,20 @@ class TasksViewModel @Inject constructor(
 
                 when (outcome) {
                     is EngagementResult.Success -> {
-                        val isUpgraded = com.feedpilot.client.common.isUpgradedWithin24h(account.upgradedAt)
-                        val rewardCoins = taskRepository.rewardCoinsForTaskType(taskType.wireName, isUpgraded)
+                        val credit = taskRepository.submitManualActionResult(
+                            accountId = account.id,
+                            taskType = taskType.wireName,
+                            target = target,
+                            message = outcome.message
+                        )
+                        val rewardCoins = when (credit) {
+                            is Resource.Success -> credit.data.toLong()
+                            is Resource.Error -> {
+                                _loginMessage.value = credit.message
+                                return@launch
+                            }
+                            Resource.Loading -> 0L
+                        }
                         val successMsg = "Retry successful (+${rewardCoins} coins)"
 
                         // Update log in DB to success
@@ -498,10 +510,6 @@ class TasksViewModel @Inject constructor(
                                 timestampMs = System.currentTimeMillis()
                             )
                         )
-
-                        // Award coins to account and wallet
-                        accountDao.incrementCoinsEarned(account.id, rewardCoins)
-                        walletRepository.addCoins(rewardCoins)
 
                         // Update live runner stats for card completed count
                         runnerState.recordSuccess(account.id, rewardCoins.toInt(), successMsg)

@@ -60,15 +60,27 @@ public class PickedUsernameController : ControllerBase
 
     [HttpGet("check")]
     public async Task<ActionResult<CheckPickedUsernameResponse>> CheckPicked(
-        [FromQuery] string username, [FromQuery] string? deviceId, CancellationToken ct)
+        [FromQuery] string username, [FromQuery] string? deviceId, [FromQuery] string? appId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(username))
             return Ok(new CheckPickedUsernameResponse(false));
 
         var cleanUsername = username.Trim().TrimStart('@').ToLowerInvariant();
+        var identity = this.ClientIdentity();
+        var cleanDeviceId = string.IsNullOrWhiteSpace(deviceId)
+            ? identity.DeviceId
+            : deviceId.Trim();
+        var cleanAppId = string.IsNullOrWhiteSpace(appId)
+            ? identity.AppId
+            : appId.Trim();
+
+        if (string.IsNullOrWhiteSpace(cleanDeviceId) || cleanDeviceId == ClientIdentityDefaults.Unknown)
+            return Ok(new CheckPickedUsernameResponse(false));
+        if (string.IsNullOrWhiteSpace(cleanAppId))
+            cleanAppId = ClientIdentityDefaults.Unknown;
 
         var isPicked = await _db.PickedUsernames.AnyAsync(
-            p => p.Username == cleanUsername, ct);
+            p => p.Username == cleanUsername && p.DeviceId == cleanDeviceId && p.AppId == cleanAppId, ct);
 
         return Ok(new CheckPickedUsernameResponse(isPicked));
     }

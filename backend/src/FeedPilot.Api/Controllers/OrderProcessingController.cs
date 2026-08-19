@@ -24,7 +24,6 @@ public class OrderProcessingController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IWalletService _wallets;
-    private readonly ISubscriptionService _subscriptions;
     private readonly IAppOrderService _orders;
     private readonly OrderPricingSettings _settings;
     private readonly ILogger<OrderProcessingController> _logger;
@@ -37,18 +36,17 @@ public class OrderProcessingController : ControllerBase
     /// is what dev is; production claims should always be taking the atomic path instead.
     /// </summary>
     private static readonly SemaphoreSlim ClaimGate = new(1, 1);
+    private static readonly TimeSpan StoryOrderClaimWindow = TimeSpan.FromHours(24);
 
     public OrderProcessingController(
         AppDbContext db,
         IWalletService wallets,
-        ISubscriptionService subscriptions,
         IAppOrderService orders,
         IOptions<OrderPricingSettings> settings,
         ILogger<OrderProcessingController> logger)
     {
         _db = db;
         _wallets = wallets;
-        _subscriptions = subscriptions;
         _orders = orders;
         _settings = settings.Value;
         _logger = logger;
@@ -160,6 +158,8 @@ public class OrderProcessingController : ControllerBase
         List<TaskType>? allowedTypes, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
+        var storyOrderFreshAfter = now.Subtract(StoryOrderClaimWindow);
+        var storyViewType = (int)TaskType.StoryView;
         var processing = (int)AppOrderStatus.Processing;
         var openStatuses = new[]
         {
@@ -183,13 +183,18 @@ public class OrderProcessingController : ControllerBase
                 SET "Status" = {processing},
                     "ProcessingDeviceId" = {deviceId},
                     "ProcessingStartedAt" = {now},
+                    "ReservedCount" = "Quantity" - "CompletedCount",
+                    "ReservedAt" = {now},
                     "UpdatedAt" = {now}
                 WHERE "Id" IN (
                     SELECT "Id" FROM "AppOrders"
-                    WHERE "CompletedCount" < "Quantity"
+                    WHERE "CompletedCount" + (CASE
+                            WHEN "ReservedCount" > 0 AND "ReservedAt" IS NOT NULL AND "ReservedAt" >= {staleBefore}
+                          THEN "ReservedCount" ELSE 0 END) < "Quantity"
                       AND "IsExternal" = FALSE
                       AND NOT ("Id" = ANY({excludes.ToArray()}))
                       AND "OrderType" = ANY({typeFilter})
+                      AND ("OrderType" <> {storyViewType} OR "CreatedAt" >= {storyOrderFreshAfter})
                       AND (
                         "Status" = ANY({openStatuses}) OR
                         ("Status" = {processing} AND (
@@ -211,12 +216,17 @@ public class OrderProcessingController : ControllerBase
                 SET "Status" = {processing},
                     "ProcessingDeviceId" = {deviceId},
                     "ProcessingStartedAt" = {now},
+                    "ReservedCount" = "Quantity" - "CompletedCount",
+                    "ReservedAt" = {now},
                     "UpdatedAt" = {now}
                 WHERE "Id" IN (
                     SELECT "Id" FROM "AppOrders"
-                    WHERE "CompletedCount" < "Quantity"
+                    WHERE "CompletedCount" + (CASE
+                            WHEN "ReservedCount" > 0 AND "ReservedAt" IS NOT NULL AND "ReservedAt" >= {staleBefore}
+                          THEN "ReservedCount" ELSE 0 END) < "Quantity"
                       AND "IsExternal" = FALSE
                       AND NOT ("Id" = ANY({excludes.ToArray()}))
+                      AND ("OrderType" <> {storyViewType} OR "CreatedAt" >= {storyOrderFreshAfter})
                       AND (
                         "Status" = ANY({openStatuses}) OR
                         ("Status" = {processing} AND (
@@ -271,6 +281,8 @@ public class OrderProcessingController : ControllerBase
                 order.Status = AppOrderStatus.Processing;
                 order.ProcessingDeviceId = deviceId;
                 order.ProcessingStartedAt = now;
+                order.ReservedCount = order.Quantity - order.CompletedCount;
+                order.ReservedAt = now;
                 order.UpdatedAt = now;
             }
             await _db.SaveChangesAsync(ct);
@@ -287,10 +299,15 @@ public class OrderProcessingController : ControllerBase
         string deviceId, DateTime staleBefore, List<Guid>? excludeOrderIds,
         List<TaskType>? allowedTypes = null)
     {
+        var storyOrderFreshAfter = DateTime.UtcNow.Subtract(StoryOrderClaimWindow);
         var query = _db.AppOrders
             .Where(o =>
-                o.CompletedCount < o.Quantity &&
+                o.CompletedCount + (
+                    o.ReservedCount > 0 && o.ReservedAt != null && o.ReservedAt >= staleBefore
+                        ? o.ReservedCount : 0
+                ) < o.Quantity &&
                 !o.IsExternal &&
+                (o.OrderType != TaskType.StoryView || o.CreatedAt >= storyOrderFreshAfter) &&
                 (o.Status == AppOrderStatus.Pending ||
                  o.Status == AppOrderStatus.Approved ||
                  o.Status == AppOrderStatus.Submitted ||
@@ -330,6 +347,8 @@ public class OrderProcessingController : ControllerBase
             order.Status = AppOrderStatus.Pending;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
             order.UpdatedAt = now;
         }
 
@@ -354,6 +373,10 @@ public class OrderProcessingController : ControllerBase
         await _db.AppOrders
             .Where(o => o.Status == AppOrderStatus.Processing && o.ProcessingDeviceId == deviceId)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.ProcessingStartedAt, DateTime.UtcNow), ct);
+
+        await _db.AppOrders
+            .Where(o => o.ProcessingDeviceId == deviceId && o.ReservedCount > 0)
+            .ExecuteUpdateAsync(s => s.SetProperty(o => o.ReservedAt, DateTime.UtcNow), ct);
     }
 
     /// <summary>
@@ -464,12 +487,12 @@ public class OrderProcessingController : ControllerBase
         var newlyDone = failedReport
             ? 0
             : Math.Max(0, Math.Min(reportedCompleted, order.CompletedCount) - before);
+        order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
         var workerCoinsAwarded = 0;
         if (newlyDone > 0)
         {
             var userId = User.GetUserId();
             // A paid plan multiplies what each completed action is worth (2× / 3× / 5×).
-            var multiplier = await _subscriptions.GetCoinMultiplierAsync(userId, ct);
             Account? workerAccount = null;
             if (body.AccountId is { } accountId)
             {
@@ -480,7 +503,7 @@ public class OrderProcessingController : ControllerBase
             var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
             bool isUpgraded = workerAccount?.UpgradedAt is { } upgradedAt && DateTime.UtcNow - upgradedAt < TimeSpan.FromHours(24);
             int baseActionReward = RunnerSettingsStore.GetActionCoinReward(order.OrderType, isUpgraded, runnerSettings);
-            workerCoinsAwarded = newlyDone * baseActionReward * multiplier;
+            workerCoinsAwarded = newlyDone * baseActionReward;
 
             await _wallets.CreditAsync(
                 userId, workerCoinsAwarded, WalletTransactionType.Earn, $"order:{order.Id}", ct);
@@ -504,7 +527,7 @@ public class OrderProcessingController : ControllerBase
                         TaskType = order.OrderType,
                         TargetId = order.TargetUsername ?? order.TargetUrl,
                         Status = FeedPilot.Api.Domain.TaskStatus.Completed,
-                        RewardCoins = baseActionReward * multiplier,
+                        RewardCoins = baseActionReward,
                         CreatedAt = DateTime.UtcNow,
                         CompletedAt = DateTime.UtcNow
                     });
@@ -523,6 +546,8 @@ public class OrderProcessingController : ControllerBase
                 : body.ErrorMessage;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
         }
         else if (IsPrivateAccount(body))
         {
@@ -530,6 +555,8 @@ public class OrderProcessingController : ControllerBase
             order.ErrorMessage = "Can't process order on private account.";
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
         }
         else if (order.CompletedCount >= order.Quantity)
         {
@@ -537,12 +564,14 @@ public class OrderProcessingController : ControllerBase
             order.CompletedAt ??= DateTime.UtcNow;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
         }
         else if (body.Release)
         {
             // Still owed work — free it so another device can continue.
             order.Status = AppOrderStatus.Pending;
-            order.ProcessingDeviceId = null;
+            if (order.ReservedCount <= 0) order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
         }
         else
@@ -568,13 +597,16 @@ public class OrderProcessingController : ControllerBase
         var order = await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id, ct);
         if (order is null) return NotFound(new ApiError("Order not found."));
 
-        if (order.Status == AppOrderStatus.Processing && order.ProcessingDeviceId == body.DeviceId)
+        if (order.ProcessingDeviceId == body.DeviceId &&
+            (order.Status == AppOrderStatus.Processing || order.ReservedCount > 0))
         {
             order.Status = order.CompletedCount >= order.Quantity
                 ? AppOrderStatus.Completed
                 : AppOrderStatus.Pending;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
             order.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
         }
@@ -643,7 +675,6 @@ public class OrderProcessingController : ControllerBase
 
         var results = new List<BatchReportProgressResult>();
         var userId = User.GetUserId();
-        var multiplier = await _subscriptions.GetCoinMultiplierAsync(userId, ct);
         int totalCoinsAwarded = 0;
         // Refund checks are deferred until after the batch's single SaveChangesAsync below
         // commits every order's new Status — running the RefundIssued claim mid-loop, before
@@ -699,13 +730,14 @@ public class OrderProcessingController : ControllerBase
             }
 
             var newlyDone = failedReport ? 0 : Math.Max(0, Math.Min(reportedCompleted, order.CompletedCount) - before);
+            order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
             if (newlyDone > 0)
             {
             var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
             Account? workerAccount = item.AccountId.HasValue && accountsMap.TryGetValue(item.AccountId.Value, out var acc) ? acc : null;
             bool isUpgraded = workerAccount?.UpgradedAt is { } upgradedAt && DateTime.UtcNow - upgradedAt < TimeSpan.FromHours(24);
             int baseActionReward = RunnerSettingsStore.GetActionCoinReward(order.OrderType, isUpgraded, runnerSettings);
-            var coins = newlyDone * baseActionReward * multiplier;
+            var coins = newlyDone * baseActionReward;
             totalCoinsAwarded += coins;
 
                 if (workerAccount is not null)
@@ -722,7 +754,7 @@ public class OrderProcessingController : ControllerBase
                             TaskType = order.OrderType,
                             TargetId = order.TargetUsername ?? order.TargetUrl,
                             Status = FeedPilot.Api.Domain.TaskStatus.Completed,
-                            RewardCoins = baseActionReward * multiplier,
+                            RewardCoins = baseActionReward,
                             CreatedAt = DateTime.UtcNow,
                             CompletedAt = DateTime.UtcNow
                         });
@@ -741,6 +773,8 @@ public class OrderProcessingController : ControllerBase
                 order.Status = AppOrderStatus.NotFound;
                 order.ProcessingDeviceId = null;
                 order.ProcessingStartedAt = null;
+                order.ReservedCount = 0;
+                order.ReservedAt = null;
                 unfulfillableOrders.Add(order);
             }
             else if (IsPrivateAccount(item.FailureCode, item.ErrorMessage))
@@ -748,6 +782,8 @@ public class OrderProcessingController : ControllerBase
                 order.Status = AppOrderStatus.Failed;
                 order.ProcessingDeviceId = null;
                 order.ProcessingStartedAt = null;
+                order.ReservedCount = 0;
+                order.ReservedAt = null;
                 unfulfillableOrders.Add(order);
             }
             else if (item.Release || order.CompletedCount >= order.Quantity)
@@ -755,9 +791,19 @@ public class OrderProcessingController : ControllerBase
                 order.Status = order.CompletedCount >= order.Quantity
                     ? AppOrderStatus.Completed
                     : (failedReport ? AppOrderStatus.Failed : AppOrderStatus.InProgress);
-                order.ProcessingDeviceId = null;
+                if (order.ReservedCount <= 0) order.ProcessingDeviceId = null;
                 order.ProcessingStartedAt = null;
-                if (order.Status == AppOrderStatus.Failed) unfulfillableOrders.Add(order);
+                if (order.Status == AppOrderStatus.Completed)
+                {
+                    order.ReservedCount = 0;
+                    order.ReservedAt = null;
+                }
+                if (order.Status == AppOrderStatus.Failed)
+                {
+                    order.ReservedCount = 0;
+                    order.ReservedAt = null;
+                    unfulfillableOrders.Add(order);
+                }
             }
 
             order.UpdatedAt = DateTime.UtcNow;

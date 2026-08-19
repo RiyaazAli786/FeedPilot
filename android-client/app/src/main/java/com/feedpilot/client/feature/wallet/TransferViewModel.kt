@@ -50,7 +50,7 @@ class TransferViewModel @Inject constructor(
     private var searchJob: Job? = null
     private var suggestJob: Job? = null
 
-    val state: StateFlow<TransferUiState> = combine(walletRepository.wallet, form) { wallet, f ->
+    val state: StateFlow<TransferUiState> = combine(walletRepository.spendableWallet, form) { wallet, f ->
         f.copy(totalCoins = wallet?.totalCoins ?: 0)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransferUiState())
 

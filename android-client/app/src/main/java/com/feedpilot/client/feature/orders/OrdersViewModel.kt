@@ -85,7 +85,7 @@ class OrdersViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OrdersUiState())
-    val uiState: StateFlow<OrdersUiState> = combine(_uiState, walletRepository.wallet) { state, wallet ->
+    val uiState: StateFlow<OrdersUiState> = combine(_uiState, walletRepository.spendableWallet) { state, wallet ->
         state.copy(coins = wallet?.totalCoins ?: 0)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), OrdersUiState())
 

@@ -85,7 +85,7 @@ namespace FeedPilot.Api.Controllers
         }
 
         [HttpPost("upload")]
-        public async Task<IActionResult> UploadExcel(IFormFile file)
+        public IActionResult UploadExcel(IFormFile file)
         {
             if (file == null || file.Length == 0 || !file.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
             {

@@ -54,7 +54,7 @@ class FollowersViewModel @Inject constructor(
     private val content = MutableStateFlow(Content())
 
     val state: StateFlow<FollowersUiState> =
-        combine(walletRepository.wallet, settingsRepository.settings, content) { wallet, settings, c ->
+        combine(walletRepository.spendableWallet, settingsRepository.settings, content) { wallet, settings, c ->
             val followerCounts = listOf(100, 200, 400, 500, 1000, 2000, 5000, 10000)
             val packages = followerCounts.map { count ->
                 FollowerPackage(count, count * settings.pricePerFollow.toLong())

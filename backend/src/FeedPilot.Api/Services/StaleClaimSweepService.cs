@@ -69,8 +69,6 @@ public class StaleClaimSweepService : BackgroundService
                  o.ProcessingStartedAt < staleBefore))
             .ToListAsync(ct);
 
-        if (stale.Count == 0) return;
-
         var now = DateTime.UtcNow;
         foreach (var order in stale)
         {
@@ -79,10 +77,31 @@ public class StaleClaimSweepService : BackgroundService
                 : AppOrderStatus.Pending;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
             order.UpdatedAt = now;
         }
 
+        var staleReservations = await db.AppOrders
+            .Where(o =>
+                o.Status != AppOrderStatus.Processing &&
+                o.ReservedCount > 0 &&
+                (o.ReservedAt == null || o.ReservedAt < staleBefore))
+            .ToListAsync(ct);
+
+        foreach (var order in staleReservations)
+        {
+            order.ProcessingDeviceId = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
+            order.UpdatedAt = now;
+        }
+
+        if (stale.Count == 0 && staleReservations.Count == 0) return;
+
         await db.SaveChangesAsync(ct);
-        _logger.LogInformation("Stale claim sweep released {Count} orphaned order claim(s).", stale.Count);
+        _logger.LogInformation(
+            "Stale claim sweep released {Count} orphaned order claim(s), cleared {ReservationCount} stale reservation(s).",
+            stale.Count, staleReservations.Count);
     }
 }

@@ -44,7 +44,7 @@ class WithdrawViewModel @Inject constructor(
     private val uiMessage = MutableStateFlow<Pair<String, Boolean>?>(null)
 
     val state: StateFlow<WithdrawUiState> = combine(
-        walletRepository.wallet,
+        walletRepository.spendableWallet,
         walletRepository.withdrawals,
         submitting,
         uiMessage,

@@ -16,18 +16,15 @@ public class TasksController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IWalletService _wallets;
-    private readonly ISubscriptionService _subscriptions;
     private readonly TelegramRequestLogger? _telegram;
 
     public TasksController(
         AppDbContext db,
         IWalletService wallets,
-        ISubscriptionService subscriptions,
         TelegramRequestLogger? telegram = null)
     {
         _db = db;
         _wallets = wallets;
-        _subscriptions = subscriptions;
         _telegram = telegram;
     }
 
@@ -70,19 +67,15 @@ public class TasksController : ControllerBase
             task.CompletedAt = DateTime.UtcNow;
             task.AccountId = account.Id;
             // A paid plan multiplies the reward (2× / 3× / 5×).
-            var multiplier = await _subscriptions.GetCoinMultiplierAsync(userId, ct);
             var isUpgraded = account.UpgradedAt is { } upgradedAt && DateTime.UtcNow - upgradedAt < TimeSpan.FromHours(24);
 
             // Dashboard-configured per-action-type base reward (see AdminRunnerSettingsController's
             // "Action Coin Pricing" panel) rather than the per-task RewardCoins column, which is
             // never actually set anywhere and always defaults to 1. The Normal/Upgraded distinction
-            // already lives in this lookup, so — unlike the old flat-reward code — the multiplier
-            // here is purely the paid-plan multiplier, not also floored to 2 for an upgraded free
-            // account (that would double the upgrade bonus on top of the Upgraded column already
-            // being higher than Normal).
+            // already lives in this lookup, and paid-plan multipliers do not change task awards.
             var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
             var baseReward = RunnerSettingsStore.GetActionCoinReward(task.TaskType, isUpgraded, runnerSettings);
-            awarded = baseReward * multiplier;
+            awarded = baseReward;
 
             account.CoinsEarned += awarded;
             account.LastActive = DateTime.UtcNow;
@@ -128,6 +121,43 @@ public class TasksController : ControllerBase
             identity.AppId, deviceModel, identity.DeviceId);
 
         return Ok(new TaskResultResponse(task.Id, task.Status, awarded, walletBalance));
+    }
+
+    [HttpPost("manual-result")]
+    public async Task<ActionResult<TaskResultResponse>> SubmitManualResult(ManualActionResultRequest req, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == req.AccountId && a.UserId == userId, ct);
+        if (account is null) return BadRequest(new ApiError("Account does not belong to user.", "invalid_account"));
+
+        var isUpgraded = account.UpgradedAt is { } upgradedAt && DateTime.UtcNow - upgradedAt < TimeSpan.FromHours(24);
+        var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
+        var awarded = RunnerSettingsStore.GetActionCoinReward(req.TaskType, isUpgraded, runnerSettings);
+
+        var task = new EngagementTask
+        {
+            AccountId = account.Id,
+            TaskType = req.TaskType,
+            TargetId = req.Target,
+            Status = TaskStatus.Completed,
+            RewardCoins = awarded,
+            CreatedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
+        };
+        _db.Tasks.Add(task);
+
+        account.CoinsEarned += awarded;
+        account.LastActive = DateTime.UtcNow;
+        var credit = await _wallets.CreditAsync(userId, awarded, WalletTransactionType.Earn, $"manual:{task.Id}", ct);
+
+        var identity = this.ClientIdentity();
+        var deviceModel = Request.Headers["X-Device-Model"].ToString();
+        _ = _telegram?.LogInstagramActivityAsync(
+            req.TaskType.ToString(), req.Target, account.Username, true, req.Message,
+            identity.AppId, deviceModel, identity.DeviceId);
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(new TaskResultResponse(task.Id, task.Status, awarded, credit.Balance));
     }
 
     /// <summary>Retrieves completed task targets for all accounts belonging to the current user.</summary>

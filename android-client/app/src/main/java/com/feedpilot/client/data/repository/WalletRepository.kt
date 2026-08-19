@@ -68,6 +68,8 @@ class WalletRepository @Inject constructor(
         )
     }
 
+    val spendableWallet: Flow<WalletEntity?> = walletDao.observe()
+
     suspend fun addPendingEarning(taskId: String, orderId: String?, accountId: String, rewardCoins: Long) {
         if (rewardCoins <= 0) return
         pendingEarningDao.upsert(
@@ -95,7 +97,7 @@ class WalletRepository @Inject constructor(
      * `refresh()`'s own network round trip) — which is what showed up as a reward appearing and
      * then visibly dropping a moment later while running multiple accounts at once.
      */
-    suspend fun confirmPendingEarning(taskId: String, confirmedCoins: Long) {
+    suspend fun creditConfirmedEarning(taskId: String, confirmedCoins: Long) {
         if (confirmedCoins > 0) reconcileCoins(confirmedCoins)
         clearPendingEarning(taskId)
     }

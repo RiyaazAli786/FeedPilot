@@ -13,6 +13,7 @@ import com.feedpilot.client.data.local.TaskEntity
 import com.feedpilot.client.data.remote.ApiService
 import com.feedpilot.client.data.remote.HanumanSmmClient
 import com.feedpilot.client.data.remote.SmmAdminOrder
+import com.feedpilot.client.data.remote.dto.ManualActionResultRequest
 import com.feedpilot.client.data.remote.dto.TaskResultRequest
 import com.feedpilot.client.data.toEntity
 import kotlinx.coroutines.Dispatchers
@@ -398,6 +399,22 @@ class TaskRepository @Inject constructor(
     suspend fun rewardCoinsForTaskType(taskType: String?, isUpgraded: Boolean): Long =
         rewardCoinsFor(taskType, isUpgraded, settingsRepository.current())
 
+    suspend fun submitManualActionResult(
+        accountId: String,
+        taskType: String,
+        target: String,
+        message: String? = null
+    ): Resource<Int> = try {
+        val response = api.submitManualActionResult(
+            ManualActionResultRequest(accountId, taskType, target, message)
+        )
+        walletRepository.reconcileCoins(response.coinsAwarded.toLong())
+        if (response.coinsAwarded != 0) accountDao.incrementCoinsEarned(accountId, response.coinsAwarded.toLong())
+        Resource.Success(response.coinsAwarded)
+    } catch (t: Throwable) {
+        Resource.Error(t.apiErrorMessage("Failed to submit retry result"), t)
+    }
+
     private fun rewardCoinsFor(taskType: String?, isUpgraded: Boolean, settings: AppSettings): Long {
         val (normal, upgraded) = when {
             taskType.equals(TASK_TYPE_FOLLOW, ignoreCase = true) -> settings.followCoinsNormal to settings.followCoinsUpgraded
@@ -419,7 +436,7 @@ class TaskRepository @Inject constructor(
      * settlement request that just landed — reconcile any gap now instead of leaving a stale
      * local price as a silent, permanent over/under-credit in the wallet and account tally.
      *
-     * The wallet side goes through [WalletRepository.confirmPendingEarning] rather than a plain
+     * The wallet side goes through [WalletRepository.creditConfirmedEarning] rather than a plain
      * clear-then-reconcile — clearing [taskId]'s pending row and crediting the wallet base total
      * used to be two separate calls, which left a window where the reward was in neither bucket.
      * Usually too brief to notice, but wide enough to show up as a visible drop right after a
@@ -427,7 +444,7 @@ class TaskRepository @Inject constructor(
      * wallet mutation lock.
      */
     private suspend fun reconcileReward(taskId: String, accountId: String, locallyCredited: Long, backendAwarded: Long) {
-        walletRepository.confirmPendingEarning(taskId, backendAwarded)
+        walletRepository.creditConfirmedEarning(taskId, backendAwarded)
         val delta = backendAwarded - locallyCredited
         if (delta != 0L) accountDao.incrementCoinsEarned(accountId, delta)
     }

@@ -88,6 +88,8 @@ public class AppOrder
 
     public int Quantity { get; set; }
     public int CompletedCount { get; set; }
+    public int ReservedCount { get; set; }
+    public DateTime? ReservedAt { get; set; }
     public int StartCount { get; set; }
 
     /// <summary>Coins debited when the order was accepted. Priced by the server, not the client.</summary>

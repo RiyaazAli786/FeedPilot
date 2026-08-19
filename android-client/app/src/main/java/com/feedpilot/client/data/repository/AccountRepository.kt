@@ -494,7 +494,7 @@ class AccountRepository @Inject constructor(
         if (getLocalPickedSet().contains(clean)) return true
 
         return try {
-            val res = api.checkPickedUsername(clean)
+            val res = api.checkPickedUsername(clean, deviceIdentity.hardwareDeviceId, deviceIdentity.appId)
             if (res.isPicked) {
                 saveLocalPicked(clean)
                 true

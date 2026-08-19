@@ -308,7 +308,7 @@ class TaskRunnerService : Service() {
                 if (activeAllowedTypes.isEmpty() && allowedTypes.isNotEmpty()) {
                     val cooldownMins = settings.dailyLimitCooldownMinutes.coerceAtLeast(1)
                     Log.w(TAG, "[$accountId] Daily action limits reached for all activities ($allowedTypes). Cooldown for ${cooldownMins}m...")
-                    runnerState.noteAccount(accountId, "Daily limit reached — cooling down for ${cooldownMins}m…")
+                    runnerState.noteAccount(accountId, PROCESSING_MESSAGE)
                     updateNotification()
                     delay(cooldownMins * 60_000L)
                     continue
@@ -366,9 +366,10 @@ class TaskRunnerService : Service() {
                     }
                     val baseMessage = if (activeAllowedTypes.size < allowedTypes.size) {
                         val maxedTypes = (allowedTypes - activeAllowedTypes).joinToString("/") { it.wireName }
-                        "$maxedTypes limit reached for today — checking for other orders…"
+                        Log.w(TAG, "[$accountId] $maxedTypes limit reached for today; checking for other orders")
+                        PROCESSING_MESSAGE
                     } else {
-                        "Processing orders…"
+                        PROCESSING_MESSAGE
                     }
                     idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, baseMessage, settings.fetchDelayMs)
                     continue
@@ -465,7 +466,8 @@ class TaskRunnerService : Service() {
                     // Tasks were claimed locally/remote but all were ineligible for this account.
                     val baseMessage = if (activeAllowedTypes.size < allowedTypes.size) {
                         val maxedTypes = (allowedTypes - activeAllowedTypes).joinToString("/") { it.wireName }
-                        "$maxedTypes limit reached for today — checking next orders…"
+                        Log.w(TAG, "[$accountId] $maxedTypes limit reached for today; checking next orders")
+                        PROCESSING_MESSAGE
                     } else {
                         "Checking next orders…"
                     }
@@ -1078,6 +1080,7 @@ class TaskRunnerService : Service() {
         private const val NOTIFICATION_ID_BASE = 4201
         private const val STATUS_PENDING = "Pending"
         private const val STATUS_SKIPPED = "Skipped"
+        private const val PROCESSING_MESSAGE = "Processing..."
         private const val NETWORK_RETRY_DELAY_MS = 10_000L
         /** Matches the id prefix TaskRepository stamps on tasks fanned out from a backend order. */
         private const val BACKEND_TASK_PREFIX = "backend_order_"

@@ -162,6 +162,7 @@ public record UpdateAdminAccountRequest(
 public record TaskDto(Guid Id, Guid OrderId, Guid? AccountId, TaskType TaskType, string TargetId,
     TaskStatus Status, int RetryCount, int RewardCoins, DateTime CreatedAt);
 public record TaskResultRequest([Required] Guid TaskId, [Required] Guid AccountId, bool Success, string? Message);
+public record ManualActionResultRequest([Required] Guid AccountId, [Required] TaskType TaskType, [Required] string Target, string? Message);
 public record TaskResultResponse(Guid TaskId, TaskStatus Status, int CoinsAwarded, long WalletBalance);
 public record CompletedTaskDto(Guid AccountId, string TaskType, string TargetId, DateTime CompletedAt);
 
