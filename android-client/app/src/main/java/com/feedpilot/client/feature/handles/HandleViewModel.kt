@@ -317,8 +317,12 @@ class HandleViewModel @Inject constructor(
         rssFeedJson.value = null
     }
 
-    fun addHandles(usernames: Collection<String>, pollIntervalMinutes: Int) {
-        val clean = usernames.map(::normalizeUsername).filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+    fun addHandles(userIntervals: Map<String, Int>) {
+        val clean = userIntervals
+            .mapKeys { (username, _) -> normalizeUsername(username) }
+            .filterKeys { it.isNotBlank() }
+            .entries
+            .distinctBy { it.key.lowercase() }
         if (clean.isEmpty()) {
             error.value = "Select at least one handle."
             return
@@ -327,9 +331,9 @@ class HandleViewModel @Inject constructor(
             busy.value = true
             var added = 0
             var failed = 0
-            clean.forEach { username ->
+            clean.forEach { (username, interval) ->
                 runCatching {
-                    watchedHandles.addHandle(username, pollIntervalMinutes.coerceIn(15, 1440))
+                    watchedHandles.addHandle(username, interval.coerceIn(15, 1440))
                     added++
                 }.onFailure {
                     failed++

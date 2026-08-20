@@ -35,7 +35,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -66,6 +65,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -110,7 +110,6 @@ fun HandleScreen(
     val balanceState by balanceViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var username by remember { mutableStateOf("") }
-    var interval by remember { mutableStateOf("60") }
     val detailHandle = state.handles.firstOrNull { it.id == state.detailHandleId }
     var pendingDelete by remember { mutableStateOf<WatchedHandleEntity?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -163,13 +162,13 @@ fun HandleScreen(
     if (searchOpen) {
         HandleSearchDialog(
             query = username,
-            interval = interval.toIntOrNull() ?: 60,
+            defaultInterval = 60,
             results = state.searchResults,
             searching = state.searching,
             loading = state.loading,
             onSearch = { viewModel.searchInstagramUsers(username) },
             onSave = { selected ->
-                viewModel.addHandles(selected, interval.toIntOrNull() ?: 60)
+                viewModel.addHandles(selected)
                 searchOpen = false
                 username = ""
                 viewModel.clearSearchResults()
@@ -267,35 +266,6 @@ fun HandleScreen(
                             },
                             singleLine = true
                         )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = interval,
-                                onValueChange = { interval = it.filter(Char::isDigit).take(4) },
-                                modifier = Modifier.weight(1f).height(52.dp),
-                                placeholder = { Text("Interval min") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                            )
-                            Button(
-                                onClick = {
-                                    viewModel.addHandle(username, interval.toIntOrNull() ?: 60)
-                                    username = ""
-                                },
-                                modifier = Modifier.width(94.dp).height(52.dp),
-                                enabled = !state.loading,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.brand.orange),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Add", fontSize = 13.sp)
-                            }
-                        }
                     }
                 }
             }
@@ -343,15 +313,20 @@ private fun EmptyHandles() {
 @Composable
 private fun HandleSearchDialog(
     query: String,
-    interval: Int,
+    defaultInterval: Int,
     results: List<InstagramSearchUser>,
     searching: Boolean,
     loading: Boolean,
     onSearch: () -> Unit,
-    onSave: (Set<String>) -> Unit,
+    onSave: (Map<String, Int>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var selected by remember(results) { mutableStateOf<Set<String>>(emptySet()) }
+    val intervals = remember(results) {
+        mutableStateMapOf<String, String>().apply {
+            results.forEach { user -> put(user.username, defaultInterval.toString()) }
+        }
+    }
     LaunchedEffect(Unit) {
         if (query.trim().length >= 2) onSearch()
     }
@@ -398,37 +373,65 @@ private fun HandleSearchDialog(
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selected = if (checked) selected - user.username else selected + user.username
-                                    }
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
+                                Column(
                                     Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Checkbox(
-                                        checked = checked,
-                                        onCheckedChange = {
-                                            selected = if (checked) selected - user.username else selected + user.username
-                                        }
-                                    )
-                                    Avatar(user.profilePicUrl, size = 40)
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("@${user.username}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            if (user.isVerified) {
-                                                Spacer(Modifier.width(5.dp))
-                                                Text("Verified", color = AppTheme.brand.orange, fontSize = 11.sp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Checkbox(
+                                            checked = checked,
+                                            onCheckedChange = {
+                                                selected = if (checked) selected - user.username else selected + user.username
                                             }
+                                        )
+                                        Avatar(user.profilePicUrl, size = 40)
+                                        Column(
+                                            Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    selected = if (checked) selected - user.username else selected + user.username
+                                                }
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("@${user.username}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                if (user.isVerified) {
+                                                    Spacer(Modifier.width(5.dp))
+                                                    Text("Verified", color = AppTheme.brand.orange, fontSize = 11.sp)
+                                                }
+                                            }
+                                            Text(
+                                                user.fullName ?: if (user.isPrivate) "Private account" else "Instagram profile",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                         }
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
                                         Text(
-                                            user.fullName ?: if (user.isPrivate) "Private account" else "Instagram profile",
+                                            "Watch interval",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedTextField(
+                                            value = intervals[user.username] ?: defaultInterval.toString(),
+                                            onValueChange = { value ->
+                                                intervals[user.username] = value.filter(Char::isDigit).take(4)
+                                                if (!checked) selected = selected + user.username
+                                            },
+                                            modifier = Modifier.width(96.dp).height(52.dp),
+                                            suffix = { Text("min", fontSize = 12.sp) },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                         )
                                     }
                                 }
@@ -436,7 +439,7 @@ private fun HandleSearchDialog(
                         }
                     }
                     Text(
-                        "${selected.size} selected  |  Watcher interval: $interval min",
+                        "${selected.size} selected",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp
                     )
@@ -444,7 +447,16 @@ private fun HandleSearchDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(selected) }, enabled = selected.isNotEmpty() && !loading && !searching) {
+            Button(
+                onClick = {
+                    onSave(
+                        selected.associateWith { username ->
+                            (intervals[username]?.toIntOrNull() ?: defaultInterval).coerceIn(15, 1440)
+                        }
+                    )
+                },
+                enabled = selected.isNotEmpty() && !loading && !searching
+            ) {
                 Text("Save")
             }
         },
