@@ -141,7 +141,8 @@ data class ManualActionResultRequest(
     val accountId: String,
     val taskType: String,
     val target: String,
-    val message: String? = null
+    val message: String? = null,
+    val idempotencyKey: String? = null
 )
 
 @Serializable
@@ -170,7 +171,8 @@ data class TaskResultResponse(
     val taskId: String,
     val status: String,
     val coinsAwarded: Int,
-    val walletBalance: Long
+    val walletBalance: Long,
+    val accountCoinsEarned: Long? = null
 )
 
 // ---------- Wallet ----------
@@ -349,7 +351,9 @@ data class AppOrderDto(
     val errorMessage: String? = null,
     val createdAt: String? = null,
     val completedAt: String? = null,
-    val workerCoinsAwarded: Int = 0
+    val workerCoinsAwarded: Int = 0,
+    val workerWalletBalance: Long? = null,
+    val workerAccountCoinsEarned: Long? = null
 )
 
 @Serializable
@@ -532,7 +536,9 @@ data class ReportProgressRequest(
     /** Machine-readable terminal failure reason for worker-side unrecoverable errors. */
     val failureCode: String? = null,
     /** Current observed public count for the target, e.g. current followers for follow orders. */
-    val observedCount: Int? = null
+    val observedCount: Int? = null,
+    /** Client-local task/action id used as an idempotency key for one successful worker payout. */
+    val clientTaskId: String? = null
 )
 
 @Serializable
@@ -543,7 +549,8 @@ data class BatchProgressItem(
     val errorMessage: String? = null,
     val accountId: String? = null,
     val failureCode: String? = null,
-    val observedCount: Int? = null
+    val observedCount: Int? = null,
+    val clientTaskId: String? = null
 )
 
 @Serializable

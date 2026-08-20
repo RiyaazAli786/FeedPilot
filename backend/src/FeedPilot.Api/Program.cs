@@ -267,6 +267,13 @@ app.UseRateLimiter();
 app.UseRequestSigning();
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (ctx, next) =>
+{
+    await next();
+    var wallets = ctx.RequestServices.GetService<IWalletService>();
+    if (wallets is not null)
+        await wallets.FlushPendingBroadcastsAsync(CancellationToken.None);
+});
 app.MapControllers().RequireRateLimiting("api");
 app.MapHub<FeedPilot.Api.Hubs.CoinSyncHub>("/hubs/coin-sync");
 app.MapGet("/", () => Results.Ok(new { service = "FeedPilot API", status = "ok" }));

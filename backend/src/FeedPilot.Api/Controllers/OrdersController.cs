@@ -158,7 +158,7 @@ public class OrdersController : ControllerBase
             .ToListAsync(ct);
 
         return Ok(new PagedOrdersDto(
-            items.Select(ToDto).ToList(), page, pageSize, totalCount,
+            items.Select(o => ToDto(o)).ToList(), page, pageSize, totalCount,
             (int)Math.Ceiling(totalCount / (double)pageSize)));
     }
 
@@ -275,12 +275,16 @@ public class OrdersController : ControllerBase
             .ToListAsync(ct);
 
         return Ok(new PagedOrdersDto(
-            items.Select(ToDto).ToList(), page, pageSize, totalCount,
+            items.Select(o => ToDto(o)).ToList(), page, pageSize, totalCount,
             (int)Math.Ceiling(totalCount / (double)pageSize)));
     }
 
-    internal static AppOrderDto ToDto(AppOrder o, int workerCoinsAwarded = 0) => new(
+    internal static AppOrderDto ToDto(
+        AppOrder o,
+        int workerCoinsAwarded = 0,
+        long? workerWalletBalance = null,
+        long? workerAccountCoinsEarned = null) => new(
         o.Id, o.OrderType, o.TargetUrl, o.TargetUsername, o.Quantity, o.CompletedCount,
         o.StartCount, o.CoinsSpent, o.Status, o.ProviderName, o.ProviderOrderId, o.ErrorMessage,
-        o.CreatedAt, o.CompletedAt, workerCoinsAwarded);
+        o.CreatedAt, o.CompletedAt, workerCoinsAwarded, workerWalletBalance, workerAccountCoinsEarned);
 }

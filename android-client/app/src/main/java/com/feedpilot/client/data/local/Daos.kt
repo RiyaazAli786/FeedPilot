@@ -20,6 +20,9 @@ interface AccountDao {
     @Query("UPDATE accounts SET coinsEarned = coinsEarned + :increment WHERE id = :id")
     suspend fun incrementCoinsEarned(id: String, increment: Long)
 
+    @Query("UPDATE accounts SET coinsEarned = :coinsEarned WHERE id = :id")
+    suspend fun setCoinsEarned(id: String, coinsEarned: Long)
+
     /**
      * Targeted single-column update for a cookie rotation Instagram issued mid-action (see
      * IgActionResult.updatedCookies). A full upsert of a stale in-memory copy risked clobbering
@@ -107,6 +110,10 @@ interface TaskDao {
     @Query("SELECT COUNT(*) FROM tasks WHERE orderId = :orderId AND status = 'Completed'")
     suspend fun completedCountForOrder(orderId: String): Int
 
+    /** Same as [completedCountForOrder], scoped to one account's own rows. */
+    @Query("SELECT COUNT(*) FROM tasks WHERE orderId = :orderId AND accountId = :accountId AND status = 'Completed'")
+    suspend fun completedCountForOrderAndAccount(orderId: String, accountId: String): Int
+
     /**
      * Marks this order's currently-'Completed' rows as 'Reported' so a later
      * [completedCountForOrder] call doesn't count them again. Must only be called right after a
@@ -116,6 +123,12 @@ interface TaskDao {
      */
     @Query("UPDATE tasks SET status = 'Reported' WHERE orderId = :orderId AND status = 'Completed'")
     suspend fun markOrderTasksReported(orderId: String)
+
+    @Query("UPDATE tasks SET status = 'Reported' WHERE orderId = :orderId AND accountId = :accountId AND status = 'Completed'")
+    suspend fun markOrderTasksReportedForAccount(orderId: String, accountId: String)
+
+    @Query("UPDATE tasks SET status = 'Reported' WHERE id = :taskId AND status = 'Completed'")
+    suspend fun markTaskReported(taskId: String)
 
     /** Whether this device still holds queued work for an order, i.e. keep the claim. */
     @Query("SELECT COUNT(*) FROM tasks WHERE orderId = :orderId AND status IN ('Pending','Assigned','Running')")
@@ -190,7 +203,7 @@ interface TaskDao {
      * This keeps another linked account in the same app from being blocked by stale Skipped ids
      * when it fetches the order's remaining quantity.
      */
-    @Query("DELETE FROM tasks WHERE orderId = :orderId AND status IN ('Pending','Assigned','Running','Skipped','Failed')")
+    @Query("DELETE FROM tasks WHERE orderId = :orderId AND status IN ('Pending','Skipped','Failed')")
     suspend fun deleteUnprocessedForOrder(orderId: String)
 
     @Query("DELETE FROM tasks")
@@ -284,6 +297,9 @@ interface PendingEarningDao {
     @Query("SELECT * FROM pending_earnings ORDER BY createdAtMs ASC")
     suspend fun getAll(): List<PendingEarningEntity>
 
+    @Query("SELECT * FROM pending_earnings WHERE taskId = :taskId OR id = :taskId LIMIT 1")
+    suspend fun getByTaskId(taskId: String): PendingEarningEntity?
+
     @Upsert
     suspend fun upsert(earning: PendingEarningEntity)
 
@@ -292,6 +308,12 @@ interface PendingEarningDao {
 
     @Query("DELETE FROM pending_earnings WHERE orderId = :orderId")
     suspend fun deleteByOrderId(orderId: String)
+
+    @Query("SELECT * FROM pending_earnings WHERE orderId = :orderId AND accountId = :accountId")
+    suspend fun getByOrderAndAccount(orderId: String, accountId: String): List<PendingEarningEntity>
+
+    @Query("DELETE FROM pending_earnings WHERE orderId = :orderId AND accountId = :accountId")
+    suspend fun deleteByOrderAndAccount(orderId: String, accountId: String)
 
     @Query("DELETE FROM pending_earnings")
     suspend fun clearAll()

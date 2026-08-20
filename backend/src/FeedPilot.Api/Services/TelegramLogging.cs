@@ -210,6 +210,23 @@ public class TelegramRequestLogger
     private static string Escape(string value) =>
         value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 
+    public Task LogOrderProgressDiagnosticAsync(
+        Guid orderId, string? deviceId, Guid? accountId, int before, int reportedCompleted,
+        int newCompletedCount, int newlyDone, int quantity, bool failedReport)
+    {
+        var status = failedReport ? "Failed" : newlyDone > 0 ? "Awarded" : "Zero";
+        var lines = new List<string>
+        {
+            $"<b>Order Progress Diag</b> ({Escape(status)})",
+            $"Order: <code>{orderId}</code>",
+            $"Before: <b>{before}</b>   Reported: <b>{reportedCompleted}</b>   New: <b>{newCompletedCount}</b>/<b>{quantity}</b>",
+            $"NewlyDone: <b>{newlyDone}</b>   Failed: <b>{failedReport}</b>"
+        };
+        if (accountId is { } acc) lines.Add($"Account: <code>{acc}</code>");
+        if (!string.IsNullOrWhiteSpace(deviceId)) lines.Add($"Device: <code>{Escape(deviceId)}</code>");
+        return SendAsync(string.Join("\n", lines));
+    }
+
     public Task LogClientCrashAsync(
         string title, string? summary, string stackTrace,
         string appId, string deviceModel, string deviceId)

@@ -26,7 +26,9 @@ public class OrderProcessingController : ControllerBase
     private readonly IWalletService _wallets;
     private readonly IAppOrderService _orders;
     private readonly OrderPricingSettings _settings;
+    private readonly SmmPanelSyncService? _smmSync;
     private readonly ILogger<OrderProcessingController> _logger;
+    private readonly TelegramRequestLogger? _telegram;
 
     /// <summary>
     /// Serialises claims within this process so two concurrent requests cannot read the same
@@ -36,6 +38,20 @@ public class OrderProcessingController : ControllerBase
     /// is what dev is; production claims should always be taking the atomic path instead.
     /// </summary>
     private static readonly SemaphoreSlim ClaimGate = new(1, 1);
+
+    /// <summary>
+    /// Serialises Progress/ProgressBatch's read-modify-write of AppOrders.CompletedCount and the
+    /// coins it pays out, for whatever [LoadOrderForUpdateAsync]/[LoadOrdersForUpdateAsync] can't
+    /// lock with Postgres `FOR UPDATE` (SQLite/in-memory dev). Without a lock here — and there was
+    /// none before this — two concurrent reports against the *same* order (two accounts on one
+    /// device both finishing a unit of the same order around the same moment is the common case,
+    /// since one device's claim can cover the whole order and both accounts pull from it) each
+    /// read `CompletedCount` before either writes, both compute a positive `newlyDone` off the same
+    /// stale baseline, and both get paid for what was really one increment — a real, reproducible
+    /// double-credit, not merely a display glitch. Shared with Progress so the two endpoints also
+    /// serialise against each other, since both mutate the same rows.
+    /// </summary>
+    private static readonly SemaphoreSlim ProgressGate = new(1, 1);
     private static readonly TimeSpan StoryOrderClaimWindow = TimeSpan.FromHours(24);
 
     public OrderProcessingController(
@@ -43,13 +59,17 @@ public class OrderProcessingController : ControllerBase
         IWalletService wallets,
         IAppOrderService orders,
         IOptions<OrderPricingSettings> settings,
-        ILogger<OrderProcessingController> logger)
+        ILogger<OrderProcessingController> logger,
+        SmmPanelSyncService? smmSync = null,
+        TelegramRequestLogger? telegram = null)
     {
         _db = db;
         _wallets = wallets;
         _orders = orders;
         _settings = settings.Value;
         _logger = logger;
+        _smmSync = smmSync;
+        _telegram = telegram;
     }
 
     [HttpGet("has-pending")]
@@ -108,6 +128,12 @@ public class OrderProcessingController : ControllerBase
         }
 
         var candidates = await ClaimBatchAsync(deviceId, staleBefore, batchSize, excludeOrderIds, allowedTypes, ct);
+
+        if (candidates.Count == 0 && _smmSync is not null)
+        {
+            // Fire-and-forget background trigger so worker claim responds immediately without HTTP blocking
+            _smmSync.TriggerImmediateSync();
+        }
 
         return Ok(candidates.Select(ToClaimedDto).ToList());
     }
@@ -191,7 +217,6 @@ public class OrderProcessingController : ControllerBase
                     WHERE "CompletedCount" + (CASE
                             WHEN "ReservedCount" > 0 AND "ReservedAt" IS NOT NULL AND "ReservedAt" >= {staleBefore}
                           THEN "ReservedCount" ELSE 0 END) < "Quantity"
-                      AND "IsExternal" = FALSE
                       AND NOT ("Id" = ANY({excludes.ToArray()}))
                       AND "OrderType" = ANY({typeFilter})
                       AND ("OrderType" <> {storyViewType} OR "CreatedAt" >= {storyOrderFreshAfter})
@@ -224,7 +249,6 @@ public class OrderProcessingController : ControllerBase
                     WHERE "CompletedCount" + (CASE
                             WHEN "ReservedCount" > 0 AND "ReservedAt" IS NOT NULL AND "ReservedAt" >= {staleBefore}
                           THEN "ReservedCount" ELSE 0 END) < "Quantity"
-                      AND "IsExternal" = FALSE
                       AND NOT ("Id" = ANY({excludes.ToArray()}))
                       AND ("OrderType" <> {storyViewType} OR "CreatedAt" >= {storyOrderFreshAfter})
                       AND (
@@ -302,11 +326,17 @@ public class OrderProcessingController : ControllerBase
         var storyOrderFreshAfter = DateTime.UtcNow.Subtract(StoryOrderClaimWindow);
         var query = _db.AppOrders
             .Where(o =>
+                // Quantity - CompletedCount alone used to be "how much is available", which let a
+                // second claim landing before the first claimer reported anything see the exact
+                // same remaining amount and take it too — see AppOrder.ReservedCount. Deliberately
+                // keyed off ReservedAt, not Status/ProcessingStartedAt: a report against this order
+                // flips Status back to Pending and clears ProcessingStartedAt after *every single
+                // unit*, well before the reserving device is actually done with the rest of its
+                // own locally-queued units — see AppOrder.ReservedAt.
                 o.CompletedCount + (
                     o.ReservedCount > 0 && o.ReservedAt != null && o.ReservedAt >= staleBefore
                         ? o.ReservedCount : 0
                 ) < o.Quantity &&
-                !o.IsExternal &&
                 (o.OrderType != TaskType.StoryView || o.CreatedAt >= storyOrderFreshAfter) &&
                 (o.Status == AppOrderStatus.Pending ||
                  o.Status == AppOrderStatus.Approved ||
@@ -347,6 +377,8 @@ public class OrderProcessingController : ControllerBase
             order.Status = AppOrderStatus.Pending;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            // The abandoning device is gone — whatever it still had reserved goes back to the
+            // pool instead of staying locked away until someone happens to overwrite it.
             order.ReservedCount = 0;
             order.ReservedAt = null;
             order.UpdatedAt = now;
@@ -374,14 +406,22 @@ public class OrderProcessingController : ControllerBase
             .Where(o => o.Status == AppOrderStatus.Processing && o.ProcessingDeviceId == deviceId)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.ProcessingStartedAt, DateTime.UtcNow), ct);
 
+        // Same idea, for AppOrder.ReservedAt: this device may hold reservations on orders that
+        // already flipped back to Pending/InProgress from an earlier single-unit report in this
+        // same batch (see Progress/ProgressBatch's release branch) — those are invisible to the
+        // Status-scoped update above, but ProcessingDeviceId still marks them as this device's,
+        // so this device's own reservation on them keeps renewing as it keeps working through
+        // the rest instead of looking abandoned the moment the first unit reports.
         await _db.AppOrders
             .Where(o => o.ProcessingDeviceId == deviceId && o.ReservedCount > 0)
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.ReservedAt, DateTime.UtcNow), ct);
     }
 
     /// <summary>
-    /// Dashboard-configured claim staleness cutoff (see RunnerSettings.ClaimTimeoutMinutes),
-    /// not the static "Orders" config value, so operators can tune it without redeploying.
+    /// Dashboard-configured claim staleness cutoff (see <see cref="RunnerSettings.ClaimTimeoutMinutes"/>),
+    /// not the static "Orders" config value — that one only ever seeds a fresh row's default and
+    /// can't be tuned without a redeploy, which is exactly what let a too-short timeout silently
+    /// strand honest, still-in-progress claims (see the fuller writeup on that field).
     /// </summary>
     private async Task<DateTime> ClaimStaleBeforeAsync(CancellationToken ct)
     {
@@ -424,6 +464,28 @@ public class OrderProcessingController : ControllerBase
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>Row-locks one order on Postgres so a concurrent report against the same order
+    /// blocks until this transaction commits, instead of racing it on a stale CompletedCount —
+    /// see [ProgressGate] for why that race is real and what it costs. Null on non-Postgres
+    /// providers, which lock via [ProgressGate] instead.</summary>
+    private async Task<AppOrder?> LoadOrderForUpdateAsync(Guid id, CancellationToken ct) =>
+        await _db.AppOrders
+            .FromSqlInterpolated($"""SELECT * FROM "AppOrders" WHERE "Id" = {id} FOR UPDATE""")
+            .FirstOrDefaultAsync(ct);
+
+    /// <summary>Batch counterpart of [LoadOrderForUpdateAsync]. Locks in a fixed Id order so two
+    /// concurrent batches that both touch an overlapping set of orders can't deadlock waiting on
+    /// each other's rows in opposite order.</summary>
+    private async Task<Dictionary<Guid, AppOrder>> LoadOrdersForUpdateAsync(List<Guid> orderIds, CancellationToken ct)
+    {
+        if (orderIds.Count == 0) return new Dictionary<Guid, AppOrder>();
+        var sorted = orderIds.Distinct().OrderBy(x => x).ToArray();
+        var orders = await _db.AppOrders
+            .FromSqlInterpolated($"""SELECT * FROM "AppOrders" WHERE "Id" = ANY({sorted}) ORDER BY "Id" FOR UPDATE""")
+            .ToListAsync(ct);
+        return orders.ToDictionary(o => o.Id);
+    }
+
     /// <summary>
     /// Records progress and settles the order: Completed once the target count is met,
     /// otherwise released back to Pending so any device can pick up the remainder.
@@ -432,7 +494,15 @@ public class OrderProcessingController : ControllerBase
     public async Task<ActionResult<AppOrderDto>> Progress(
         Guid id, [FromBody] ReportProgressRequest body, CancellationToken ct)
     {
-        var order = await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        var useTx = _db.Database.IsNpgsql();
+        var tx = useTx ? await _db.Database.BeginTransactionAsync(ct) : null;
+        if (!useTx) await ProgressGate.WaitAsync(ct);
+        var locked = true;
+        try
+        {
+        var order = useTx
+            ? await LoadOrderForUpdateAsync(id, ct)
+            : await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id, ct);
         if (order is null) return NotFound(new ApiError("Order not found."));
 
         // A device may only report against a claim it still holds. If the claim went stale
@@ -487,12 +557,69 @@ public class OrderProcessingController : ControllerBase
         var newlyDone = failedReport
             ? 0
             : Math.Max(0, Math.Min(reportedCompleted, order.CompletedCount) - before);
-        order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
-        var workerCoinsAwarded = 0;
-        if (newlyDone > 0)
+        var userId = User.GetUserId();
+        var clientTaskId = string.IsNullOrWhiteSpace(body.ClientTaskId) ? null : body.ClientTaskId.Trim();
+        var actionReference = clientTaskId is null ? null : $"order:{order.Id}:task:{clientTaskId}";
+        var actionAlreadyCredited = false;
+        long? existingActionCoins = null;
+
+        if (!failedReport && actionReference is not null)
         {
-            var userId = User.GetUserId();
-            // A paid plan multiplies what each completed action is worth (2× / 3× / 5×).
+            var wallet = await _wallets.GetOrCreateAsync(userId, ct);
+            existingActionCoins = await _db.WalletTransactions.AsNoTracking()
+                .Where(t => t.WalletId == wallet.Id &&
+                            t.Type == WalletTransactionType.Earn &&
+                            t.Reference == actionReference)
+                .Select(t => (long?)t.Coins)
+                .FirstOrDefaultAsync(ct);
+            actionAlreadyCredited = existingActionCoins.HasValue;
+            if (actionAlreadyCredited)
+            {
+                newlyDone = 0;
+            }
+            else if (body.AccountId is not null && before < order.Quantity)
+            {
+                newlyDone = 1;
+                order.CompletedCount = Math.Min(order.Quantity, Math.Max(order.CompletedCount, before + 1));
+            }
+
+            // A successful client action is one payable unit even when the aggregate
+            // Completed value is stale or the public observed count has not caught up yet.
+            // The action reference keeps retries from paying twice.
+            if (!actionAlreadyCredited && newlyDone == 0 && before < order.Quantity && body.AccountId is not null)
+            {
+                newlyDone = 1;
+                order.CompletedCount = Math.Min(order.Quantity, Math.Max(order.CompletedCount, before + 1));
+            }
+        }
+
+        // Temporary diagnostic for the zero-coin-reward reports under investigation — pins down
+        // exactly which input starves newlyDone (a stale/low reportedCompleted from the client,
+        // or `before` already at/above it from a prior report) instead of guessing from the
+        // client side alone. Sent to Telegram (not just ILogger) so it's visible live against a
+        // hosted backend with no server console/log access. Remove once the root cause is fixed.
+        _logger.LogInformation(
+            "Progress diag: order={OrderId} device={DeviceId} account={AccountId} before={Before} " +
+            "reportedCompleted={ReportedCompleted} newCompletedCount={NewCompletedCount} newlyDone={NewlyDone} " +
+            "quantity={Quantity} failedReport={FailedReport}",
+            order.Id, body.DeviceId, body.AccountId, before, reportedCompleted, order.CompletedCount, newlyDone,
+            order.Quantity, failedReport);
+        _ = _telegram?.LogOrderProgressDiagnosticAsync(
+            order.Id, body.DeviceId, body.AccountId, before, reportedCompleted, order.CompletedCount, newlyDone,
+            order.Quantity, failedReport);
+
+        // Shrinks the reservation this claim is still holding by exactly what just got confirmed
+        // — see AppOrder.ReservedCount. Left alone (not reset to 0) on every other branch below,
+        // including the routine release-to-Pending one every successful report takes: this device
+        // may still have more of its own locally-queued units left for this same order, and those
+        // must stay accounted for as reserved until this device either finishes them or its claim
+        // goes stale, not become claimable by someone else the moment this one report lands.
+        order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
+        var workerCoinsAwarded = existingActionCoins.HasValue ? (int)existingActionCoins.Value : 0;
+        long? workerWalletBalance = null;
+        long? workerAccountCoinsEarned = null;
+        if (newlyDone > 0 && !actionAlreadyCredited)
+        {
             Account? workerAccount = null;
             if (body.AccountId is { } accountId)
             {
@@ -505,8 +632,9 @@ public class OrderProcessingController : ControllerBase
             int baseActionReward = RunnerSettingsStore.GetActionCoinReward(order.OrderType, isUpgraded, runnerSettings);
             workerCoinsAwarded = newlyDone * baseActionReward;
 
-            await _wallets.CreditAsync(
-                userId, workerCoinsAwarded, WalletTransactionType.Earn, $"order:{order.Id}", ct);
+            var credit = await _wallets.CreditAsync(
+                userId, workerCoinsAwarded, WalletTransactionType.Earn, actionReference ?? $"order:{order.Id}", ct);
+            if (credit.Success) workerWalletBalance = credit.Balance;
 
             // Same crediting the wallet just got, but on the specific Account's own tally —
             // the number the app's account card shows. Without this the wallet total climbed
@@ -517,6 +645,7 @@ public class OrderProcessingController : ControllerBase
             {
                 workerAccount.CoinsEarned += workerCoinsAwarded;
                 workerAccount.LastActive = DateTime.UtcNow;
+                workerAccountCoinsEarned = workerAccount.CoinsEarned;
 
                 for (int i = 0; i < newlyDone; i++)
                 {
@@ -533,6 +662,17 @@ public class OrderProcessingController : ControllerBase
                     });
                 }
             }
+        }
+        else if (body.AccountId is { } responseAccountId)
+        {
+            workerWalletBalance = await _db.Wallets.AsNoTracking()
+                .Where(w => w.UserId == userId)
+                .Select(w => (long?)w.Coins)
+                .FirstOrDefaultAsync(ct);
+            workerAccountCoinsEarned = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Id == responseAccountId && a.UserId == userId)
+                .Select(a => (long?)a.CoinsEarned)
+                .FirstOrDefaultAsync(ct);
         }
 
         if (!string.IsNullOrWhiteSpace(body.ErrorMessage))
@@ -564,12 +704,15 @@ public class OrderProcessingController : ControllerBase
             order.CompletedAt ??= DateTime.UtcNow;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
-            order.ReservedCount = 0;
-            order.ReservedAt = null;
         }
         else if (body.Release)
         {
-            // Still owed work — free it so another device can continue.
+            // Still owed work — free it so another device can continue. ProcessingDeviceId is
+            // deliberately NOT cleared while this device still has a live reservation
+            // (ReservedCount > 0, already decremented above) — it doubles as "who reserved the
+            // rest" for ExtendClaimAsync and the claim eligibility check (AppOrder.ReservedAt),
+            // since this branch fires after *every single* successful report, well before this
+            // device is actually done with the remainder of what it originally claimed.
             order.Status = AppOrderStatus.Pending;
             if (order.ReservedCount <= 0) order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
@@ -582,10 +725,24 @@ public class OrderProcessingController : ControllerBase
 
         order.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
+        if (tx is not null) await tx.CommitAsync(ct);
+        locked = false;
+        if (!useTx) ProgressGate.Release();
 
         await RefundUnfulfillableAsync(order, ct);
 
-        return Ok(OrdersController.ToDto(order, workerCoinsAwarded));
+        if (order.IsExternal && _smmSync is not null)
+        {
+            _ = Task.Run(() => _smmSync.PushOrderStatusUpdatesAsync(CancellationToken.None));
+        }
+
+        return Ok(OrdersController.ToDto(order, workerCoinsAwarded, workerWalletBalance, workerAccountCoinsEarned));
+        }
+        finally
+        {
+            if (locked && !useTx) ProgressGate.Release();
+            if (tx is not null) await tx.DisposeAsync();
+        }
     }
 
 
@@ -597,6 +754,10 @@ public class OrderProcessingController : ControllerBase
         var order = await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id, ct);
         if (order is null) return NotFound(new ApiError("Order not found."));
 
+        // ProcessingDeviceId alone (not gated on Status == Processing) — a routine per-report
+        // release already flips Status to Pending/InProgress while this device still holds the
+        // reservation (see AppOrder.ReservedAt), so an explicit drop arriving after that first
+        // report must still find and release it, not silently no-op because Status moved on.
         if (order.ProcessingDeviceId == body.DeviceId &&
             (order.Status == AppOrderStatus.Processing || order.ReservedCount > 0))
         {
@@ -605,6 +766,8 @@ public class OrderProcessingController : ControllerBase
                 : AppOrderStatus.Pending;
             order.ProcessingDeviceId = null;
             order.ProcessingStartedAt = null;
+            // Explicit drop (e.g. runner stopped) — give back whatever this device still had
+            // reserved so another claimer can pick up the rest immediately.
             order.ReservedCount = 0;
             order.ReservedAt = null;
             order.UpdatedAt = DateTime.UtcNow;
@@ -671,11 +834,18 @@ public class OrderProcessingController : ControllerBase
         if (body.Reports == null || body.Reports.Count == 0)
             return Ok(new BatchReportProgressResponse(new List<BatchReportProgressResult>(), 0));
 
+        var useTx = _db.Database.IsNpgsql();
+        var tx = useTx ? await _db.Database.BeginTransactionAsync(ct) : null;
+        if (!useTx) await ProgressGate.WaitAsync(ct);
+        var locked = true;
+        try
+        {
         await ExtendClaimAsync(body.DeviceId, ct);
 
         var results = new List<BatchReportProgressResult>();
         var userId = User.GetUserId();
         int totalCoinsAwarded = 0;
+        int individuallyCreditedCoins = 0;
         // Refund checks are deferred until after the batch's single SaveChangesAsync below
         // commits every order's new Status — running the RefundIssued claim mid-loop, before
         // that save, could credit a refund for a terminal state that then never actually landed
@@ -683,14 +853,15 @@ public class OrderProcessingController : ControllerBase
         var unfulfillableOrders = new List<AppOrder>();
 
         var orderIds = body.Reports.Select(r => r.OrderId).Distinct().ToList();
-        var ordersMap = await _db.AppOrders
-            .Where(o => orderIds.Contains(o.Id))
-            .ToDictionaryAsync(o => o.Id, ct);
+        var ordersMap = useTx
+            ? await LoadOrdersForUpdateAsync(orderIds, ct)
+            : await _db.AppOrders.Where(o => orderIds.Contains(o.Id)).ToDictionaryAsync(o => o.Id, ct);
 
         var accountIds = body.Reports.Select(r => r.AccountId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
         var accountsMap = accountIds.Count > 0
             ? await _db.Accounts.Where(a => accountIds.Contains(a.Id) && a.UserId == userId).ToDictionaryAsync(a => a.Id, ct)
             : new Dictionary<Guid, Account>();
+        var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
 
         foreach (var item in body.Reports)
         {
@@ -730,15 +901,41 @@ public class OrderProcessingController : ControllerBase
             }
 
             var newlyDone = failedReport ? 0 : Math.Max(0, Math.Min(reportedCompleted, order.CompletedCount) - before);
-            order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
-            if (newlyDone > 0)
+            var clientTaskId = string.IsNullOrWhiteSpace(item.ClientTaskId) ? null : item.ClientTaskId.Trim();
+            var actionReference = clientTaskId is null ? null : $"order:{order.Id}:task:{clientTaskId}";
+            var actionAlreadyCredited = false;
+            if (!failedReport && actionReference is not null)
             {
-            var runnerSettings = await RunnerSettingsStore.GetOrCreateAsync(_db, ct);
+                var wallet = await _wallets.GetOrCreateAsync(userId, ct);
+                actionAlreadyCredited = await _db.WalletTransactions.AsNoTracking()
+                    .AnyAsync(t => t.WalletId == wallet.Id &&
+                                   t.Type == WalletTransactionType.Earn &&
+                                   t.Reference == actionReference, ct);
+                if (actionAlreadyCredited)
+                {
+                    newlyDone = 0;
+                }
+                else if (item.AccountId is not null && before < order.Quantity)
+                {
+                    newlyDone = 1;
+                    order.CompletedCount = Math.Min(order.Quantity, Math.Max(order.CompletedCount, before + 1));
+                }
+            }
+            // See Progress's identical line for why this shrinks rather than resets — this
+            // device's own further locally-queued units for this order stay reserved.
+            order.ReservedCount = Math.Max(0, order.ReservedCount - newlyDone);
+            if (newlyDone > 0 && !actionAlreadyCredited)
+            {
             Account? workerAccount = item.AccountId.HasValue && accountsMap.TryGetValue(item.AccountId.Value, out var acc) ? acc : null;
             bool isUpgraded = workerAccount?.UpgradedAt is { } upgradedAt && DateTime.UtcNow - upgradedAt < TimeSpan.FromHours(24);
             int baseActionReward = RunnerSettingsStore.GetActionCoinReward(order.OrderType, isUpgraded, runnerSettings);
             var coins = newlyDone * baseActionReward;
             totalCoinsAwarded += coins;
+            if (actionReference is not null)
+            {
+                var credit = await _wallets.CreditAsync(userId, coins, WalletTransactionType.Earn, actionReference, ct);
+                if (credit.Success) individuallyCreditedCoins += coins;
+            }
 
                 if (workerAccount is not null)
                 {
@@ -791,13 +988,11 @@ public class OrderProcessingController : ControllerBase
                 order.Status = order.CompletedCount >= order.Quantity
                     ? AppOrderStatus.Completed
                     : (failedReport ? AppOrderStatus.Failed : AppOrderStatus.InProgress);
+                // See Progress's identical branch: ProcessingDeviceId doubles as "who still holds
+                // the reservation" (AppOrder.ReservedAt) and must survive this routine per-report
+                // release while ReservedCount (already decremented above) is still positive.
                 if (order.ReservedCount <= 0) order.ProcessingDeviceId = null;
                 order.ProcessingStartedAt = null;
-                if (order.Status == AppOrderStatus.Completed)
-                {
-                    order.ReservedCount = 0;
-                    order.ReservedAt = null;
-                }
                 if (order.Status == AppOrderStatus.Failed)
                 {
                     order.ReservedCount = 0;
@@ -810,16 +1005,26 @@ public class OrderProcessingController : ControllerBase
             results.Add(new BatchReportProgressResult(order.Id, true, order.CompletedCount, order.Status));
         }
 
-        if (totalCoinsAwarded > 0)
+        var legacyBatchCoins = totalCoinsAwarded - individuallyCreditedCoins;
+        if (legacyBatchCoins > 0)
         {
-            await _wallets.CreditAsync(userId, totalCoinsAwarded, WalletTransactionType.Earn, "order:batch", ct);
+            await _wallets.CreditAsync(userId, legacyBatchCoins, WalletTransactionType.Earn, "order:batch", ct);
         }
 
         await _db.SaveChangesAsync(ct);
+        if (tx is not null) await tx.CommitAsync(ct);
+        locked = false;
+        if (!useTx) ProgressGate.Release();
 
         foreach (var order in unfulfillableOrders)
             await RefundUnfulfillableAsync(order, ct);
 
         return Ok(new BatchReportProgressResponse(results, totalCoinsAwarded));
+        }
+        finally
+        {
+            if (locked && !useTx) ProgressGate.Release();
+            if (tx is not null) await tx.DisposeAsync();
+        }
     }
 }

@@ -2,9 +2,11 @@ package com.feedpilot.client.data.repository
 
 import android.util.Log
 import com.feedpilot.client.common.DeviceIdentity
+import com.feedpilot.client.common.LiveCoinSyncManager
 import com.feedpilot.client.common.Resource
 import com.feedpilot.client.common.apiErrorMessage
 import com.feedpilot.client.common.extractInstagramHandle
+import com.feedpilot.client.common.isUpgradedWithin24h
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.OrderHistoryEntity
 import com.feedpilot.client.data.local.OrderSource
@@ -16,11 +18,16 @@ import com.feedpilot.client.data.remote.SmmAdminOrder
 import com.feedpilot.client.data.remote.dto.ManualActionResultRequest
 import com.feedpilot.client.data.remote.dto.TaskResultRequest
 import com.feedpilot.client.data.toEntity
+import com.feedpilot.client.task.EngagementTaskType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,6 +37,7 @@ class TaskRepository @Inject constructor(
     private val taskDao: TaskDao,
     private val accountDao: AccountDao,
     private val walletRepository: WalletRepository,
+    private val liveCoinSyncManager: LiveCoinSyncManager,
     private val hanumanSmmClient: HanumanSmmClient,
     private val orderHistoryRepository: OrderHistoryRepository,
     private val appOrderRepository: AppOrderRepository,
@@ -44,6 +52,33 @@ class TaskRepository @Inject constructor(
      */
     private fun deviceId(): String =
         deviceIdentity.stableAppInstallationId
+
+    /**
+     * Serializes [settleOrder] per orderId. Orders aren't scoped to one account — any account
+     * running on this device can pick up units of the same order — and [TaskDao.completedCountForOrder]/
+     * [TaskDao.markOrderTasksReported] are device-wide, not account-scoped. Two accounts finishing
+     * a unit of the *same* order around the same moment (the common case once a second account
+     * starts: both freshly claimed accounts tend to land on the same newly-available orders) used
+     * to each read completedCountForOrder before either had flipped its rows to 'Reported', each
+     * compute an absolute `total` from that same stale snapshot, and send it to the backend's
+     * monotonic Progress endpoint — whichever report lands second sends a `total` the backend has
+     * already met or exceeded, so its own genuinely-new completions score `newlyDone = 0` and get
+     * awarded zero coins, yet still get marked 'Reported' and are never retried. A per-order lock
+     * held across the whole settle (read → report → mark-reported) closes that window: the second
+     * account's settle call now waits until the first's markOrderTasksReported has actually run, so
+     * its own completedCountForOrder read starts from an up-to-date baseline instead of a stale one.
+     */
+    private val orderSettleMutexes = ConcurrentHashMap<String, Mutex>()
+    private fun orderSettleMutex(orderId: String): Mutex =
+        // computeIfAbsent, not the Kotlin `getOrPut` extension: getOrPut is a plain get-then-put
+        // on the Map interface, so it is not itself atomic even backed by a ConcurrentHashMap —
+        // two accounts racing on the same brand-new orderId can each observe a null lookup, each
+        // mint their own Mutex(), and each lock only their own instance while just one wins the
+        // put, leaving both settleOrder calls to run unlocked against each other. That reopened
+        // exactly the stale-baseline race this mutex exists to close (see the field doc above).
+        // computeIfAbsent is a genuine atomic operation on ConcurrentHashMap: every caller for a
+        // given key is guaranteed to observe and lock the very same Mutex instance.
+        orderSettleMutexes.computeIfAbsent(orderId) { Mutex() }
 
     val tasks: Flow<List<TaskEntity>> = taskDao.observeAll()
     val completedCount: Flow<Int> = taskDao.observeCompletedCount()
@@ -388,53 +423,50 @@ class TaskRepository @Inject constructor(
     }
 
     /**
-     * Dashboard-configured per-action coin reward ("Action Coin Pricing & Referral Schema"),
-     * Normal vs Upgraded (24h bonus window) account — mirrors the backend's
-     * RunnerSettingsStore.GetActionCoinReward so the same setting actually governs what a
-     * device visibly earns, not just what the server would have paid it.
+     * Reports a manually retried Action Log entry (TasksViewModel.retryFailedActionLog) — there is
+     * no backend task/order behind an old log entry, so this reports the action fresh instead of
+     * reconciling against one. Unlike the old local-only credit this replaced (a direct
+     * `walletRepository.addCoins` call with no backend record at all, permanently unreconciled
+     * against the server — see git history), the award now comes back from
+     * RunnerSettingsStore.GetActionCoinReward on the backend, the same source of truth every
+     * other completion is priced from, and lands through the same confirmed-only credit path.
+     * On any failure (network, auth, validation) this credits nothing — a manual retry that can't
+     * reach the backend simply isn't paid, rather than paying locally and hoping it reconciles.
      */
-    /** Public entry point for callers outside this repository (e.g. the manual action-log retry
-     *  flow in TasksViewModel) that need the same dashboard-configured reward this repository
-     *  uses internally, without duplicating the hardcoded fallback this replaced. */
-    suspend fun rewardCoinsForTaskType(taskType: String?, isUpgraded: Boolean): Long =
-        rewardCoinsFor(taskType, isUpgraded, settingsRepository.current())
-
     suspend fun submitManualActionResult(
         accountId: String,
         taskType: String,
         target: String,
-        message: String? = null
+        message: String? = null,
+        idempotencyKey: String? = null
     ): Resource<Int> = try {
+        val key = idempotencyKey ?: "manual:${accountId}:${taskType}:${target}".lowercase()
         val response = api.submitManualActionResult(
-            ManualActionResultRequest(accountId, taskType, target, message)
+            ManualActionResultRequest(accountId, taskType, target, message, key)
         )
-        walletRepository.reconcileCoins(response.coinsAwarded.toLong())
-        if (response.coinsAwarded != 0) accountDao.incrementCoinsEarned(accountId, response.coinsAwarded.toLong())
+        walletRepository.applyConfirmedBalance(response.walletBalance)
+        response.accountCoinsEarned?.let { accountDao.setCoinsEarned(accountId, it) }
+            ?: run {
+                if (response.coinsAwarded != 0) accountDao.incrementCoinsEarned(accountId, response.coinsAwarded.toLong())
+            }
         Resource.Success(response.coinsAwarded)
     } catch (t: Throwable) {
         Resource.Error(t.apiErrorMessage("Failed to submit retry result"), t)
     }
 
-    private fun rewardCoinsFor(taskType: String?, isUpgraded: Boolean, settings: AppSettings): Long {
-        val (normal, upgraded) = when {
-            taskType.equals(TASK_TYPE_FOLLOW, ignoreCase = true) -> settings.followCoinsNormal to settings.followCoinsUpgraded
-            taskType.equals(TASK_TYPE_LIKE, ignoreCase = true) -> settings.likeCoinsNormal to settings.likeCoinsUpgraded
-            taskType.equals(TASK_TYPE_COMMENT, ignoreCase = true) -> settings.commentCoinsNormal to settings.commentCoinsUpgraded
-            taskType.equals(TASK_TYPE_REPOST, ignoreCase = true) -> settings.repostCoinsNormal to settings.repostCoinsUpgraded
-            taskType.equals(TASK_TYPE_SAVE, ignoreCase = true) -> settings.savePostCoinsNormal to settings.savePostCoinsUpgraded
-            taskType.equals(TASK_TYPE_STORY, ignoreCase = true) -> settings.storyViewCoinsNormal to settings.storyViewCoinsUpgraded
-            else -> 1 to 2
-        }
-        return (if (isUpgraded) upgraded else normal).toLong()
-    }
-
     /**
-     * The credit already applied in [submitResult] used [locallyCredited], computed from this
-     * device's own RunnerSettings cache (synced at most every [SettingsRepository]-defined
-     * interval, so it can briefly lag a dashboard price change). [backendAwarded] is what
-     * RunnerSettingsStore actually priced this same completion at, read live from the DB on the
-     * settlement request that just landed — reconcile any gap now instead of leaving a stale
-     * local price as a silent, permanent over/under-credit in the wallet and account tally.
+     * Single-task reconciliation, for the legacy queue only — every legacy report is exactly one
+     * task's worth (`POST /api/tasks/result` never batches), so its one pending-earning row and
+     * this one [backendAwarded] figure are always a matched pair. Order-backed tasks go through
+     * [reconcilePendingBatch] instead: one settle report there can confirm several accumulated
+     * units at once, so reconciliation has to cover every pending row it actually paid for, not
+     * just whichever single task triggered the call.
+     *
+     * [locallyCredited] is what [applyLocalReward] already applied, computed from this device's
+     * own RunnerSettings cache (synced at most every [SettingsRepository]-defined interval, so it
+     * can briefly lag a dashboard price change). [backendAwarded] is what RunnerSettingsStore
+     * actually priced this same completion at, read live from the DB — reconcile any gap now
+     * instead of leaving a stale local price as a silent, permanent over/under-credit.
      *
      * The wallet side goes through [WalletRepository.creditConfirmedEarning] rather than a plain
      * clear-then-reconcile — clearing [taskId]'s pending row and crediting the wallet base total
@@ -443,10 +475,144 @@ class TaskRepository @Inject constructor(
      * credit when several accounts are settling tasks concurrently and contending for the same
      * wallet mutation lock.
      */
+    private suspend fun applyConfirmedReward(accountId: String, backendAwarded: Long, walletBalance: Long? = null) {
+        walletBalance?.let { walletRepository.applyConfirmedBalance(it) }
+        if (backendAwarded != 0L) accountDao.incrementCoinsEarned(accountId, backendAwarded)
+    }
+
     private suspend fun reconcileReward(taskId: String, accountId: String, locallyCredited: Long, backendAwarded: Long) {
-        walletRepository.creditConfirmedEarning(taskId, backendAwarded)
-        val delta = backendAwarded - locallyCredited
-        if (delta != 0L) accountDao.incrementCoinsEarned(accountId, delta)
+        walletRepository.clearPendingEarning(taskId)
+    }
+
+    /**
+     * Batch reconciliation for order-backed tasks, called from inside [settleOrderLocked] right
+     * after one successful report — that single report's [confirmedCoins] can represent several
+     * of this account's own units completed since the last report (`doneLocally` there is a
+     * running count), so every pending-earning row for this exact (orderId, accountId) pair —
+     * not just whichever task happened to trigger the call — is summed, reconciled against the
+     * confirmed total by one delta, and cleared together.
+     */
+    private suspend fun reconcilePendingBatch(
+        orderId: String,
+        accountId: String,
+        confirmedCoins: Long,
+        walletBalance: Long? = null,
+        accountCoinsEarned: Long? = null
+    ) {
+        val pending = walletRepository.pendingEarningsForOrderAndAccount(orderId, accountId)
+        val locallyCredited = pending.sumOf { it.rewardCoins }
+        walletBalance?.let { walletRepository.applyConfirmedBalance(it) }
+            ?: run {
+                val delta = confirmedCoins - locallyCredited
+                if (delta != 0L) walletRepository.reconcileCoins(delta)
+            }
+        when {
+            accountCoinsEarned != null -> accountDao.setCoinsEarned(accountId, accountCoinsEarned)
+            else -> {
+                val delta = confirmedCoins - locallyCredited
+                if (delta != 0L) accountDao.incrementCoinsEarned(accountId, delta)
+            }
+        }
+        walletRepository.clearPendingEarningsForOrderAndAccount(orderId, accountId)
+    }
+
+    private suspend fun reconcilePendingTask(
+        taskId: String,
+        accountId: String,
+        confirmedCoins: Long,
+        walletBalance: Long? = null,
+        accountCoinsEarned: Long? = null
+    ) {
+        val pending = walletRepository.pendingEarning(taskId)
+        val locallyCredited = pending?.rewardCoins ?: 0L
+        walletBalance?.let { walletRepository.applyConfirmedBalance(it) }
+            ?: run {
+                if (confirmedCoins > 0L) {
+                    walletRepository.creditConfirmedEarning(taskId, locallyCredited, confirmedCoins)
+                }
+            }
+        when {
+            accountCoinsEarned != null -> accountDao.setCoinsEarned(accountId, accountCoinsEarned)
+            confirmedCoins > 0L -> {
+                val delta = confirmedCoins - locallyCredited
+                if (delta != 0L) accountDao.incrementCoinsEarned(accountId, delta)
+            }
+        }
+        if (confirmedCoins > 0L) {
+            walletRepository.clearPendingEarning(taskId)
+        }
+    }
+
+    /**
+     * Re-attempts server settlement for every locally-credited reward the backend hasn't
+     * confirmed yet (see [WalletRepository.pendingEarnings]) — the actual push-to-server for a
+     * reward whose settle call failed the first time (offline, backend briefly down, app killed
+     * mid-call). The local credit itself is never at risk either way, since [applyLocalReward]
+     * already wrote it durably to Room the instant the action completed; without this, though, a
+     * reward that failed to settle once had no other path back to the server, since nothing else
+     * ever revisits an already-'Completed'/'Reported' local task row on its own. Meant to be
+     * called periodically (see TaskRunnerService's 10s sync loop) — a row that still fails here
+     * simply gets tried again on the next pass.
+     */
+    suspend fun flushPendingEarnings() {
+        val pending = runCatching { walletRepository.pendingEarnings() }.getOrNull().orEmpty()
+        if (pending.isEmpty()) return
+
+        val (orderBacked, nonOrderBacked) = pending.partition { it.taskId.startsWith(BACKEND_TASK_PREFIX) }
+        val (smmBacked, legacy) = nonOrderBacked.partition { it.taskId.startsWith(SMM_ORDER_PREFIX) }
+
+        // One retry per distinct (orderId, accountId) pair is enough — a successful report
+        // reconciles every pending row for that pair at once (see reconcilePendingBatch), so
+        // retrying per-row here would just resend the same already-resolved report redundantly.
+        orderBacked.forEach { p ->
+            val task = runCatching { taskDao.getById(p.taskId) }.getOrNull() ?: return@forEach
+            runCatching { settleOrder(task, p.accountId, null) }
+        }
+
+        smmBacked.forEach { p ->
+            val task = runCatching { taskDao.getById(p.taskId) }.getOrNull() ?: return@forEach
+            val response = submitManualTaskResultWithRetry(task, p.accountId, null) ?: return@forEach
+            reconcilePendingTask(
+                taskId = p.taskId,
+                accountId = p.accountId,
+                confirmedCoins = response.coinsAwarded.toLong(),
+                walletBalance = response.walletBalance,
+                accountCoinsEarned = response.accountCoinsEarned
+            )
+            if (response.coinsAwarded > 0) runCatching { taskDao.markTaskReported(p.taskId) }
+        }
+
+        legacy.forEach { p ->
+            val response = runCatching {
+                api.submitTaskResult(TaskResultRequest(p.taskId, p.accountId, true, null))
+            }.getOrNull() ?: return@forEach
+            reconcileReward(p.taskId, p.accountId, p.rewardCoins, response.coinsAwarded.toLong())
+        }
+    }
+
+    /**
+     * Applies this completion's dashboard-priced reward to the account card and wallet
+     * immediately, from this device's own cached RunnerSettings — before any network call, so
+     * the UI reflects it the instant Instagram confirms the action instead of waiting on (or
+     * racing over) a shared server-side settle call. Persisted via [WalletRepository.addPendingEarning]
+     * so the credit survives process death; [reconcileReward] corrects any drift against the
+     * backend's own live-priced amount once the settle call actually confirms it. Returns 0 (and
+     * applies nothing) for a task type this repository doesn't know how to price, or a task with
+     * no order context to persist the pending record against.
+     */
+    private suspend fun applyLocalReward(task: TaskEntity, accountId: String): Long {
+        if (task.status == STATUS_COMPLETED || task.status == STATUS_REPORTED) return 0L
+        if (walletRepository.pendingEarning(task.id) != null) return 0L
+        val engagementType = EngagementTaskType.from(task.taskType) ?: return 0L
+        val account = runCatching { accountDao.getById(accountId) }.getOrNull()
+        val isUpgraded = isUpgradedWithin24h(account?.upgradedAt)
+        val reward = settingsRepository.current().actionCoinReward(engagementType, isUpgraded).toLong()
+        if (reward <= 0) return 0L
+
+        walletRepository.addPendingEarning(task.id, task.orderId.ifBlank { null }, accountId, reward)
+        walletRepository.addCoins(reward)
+        accountDao.incrementCoinsEarned(accountId, reward)
+        return reward
     }
 
     /** Marks an order as in-flight locally so a second runner pass doesn't pick it up. */
@@ -469,40 +635,46 @@ class TaskRepository @Inject constructor(
         // on top of an increment that already landed — this was silently inflating the local
         // coinsEarned cache above the true server value until the next refreshFromServer() call
         // yanked it back down, which is what showed up as the badge visibly dropping on screen.
-        var creditAttempted = false
         return try {
             val isBackendOrderTask = taskId.startsWith(BACKEND_TASK_PREFIX)
             val isSmmOrderTask = taskId.startsWith(SMM_ORDER_PREFIX)
             val isLegacyQueueTask = !isBackendOrderTask && !isSmmOrderTask
 
-            val account = runCatching { accountDao.getById(accountId) }.getOrNull()
-            val isUpgraded = com.feedpilot.client.common.isUpgradedWithin24h(account?.upgradedAt)
-            // Cheap read-only lookup just for the task type, kept separate from the later
-            // `taskDao.getById` below (used for settleOrder) so this doesn't shift that call's
-            // timing relative to the STATUS_COMPLETED write it currently happens after.
-            val taskTypeForReward = runCatching { taskDao.getById(taskId) }.getOrNull()?.taskType
-            val rewardCoins = rewardCoinsFor(taskTypeForReward, isUpgraded, settingsRepository.current())
-            // Starts as the locally-estimated reward; bumped to the backend-confirmed figure
-            // below once a reconciliation actually lands, so the runner's success log reflects
-            // what was really credited rather than a possibly-stale local guess.
-            var finalReward = rewardCoins
+            // Set to the local dashboard-priced credit as soon as it's applied below, then
+            // overwritten with the backend-confirmed amount once the settle call actually lands
+            // — see applyLocalReward/reconcileReward. Stays at the local figure (not 0) if the
+            // settle call never resolves, since that is what the wallet/account card actually show.
+            var finalReward = 0L
 
             val taskObj = runCatching { taskDao.getById(taskId) }.getOrNull()
+            if (success && taskObj?.status in setOf(STATUS_COMPLETED, STATUS_REPORTED)) {
+                return Resource.Success(0)
+            }
             if (success) {
                 taskDao.updateStatus(taskId, STATUS_COMPLETED)
-                creditAttempted = true
-                accountDao.incrementCoinsEarned(accountId, rewardCoins)
-                walletRepository.addPendingEarning(taskId, taskObj?.orderId, accountId, rewardCoins)
             } else {
                 taskDao.updateStatus(taskId, STATUS_FAILED)
             }
 
+            // Credit the dashboard-priced reward locally right away — see applyLocalReward — so
+            // the account card and wallet move the instant Instagram confirms the action, not
+            // whenever the settle call below eventually lands. finalReward starts here instead of
+            // at 0 so a settle call that never resolves (offline, backend down) still reports what
+            // the user actually sees rather than silently 0.
             if (isLegacyQueueTask) {
-                runCatching { api.submitTaskResult(TaskResultRequest(taskId, accountId, success, message)) }
-                    .getOrNull()
+                // taskDao.updateStatus above already marked this row STATUS_COMPLETED — a legacy
+                // task has no "completed but not yet reported" state the way an order-backed task
+                // does (settleOrder leaves those un-flipped for a later retry, see its doc comment),
+                // so once this method returns, nobody will ever call submitTaskResult for this
+                // taskId again. A single failed attempt against a cold-starting host (the free-tier
+                // backend can take real time to wake up — see WalletRepository's refresh comments)
+                // used to mean the Instagram action succeeded but the reward was silently and
+                // permanently lost, both locally and server-side, since the report never landed.
+                // Retry a few times with backoff before giving up, rather than only trying once.
+                submitLegacyTaskResultWithRetry(taskId, accountId, success, message)
                     ?.let { response ->
                         if (success) {
-                            reconcileReward(taskId, accountId, rewardCoins, response.coinsAwarded.toLong())
+                            applyConfirmedReward(accountId, response.coinsAwarded.toLong(), response.walletBalance)
                             finalReward = response.coinsAwarded.toLong()
                         }
                     }
@@ -510,38 +682,95 @@ class TaskRepository @Inject constructor(
 
             if (isBackendOrderTask) {
                 if (taskObj != null) {
+                    val localReward = if (success) applyLocalReward(taskObj, accountId) else 0L
+                    if (localReward > 0L) finalReward = localReward
                     val settlementError = message.takeUnless { success }
                     val reporterAccountId = when {
                         success -> accountId
                         isPrivateAccount(settlementError) -> accountId
                         else -> null
                     }
+                    // Reconciliation (wallet/account delta + clearing the matching pending-earning
+                    // rows) happens inside settleOrderLocked itself via reconcilePendingBatch, not
+                    // here — this report's backendAwarded can cover several of this account's
+                    // pending units at once, not just this one taskId.
                     val backendAwarded = settleOrder(taskObj, reporterAccountId, settlementError)
                     if (success && backendAwarded != null) {
-                        reconcileReward(taskId, accountId, rewardCoins, backendAwarded.toLong())
                         finalReward = backendAwarded.toLong()
                     }
                 }
             }
 
+            if (isSmmOrderTask) {
+                if (taskObj != null && success) {
+                    val localReward = applyLocalReward(taskObj, accountId)
+                    if (localReward > 0L) finalReward = localReward
+                    val response = submitManualTaskResultWithRetry(taskObj, accountId, message)
+                    if (response != null) {
+                        reconcilePendingTask(
+                            taskId = taskId,
+                            accountId = accountId,
+                            confirmedCoins = response.coinsAwarded.toLong(),
+                            walletBalance = response.walletBalance,
+                            accountCoinsEarned = response.accountCoinsEarned
+                        )
+                        if (response.coinsAwarded > 0) {
+                            taskDao.markTaskReported(taskId)
+                            finalReward = response.coinsAwarded.toLong()
+                        }
+                    }
+                }
+            }
+
             if (success) {
-                runCatching { walletRepository.refresh() }
+                // The backend already pushes the authoritative wallet total over the live socket
+                // right after crediting (WalletService.CreditAsync -> CoinSyncHub -> WalletRepository
+                // .applyLiveUpdate), so polling refresh() here too, unconditionally, on every single
+                // completed action from every concurrently-running account, only produced a storm of
+                // overlapping GET /wallet requests with nothing to gain — and whose out-of-order
+                // responses were the actual source of the intermittent coin-drop bug. Only fall back
+                // to an HTTP refresh when the push channel is down, so the balance still catches up
+                // for a disconnected/offline session.
+                if (!liveCoinSyncManager.isConnected.value) {
+                    runCatching { walletRepository.refresh() }
+                }
             }
 
             Resource.Success(if (success) finalReward.toInt() else 0)
         } catch (t: Throwable) {
             taskDao.updateStatus(taskId, if (success) STATUS_COMPLETED else STATUS_FAILED)
-            if (success && !creditAttempted) {
-                val account = runCatching { accountDao.getById(accountId) }.getOrNull()
-                val isUpgraded = com.feedpilot.client.common.isUpgradedWithin24h(account?.upgradedAt)
-                val taskTypeForReward = runCatching { taskDao.getById(taskId) }.getOrNull()?.taskType
-                val settings = runCatching { settingsRepository.current() }.getOrNull() ?: AppSettings()
-                val rewardCoins = rewardCoinsFor(taskTypeForReward, isUpgraded, settings)
-                walletRepository.addCoins(rewardCoins)
-                accountDao.incrementCoinsEarned(accountId, rewardCoins)
-            }
             Resource.Error(t.message ?: "Failed to submit result", t)
         }
+    }
+
+    /**
+     * Reports a legacy-queue task's outcome, retrying a couple of times on failure before giving
+     * up — see the call site in [submitResult] for why a single attempt isn't enough here. Only
+     * retries on an actual failure to reach/parse a response; a request that lands but the server
+     * rejects (4xx business error) is still just one attempt, since retrying that would only repeat
+     * the same rejection.
+     */
+    private suspend fun submitLegacyTaskResultWithRetry(
+        taskId: String,
+        accountId: String,
+        success: Boolean,
+        message: String?
+    ): com.feedpilot.client.data.remote.dto.TaskResultResponse? {
+        val request = TaskResultRequest(taskId, accountId, success, message)
+        repeat(LEGACY_RESULT_RETRY_ATTEMPTS) { attempt ->
+            val result = runCatching { api.submitTaskResult(request) }
+            result.getOrNull()?.let { return it }
+            if (attempt < LEGACY_RESULT_RETRY_ATTEMPTS - 1) {
+                delay(LEGACY_RESULT_RETRY_DELAY_MS * (attempt + 1))
+            } else {
+                Log.w(
+                    TAG,
+                    "Giving up reporting legacy task $taskId after $LEGACY_RESULT_RETRY_ATTEMPTS attempts",
+                    result.exceptionOrNull()
+                )
+            }
+        }
+        return null
     }
 
     /**
@@ -568,15 +797,56 @@ class TaskRepository @Inject constructor(
      * treat `null` as "unknown," not as a confirmed zero-coin award, or a dropped network call
      * would be misread as the backend clawing back a reward that was never actually revoked.
      */
-    private suspend fun settleOrder(task: TaskEntity, accountId: String?, errorMessage: String? = null): Int? {
+    private suspend fun submitManualTaskResultWithRetry(
+        task: TaskEntity,
+        accountId: String,
+        message: String?
+    ): com.feedpilot.client.data.remote.dto.TaskResultResponse? {
+        val request = ManualActionResultRequest(
+            accountId = accountId,
+            taskType = task.taskType,
+            target = task.targetId,
+            message = message,
+            idempotencyKey = task.id
+        )
+        repeat(LEGACY_RESULT_RETRY_ATTEMPTS) { attempt ->
+            val result = runCatching { api.submitManualActionResult(request) }
+            result.getOrNull()?.let { return it }
+            if (attempt < LEGACY_RESULT_RETRY_ATTEMPTS - 1) {
+                delay(LEGACY_RESULT_RETRY_DELAY_MS * (attempt + 1))
+            } else {
+                Log.w(
+                    TAG,
+                    "Giving up reporting manual/SMM task ${task.id} after $LEGACY_RESULT_RETRY_ATTEMPTS attempts",
+                    result.exceptionOrNull()
+                )
+            }
+        }
+        return null
+    }
+
+    private suspend fun settleOrder(task: TaskEntity, accountId: String?, errorMessage: String? = null): Int? =
+        orderSettleMutex(task.orderId).withLock { settleOrderLocked(task, accountId, errorMessage) }
+
+    private suspend fun settleOrderLocked(task: TaskEntity, accountId: String?, errorMessage: String? = null): Int? {
         val orderId = task.orderId
-        val doneLocally = runCatching { taskDao.completedCountForOrder(orderId) }.getOrNull() ?: return null
+        // Account-scoped whenever this report will actually credit someone (accountId != null):
+        // orders are shared across every account running on this device, so counting device-wide
+        // here let whichever account's settle call won the per-order lock claim (and get credited
+        // for) a sibling account's own just-finished, not-yet-reported completions too — see
+        // TaskDao.completedCountForOrderAndAccount. The release-only path (accountId == null,
+        // nothing being credited) still counts device-wide, matching what it flushes.
+        val doneLocally = runCatching {
+            if (accountId != null) taskDao.completedCountForOrderAndAccount(orderId, accountId)
+            else taskDao.completedCountForOrder(orderId)
+        }.getOrNull() ?: return null
 
         val log = runCatching { orderHistoryRepository.findBySmmOrderId(orderId) }.getOrNull()
         // Work already credited before this device claimed the order still counts.
         val baseline = log?.completedCount ?: 0
         val quantity = log?.quantity ?: Int.MAX_VALUE
-        val total = (baseline + doneLocally).coerceAtMost(quantity)
+        val reportedUnits = if (accountId != null) 1 else doneLocally
+        val total = (baseline + reportedUnits).coerceAtMost(quantity)
         val targetNotFound = isTargetNotFound(errorMessage)
         val privateAccount = isPrivateAccount(errorMessage)
         val terminalTargetFailure = targetNotFound || privateAccount
@@ -587,6 +857,12 @@ class TaskRepository @Inject constructor(
         // Nothing changed and nothing local is exhausted yet — this device may still add to the
         // total shortly, so there is nothing worth telling the backend right now.
         if (!terminalTargetFailure && accountId == null && pendingLocally > 0) return null
+
+        // Temporary diagnostic for the zero-coin-reward reports under investigation — shows
+        // exactly what baseline/doneLocally/total this device computed and sent, to compare
+        // against the backend's own before/reportedCompleted/newlyDone log for the same call.
+        // Remove once the root cause is confirmed and fixed.
+        Log.d(TAG, "settleOrder diag: orderId=$orderId baseline=$baseline doneLocally=$doneLocally total=$total quantity=$quantity accountId=$accountId")
 
         val result = appOrderRepository.reportProgress(
             orderId = orderId,
@@ -603,7 +879,8 @@ class TaskRepository @Inject constructor(
                 privateAccount -> FAILURE_PRIVATE_ACCOUNT
                 else -> null
             },
-            observedCount = observedCount
+            observedCount = observedCount,
+            clientTaskId = task.id.takeIf { accountId != null }
         )
 
         if (terminalTargetFailure) {
@@ -622,7 +899,35 @@ class TaskRepository @Inject constructor(
                 // them on top of the now-updated baseline — without this, baseline and doneLocally
                 // both grew from the same completions and progress compounded (1, 3, 6, 10, ...
                 // instead of 1, 2, 3, 4) every time a device reported more than once per order.
-                runCatching { taskDao.markOrderTasksReported(orderId) }
+                Log.d(TAG, "settleOrder diag: orderId=$orderId result=SUCCESS workerCoinsAwarded=${result.data.workerCoinsAwarded} status=${result.data.status}")
+                runCatching {
+                    if (accountId != null) {
+                        if (result.data.workerCoinsAwarded > 0) {
+                            taskDao.markTaskReported(task.id)
+                        }
+                        // This one report can confirm several of this account's own units at
+                        // once (doneLocally above is a running count, not one task's worth), so
+                        // every pending-earning row it covers must be reconciled and cleared here
+                        // — not just whichever single task happened to trigger this settle call.
+                        // Otherwise a sibling task's pending row that got folded into this same
+                        // batch is left orphaned: still "outstanding" forever, and a later flush
+                        // retry for it would re-settle an already-fully-confirmed order and read
+                        // back newlyDone=0, wrongly clawing back a reward already paid.
+                        if (result.data.workerCoinsAwarded > 0) {
+                            reconcilePendingTask(
+                                taskId = task.id,
+                                accountId = accountId,
+                                confirmedCoins = result.data.workerCoinsAwarded.toLong(),
+                                walletBalance = result.data.workerWalletBalance,
+                                accountCoinsEarned = result.data.workerAccountCoinsEarned
+                            )
+                        } else {
+                            Log.w(TAG, "settleOrder diag: orderId=$orderId taskId=${task.id} confirmed zero coins; keeping pending earning for retry")
+                        }
+                    } else {
+                        taskDao.markOrderTasksReported(orderId)
+                    }
+                }
                 if (result.data.status.equals("Pending", ignoreCase = true) ||
                     result.data.status.equals("Completed", ignoreCase = true) ||
                     result.data.status.equals("Failed", ignoreCase = true) ||
@@ -632,7 +937,8 @@ class TaskRepository @Inject constructor(
                 }
                 result.data.workerCoinsAwarded
             }
-            is Resource.Error ->
+            is Resource.Error -> {
+                Log.d(TAG, "settleOrder diag: orderId=$orderId result=ERROR message=${result.message}")
                 // The report didn't land, so the backend's total (and therefore `baseline` on the
                 // next call) is unchanged. Deliberately NOT writing `total` into order_history
                 // here: that field doubles as next call's baseline, and since these rows stay
@@ -642,6 +948,7 @@ class TaskRepository @Inject constructor(
                 // returning null (not 0) — a dropped network call must not be reconciled as if
                 // the backend had confirmed a zero-coin award.
                 null
+            }
             Resource.Loading -> null
         }
     }
@@ -725,7 +1032,10 @@ class TaskRepository @Inject constructor(
         const val SMM_ORDER_PREFIX = "smm_order_"
         const val STATUS_RUNNING = "Running"
         const val STATUS_COMPLETED = "Completed"
+        const val STATUS_REPORTED = "Reported"
         const val STATUS_FAILED = "Failed"
+        const val LEGACY_RESULT_RETRY_ATTEMPTS = 3
+        const val LEGACY_RESULT_RETRY_DELAY_MS = 1_500L
 
         const val TASK_TYPE_FOLLOW = "Follow"
         const val TASK_TYPE_LIKE = "Like"

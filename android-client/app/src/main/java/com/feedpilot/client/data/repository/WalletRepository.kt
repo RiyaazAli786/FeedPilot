@@ -23,7 +23,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
-import kotlinx.coroutines.flow.combine
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,22 +56,25 @@ class WalletRepository @Inject constructor(
     // legitimately spent down to nothing.
     val wallet: Flow<WalletEntity?> = flow {
         restoreWalletFromBackup()
-        emitAll(
-            combine(walletDao.observe(), pendingEarningDao.observePendingTotal()) { baseWallet, pendingTotal ->
-                if (baseWallet == null) null
-                else {
-                    val effectiveTotal = baseWallet.totalCoins + pendingTotal
-                    baseWallet.copy(
-                        totalCoins = effectiveTotal,
-                        lifetimeCoins = maxOf(baseWallet.lifetimeCoins, effectiveTotal)
-                    )
-                }
-            }
-        )
+        emitAll(walletDao.observe())
     }
 
-    val spendableWallet: Flow<WalletEntity?> = walletDao.observe()
+    /**
+     * Alias kept for spend flows. Wallet values are server-confirmed only because transfers,
+     * withdrawals, and orders can debit only coins the backend has already accepted.
+     */
+    val spendableWallet: Flow<WalletEntity?> = wallet
 
+    /**
+     * Persists a durable record of one task's optimistic, dashboard-priced local credit — the
+     * row survives process death even if the app is killed before [creditConfirmedEarning] ever
+     * runs for it, so a pending reward is never silently lost, only left to reconcile on the next
+     * app start / [SyncWorker][com.feedpilot.client.worker.SyncWorker] pass. Callers apply the
+     * actual optimistic credit to the base total themselves (see TaskRepository.submitResult) —
+     * this only records that a not-yet-confirmed credit of [rewardCoins] is outstanding for
+     * [taskId], so [creditConfirmedEarning] knows how much of the base total to unwind if the
+     * backend's confirmed amount ends up different.
+     */
     suspend fun addPendingEarning(taskId: String, orderId: String?, accountId: String, rewardCoins: Long) {
         if (rewardCoins <= 0) return
         pendingEarningDao.upsert(
@@ -87,18 +92,35 @@ class WalletRepository @Inject constructor(
         pendingEarningDao.deleteById(taskId)
     }
 
+    /** Every locally-credited reward the backend hasn't confirmed yet — e.g. its settle call
+     *  failed or the app died before one could even be attempted. See TaskRepository.flushPendingEarnings,
+     *  which re-attempts these so a local-only credit doesn't stay unpushed to the server forever. */
+    suspend fun pendingEarnings(): List<PendingEarningEntity> = pendingEarningDao.getAll()
+
+    suspend fun pendingEarning(taskId: String): PendingEarningEntity? = pendingEarningDao.getByTaskId(taskId)
+
+    suspend fun pendingEarningsForOrderAndAccount(orderId: String, accountId: String): List<PendingEarningEntity> =
+        pendingEarningDao.getByOrderAndAccount(orderId, accountId)
+
+    suspend fun clearPendingEarningsForOrderAndAccount(orderId: String, accountId: String) {
+        pendingEarningDao.deleteByOrderAndAccount(orderId, accountId)
+    }
+
     /**
-     * Confirms one task's optimistic pending earning: credits [confirmedCoins] to the base
-     * total *before* removing the matching pending row, so `base + pendingTotal` never dips
-     * through the transition. The other order — clear first, let the base catch up later via
-     * [reconcileCoins] or the next [refresh] — left a real window where a task's reward was in
-     * neither bucket: normally too brief to notice, but wide enough to see under load (several
-     * accounts settling tasks concurrently, each contending for [walletMutationMutex] and for
-     * `refresh()`'s own network round trip) — which is what showed up as a reward appearing and
-     * then visibly dropping a moment later while running multiple accounts at once.
+     * Reconciles one task's already-applied optimistic credit ([locallyCredited], added straight
+     * to the base total at completion time — see TaskRepository.submitResult) against the
+     * backend's own live-priced [confirmedCoins] for the same completion. Applies only the
+     * *difference* between the two, not [confirmedCoins] outright — re-adding the full confirmed
+     * amount on top of a credit that was already applied would double-count every action's reward
+     * the moment optimistic local crediting is in play. The two normally match (same dashboard
+     * price on both ends), so this is usually a no-op delta of 0; it only moves coins when a
+     * dashboard price changed inside this device's RunnerSettings cache window, or the backend
+     * legitimately priced the completion at less than expected (e.g. a shared order another
+     * account had just exhausted).
      */
-    suspend fun creditConfirmedEarning(taskId: String, confirmedCoins: Long) {
-        if (confirmedCoins > 0) reconcileCoins(confirmedCoins)
+    suspend fun creditConfirmedEarning(taskId: String, locallyCredited: Long, confirmedCoins: Long) {
+        val delta = confirmedCoins - locallyCredited
+        if (delta != 0L) reconcileCoins(delta)
         clearPendingEarning(taskId)
     }
 
@@ -109,6 +131,18 @@ class WalletRepository @Inject constructor(
      * several accounts earning concurrently (many pushes in quick succession, each racing local
      * mutations) that let a push and a local mutation interleave into a total lower than either
      * one alone intended, which is what showed up as a visible coin drop right after a credit.
+     *
+     * Same stale-snapshot guard as [refreshFromServer] (compare against [WalletEntity.lastServerCoins],
+     * not the possibly-optimistic [WalletEntity.totalCoins]) — this push travels over a separate
+     * channel (WebSocket) from the HTTP wallet refresh, so either one can resolve after the other
+     * despite reflecting an older server state, and an older one must not stomp a fresher total.
+     *
+     * [WalletEntity.lastServerCoins] is kept as a monotonic high-water mark (never regressed by an
+     * older response) rather than last-write-wins — see [refreshFromServer] for why: a response
+     * that looks "lower than what we've already confirmed" here is far more likely to be a stale,
+     * out-of-order one than a genuine decrease, and genuine decreases still reach the wallet via
+     * the many `refresh(forceServer = true)` call sites (wallet/orders/withdraw/transfer/etc.
+     * screen opens), which bypass this comparison entirely.
      */
     suspend fun applyLiveUpdate(
         coins: Long,
@@ -119,25 +153,45 @@ class WalletRepository @Inject constructor(
     ) {
         val newTotal = walletMutationMutex.withLock {
             val current = walletDao.get()
-            val mergedTotal = when {
-                current == null -> coins
-                coins < current.lastServerCoins -> coins
-                current.totalCoins > coins -> current.totalCoins
-                else -> coins
+            if (current != null && isStaleSnapshot(current.updatedAt, updatedAt)) {
+                return@withLock current
             }
             val updated = (current ?: WalletEntity(
                 id = "user_wallet",
-                totalCoins = mergedTotal,
+                totalCoins = coins,
                 lifetimeCoins = lifetimeCoins,
                 pendingCoins = pendingCoins,
                 withdrawnCoins = withdrawnCoins,
                 updatedAt = updatedAt,
                 lastServerCoins = coins
             )).copy(
-                totalCoins = mergedTotal,
-                lifetimeCoins = maxOf(current?.lifetimeCoins ?: 0L, lifetimeCoins, mergedTotal),
+                totalCoins = coins,
+                lifetimeCoins = lifetimeCoins,
                 pendingCoins = pendingCoins,
                 withdrawnCoins = withdrawnCoins,
+                updatedAt = updatedAt,
+                lastServerCoins = coins
+            )
+            walletDao.upsert(updated)
+            updated
+        }
+        saveWalletBackup(newTotal.totalCoins)
+    }
+
+    suspend fun applyConfirmedBalance(coins: Long, updatedAt: String = "") {
+        val newTotal = walletMutationMutex.withLock {
+            val current = walletDao.get() ?: WalletEntity(
+                id = "user_wallet",
+                totalCoins = coins,
+                lifetimeCoins = coins,
+                pendingCoins = 0L,
+                withdrawnCoins = 0L,
+                updatedAt = updatedAt,
+                lastServerCoins = coins
+            )
+            val updated = current.copy(
+                totalCoins = coins,
+                lifetimeCoins = maxOf(current.lifetimeCoins, coins),
                 updatedAt = updatedAt,
                 lastServerCoins = coins
             )
@@ -180,23 +234,34 @@ class WalletRepository @Inject constructor(
             // api.getWallet() was in flight must be the one this decision is based on, not a
             // snapshot from before it existed — see walletMutationMutex's doc comment.
             val current = walletDao.get()
-            // current.lastServerCoins is the server total as of our last refresh — comparing the
-            // FRESH server total against that (not against current.totalCoins, which may already
-            // be propped up by an unconfirmed optimistic credit) is what lets a genuine
-            // server-side decrease — an admin dashboard deduction, a processed withdrawal — be
-            // told apart from that credit and always win, instead of being permanently shadowed
-            // by it. See WalletEntity.lastServerCoins.
-            val mergedTotal = when {
-                forceServer || current == null -> serverWallet.totalCoins
-                serverWallet.totalCoins < current.lastServerCoins -> serverWallet.totalCoins
-                current.totalCoins > serverWallet.totalCoins -> current.totalCoins
-                else -> serverWallet.totalCoins
+            // current.lastServerCoins is the highest server total we've confirmed so far — a
+            // monotonic high-water mark, NOT last-write-wins. Comparing the FRESH server total
+            // against that (not against current.totalCoins, which may already be propped up by
+            // an unconfirmed optimistic credit) is what lets a genuine server-side decrease — an
+            // admin dashboard deduction, a processed withdrawal — be told apart from that credit,
+            // instead of being permanently shadowed by it. See WalletEntity.lastServerCoins.
+            //
+            // But every account's runner calls refresh() after each completed action, so a burst
+            // of overlapping requests — worst right when several accounts finish tasks around the
+            // same moment — can resolve out of order. A slower request that started *before* a
+            // credit landed (locally, or on another device's request that reached the server
+            // first) can still return *after* it, carrying a server snapshot that simply predates
+            // that credit. That looks identical to a genuine decrease by magnitude alone — the
+            // only way to tell them apart is that a genuine decrease should still be visible on
+            // the NEXT refresh, once the request storm has settled. So instead of trusting a
+            // lower-than-confirmed reading immediately (which is what used to let a stale
+            // response revert an already-confirmed higher total from a different, faster
+            // in-flight refresh), keep the current total and let it catch up on a later refresh.
+            // Real decreases still reach the wallet promptly via the many
+            // refresh(forceServer = true) call sites (wallet/orders/withdraw/transfer/etc. screen
+            // opens), which bypass this comparison entirely — forceServer is the one deliberate
+            // exception where the server total is the number to show even if it reads lower than
+            // whatever was locally propped up a moment ago.
+            val resolved = if (!forceServer && current != null && isStaleSnapshot(current.updatedAt, serverWallet.updatedAt)) {
+                current
+            } else {
+                serverWallet.copy(lastServerCoins = serverWallet.totalCoins)
             }
-            val resolved = serverWallet.copy(
-                totalCoins = mergedTotal,
-                lifetimeCoins = maxOf(current?.lifetimeCoins ?: 0L, serverWallet.lifetimeCoins, mergedTotal),
-                lastServerCoins = serverWallet.totalCoins
-            )
             walletDao.upsert(resolved)
             resolved
         }
@@ -262,7 +327,20 @@ class WalletRepository @Inject constructor(
     suspend fun reconcileCoins(delta: Long) {
         if (delta == 0L) return
         val newTotal = walletMutationMutex.withLock {
-            val current = walletDao.get() ?: return
+            // A confirmed task reward can land before the very first refresh() has created this
+            // row (fresh install/login, or a cold-starting backend that takes tens of seconds to
+            // answer that first request) — dropping the delta here silently ate the first few
+            // actions' rewards from the visible balance until the next refresh() caught it back up
+            // via the server's authoritative total. Create the row instead, same as addCoins/
+            // applyLiveUpdate already do, so nothing is lost while waiting on that first refresh.
+            val current = walletDao.get() ?: WalletEntity(
+                id = "user_wallet",
+                totalCoins = 0L,
+                lifetimeCoins = 0L,
+                pendingCoins = 0L,
+                withdrawnCoins = 0L,
+                updatedAt = System.currentTimeMillis().toString()
+            )
             val total = (current.totalCoins + delta).coerceAtLeast(0L)
             walletDao.upsert(
                 current.copy(
@@ -392,5 +470,28 @@ class WalletRepository @Inject constructor(
     private companion object {
         const val TRANSFER_IN_TYPE = "TransferIn"
         const val NOTIFICATION_ID_BASE = 4400
+    }
+
+    private fun isStaleSnapshot(currentUpdatedAt: String, incomingUpdatedAt: String): Boolean {
+        val current = parseSnapshotTime(currentUpdatedAt) ?: return false
+        val incoming = parseSnapshotTime(incomingUpdatedAt) ?: return false
+        return incoming < current
+    }
+
+    private fun parseSnapshotTime(value: String?): Long? {
+        if (value.isNullOrBlank()) return null
+        value.toLongOrNull()?.let { return it }
+        return runCatching {
+            val trimmed = value.trim().trimEnd('Z')
+            val normalized = if (trimmed.contains('.')) {
+                val (datePart, fraction) = trimmed.split('.', limit = 2)
+                "$datePart.${fraction.take(3).padEnd(3, '0')}"
+            } else {
+                "$trimmed.000"
+            }
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(normalized)?.time
+        }.getOrNull()
     }
 }

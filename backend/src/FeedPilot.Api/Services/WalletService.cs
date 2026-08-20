@@ -32,12 +32,17 @@ public interface IWalletService
 
     /// <summary>Atomically returns reserved coins from PendingCoins back to the spendable balance (rejected withdrawal).</summary>
     Task ReleaseWithdrawalReservationAsync(Guid walletId, long coins, string reference, CancellationToken ct = default);
+
+    Task FlushPendingBroadcastsAsync(CancellationToken ct = default);
 }
 
 public class WalletService : IWalletService
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<CoinSyncHub, ICoinSyncClient>? _hubContext;
+    private readonly Dictionary<Guid, PendingBroadcastMeta> _pendingBroadcasts = new();
+
+    private readonly record struct PendingBroadcastMeta(Guid UserId, string? Type, string? Reference);
 
     public WalletService(AppDbContext db, IHubContext<CoinSyncHub, ICoinSyncClient>? hubContext = null)
     {
@@ -62,6 +67,31 @@ public class WalletService : IWalletService
             await _hubContext.Clients.Group($"user:{userId}").WalletUpdated(msg);
         }
         catch { }
+    }
+
+    private async Task BroadcastOrDeferAsync(Guid userId, Wallet wallet, string? type = null, string? reference = null, CancellationToken ct = default)
+    {
+        if (_db.Database.CurrentTransaction is not null)
+        {
+            _pendingBroadcasts[wallet.Id] = new PendingBroadcastMeta(userId, type, reference);
+            return;
+        }
+
+        await BroadcastWalletUpdateAsync(userId, wallet, type, reference, ct);
+    }
+
+    public async Task FlushPendingBroadcastsAsync(CancellationToken ct = default)
+    {
+        if (_pendingBroadcasts.Count == 0) return;
+
+        var pending = _pendingBroadcasts.ToArray();
+        _pendingBroadcasts.Clear();
+        foreach (var item in pending)
+        {
+            var wallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == item.Key, ct);
+            if (wallet is not null)
+                await BroadcastWalletUpdateAsync(item.Value.UserId, wallet, item.Value.Type, item.Value.Reference, ct);
+        }
     }
 
     public async Task<Wallet> GetOrCreateAsync(Guid userId, CancellationToken ct = default) =>
@@ -94,7 +124,7 @@ public class WalletService : IWalletService
 
         var updatedWallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == wallet.Id, ct);
         if (updatedWallet is not null)
-            await BroadcastWalletUpdateAsync(userId, updatedWallet, type.ToString(), reference, ct);
+            await BroadcastOrDeferAsync(userId, updatedWallet, type.ToString(), reference, ct);
 
         return new WalletMutationResult(true, updatedWallet?.Coins ?? wallet.Coins, wallet.Id);
     }
@@ -127,7 +157,7 @@ public class WalletService : IWalletService
         var balance = await _db.Wallets.Where(w => w.Id == wallet.Id).Select(w => w.Coins).FirstAsync(ct);
         var updatedWallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == wallet.Id, ct);
         if (updatedWallet is not null)
-            await BroadcastWalletUpdateAsync(userId, updatedWallet, WalletTransactionType.WithdrawHold.ToString(), reference, ct);
+            await BroadcastOrDeferAsync(userId, updatedWallet, WalletTransactionType.WithdrawHold.ToString(), reference, ct);
 
         return new WalletMutationResult(true, balance, wallet.Id);
     }
@@ -153,7 +183,7 @@ public class WalletService : IWalletService
 
         var updatedWallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == walletId, ct);
         if (updatedWallet is not null)
-            await BroadcastWalletUpdateAsync(updatedWallet.UserId, updatedWallet, WalletTransactionType.Withdraw.ToString(), reference, ct);
+            await BroadcastOrDeferAsync(updatedWallet.UserId, updatedWallet, WalletTransactionType.Withdraw.ToString(), reference, ct);
     }
 
     public async Task ReleaseWithdrawalReservationAsync(Guid walletId, long coins, string reference, CancellationToken ct = default)
@@ -177,7 +207,7 @@ public class WalletService : IWalletService
 
         var updatedWallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == walletId, ct);
         if (updatedWallet is not null)
-            await BroadcastWalletUpdateAsync(updatedWallet.UserId, updatedWallet, WalletTransactionType.Refund.ToString(), reference, ct);
+            await BroadcastOrDeferAsync(updatedWallet.UserId, updatedWallet, WalletTransactionType.Refund.ToString(), reference, ct);
     }
 
     /// <summary>

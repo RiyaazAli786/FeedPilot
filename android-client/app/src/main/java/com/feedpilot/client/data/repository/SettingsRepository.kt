@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.feedpilot.client.common.Constants
 import com.feedpilot.client.data.remote.ApiService
 import com.feedpilot.client.data.remote.dto.RunnerSettingsDto
+import com.feedpilot.client.task.EngagementTaskType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -99,6 +100,15 @@ data class AppSettings(
     val maxStoryViewsPerDay: Int = 500,
     val dailyLimitCooldownMinutes: Int = 60
 ) {
+    fun actionCoinReward(taskType: EngagementTaskType, isUpgraded: Boolean): Int = when (taskType) {
+        EngagementTaskType.FOLLOW -> if (isUpgraded) followCoinsUpgraded else followCoinsNormal
+        EngagementTaskType.LIKE -> if (isUpgraded) likeCoinsUpgraded else likeCoinsNormal
+        EngagementTaskType.COMMENT -> if (isUpgraded) commentCoinsUpgraded else commentCoinsNormal
+        EngagementTaskType.REPOST -> if (isUpgraded) repostCoinsUpgraded else repostCoinsNormal
+        EngagementTaskType.SAVE_POST -> if (isUpgraded) savePostCoinsUpgraded else savePostCoinsNormal
+        EngagementTaskType.STORY_VIEW -> if (isUpgraded) storyViewCoinsUpgraded else storyViewCoinsNormal
+    }
+
     companion object {
         const val DEFAULT_ACTION_DELAY_MIN_MS = 1_500L
         const val DEFAULT_ACTION_DELAY_MAX_MS = 4_000L

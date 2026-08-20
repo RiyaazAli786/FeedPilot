@@ -162,8 +162,13 @@ public record UpdateAdminAccountRequest(
 public record TaskDto(Guid Id, Guid OrderId, Guid? AccountId, TaskType TaskType, string TargetId,
     TaskStatus Status, int RetryCount, int RewardCoins, DateTime CreatedAt);
 public record TaskResultRequest([Required] Guid TaskId, [Required] Guid AccountId, bool Success, string? Message);
-public record ManualActionResultRequest([Required] Guid AccountId, [Required] TaskType TaskType, [Required] string Target, string? Message);
-public record TaskResultResponse(Guid TaskId, TaskStatus Status, int CoinsAwarded, long WalletBalance);
+public record ManualActionResultRequest([Required] Guid AccountId, [Required] TaskType TaskType, [Required] string Target, string? Message, string? IdempotencyKey = null);
+public record TaskResultResponse(
+    Guid TaskId,
+    TaskStatus Status,
+    int CoinsAwarded,
+    long WalletBalance,
+    long? AccountCoinsEarned = null);
 public record CompletedTaskDto(Guid AccountId, string TaskType, string TargetId, DateTime CompletedAt);
 
 // ---------- App Orders ----------
@@ -200,7 +205,9 @@ public record AppOrderDto(
     string? ErrorMessage,
     DateTime CreatedAt,
     DateTime? CompletedAt,
-    int WorkerCoinsAwarded = 0);
+    int WorkerCoinsAwarded = 0,
+    long? WorkerWalletBalance = null,
+    long? WorkerAccountCoinsEarned = null);
 
 public record PlaceAppOrderResponse(AppOrderDto Order, long WalletBalance);
 
@@ -470,7 +477,9 @@ public record ReportProgressRequest(
     /// <summary>Machine-readable terminal failure reason for worker-side unrecoverable errors.</summary>
     [MaxLength(64)] string? FailureCode = null,
     /// <summary>Current observed public count for the target, e.g. current followers for follow orders.</summary>
-    [Range(0, int.MaxValue)] int? ObservedCount = null);
+    [Range(0, int.MaxValue)] int? ObservedCount = null,
+    /// <summary>Client-local task/action id used as an idempotency key for one successful worker payout.</summary>
+    [MaxLength(128)] string? ClientTaskId = null);
 
 public record BatchProgressItem(
     Guid OrderId,
@@ -479,7 +488,8 @@ public record BatchProgressItem(
     [MaxLength(512)] string? ErrorMessage = null,
     Guid? AccountId = null,
     [MaxLength(64)] string? FailureCode = null,
-    [Range(0, int.MaxValue)] int? ObservedCount = null);
+    [Range(0, int.MaxValue)] int? ObservedCount = null,
+    [MaxLength(128)] string? ClientTaskId = null);
 
 public record BatchReportProgressRequest(
     [Required, MaxLength(128)] string DeviceId,

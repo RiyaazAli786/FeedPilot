@@ -14,6 +14,7 @@ import com.feedpilot.client.data.remote.dto.PagedOrdersDto
 import com.feedpilot.client.data.remote.dto.PlaceAppOrderRequest
 import com.feedpilot.client.data.remote.dto.PlaceAppOrderResponse
 import com.feedpilot.client.data.remote.dto.ReportProgressRequest
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.net.ConnectException
@@ -161,8 +162,12 @@ class AppOrderRepository @Inject constructor(
         } catch (t: Throwable) {
             val outcome = classifyClaimFailure(t)
             if (outcome is ClaimOutcome.ServerError && outcome.code == 401) {
-                val recovered = authRepository.get().reloadDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
+                val auth = authRepository.get()
+                val recovered = auth.refreshTokens() != null ||
+                    auth.reloadDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME) ||
+                    auth.ensureDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
                 if (recovered) {
+                    delay(250)
                     return try {
                         ClaimOutcome.Success(api.claimOrders(ClaimOrdersRequest(
                             deviceId = deviceId,
@@ -202,24 +207,29 @@ class AppOrderRepository @Inject constructor(
         errorMessage: String? = null,
         accountId: String? = null,
         failureCode: String? = null,
-        observedCount: Int? = null
+        observedCount: Int? = null,
+        clientTaskId: String? = null
     ): Resource<AppOrderDto> {
         return try {
             Resource.Success(
                 api.reportOrderProgress(
                     orderId,
-                    ReportProgressRequest(deviceId, completed, release, errorMessage, accountId, failureCode, observedCount)
+                    ReportProgressRequest(deviceId, completed, release, errorMessage, accountId, failureCode, observedCount, clientTaskId)
                 )
             )
         } catch (t: Throwable) {
             if (t is HttpException && t.code() == 401) {
-                val recovered = authRepository.get().reloadDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
+                val auth = authRepository.get()
+                val recovered = auth.refreshTokens() != null ||
+                    auth.reloadDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME) ||
+                    auth.ensureDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
                 if (recovered) {
+                    delay(250)
                     try {
                         return Resource.Success(
                             api.reportOrderProgress(
                                 orderId,
-                                ReportProgressRequest(deviceId, completed, release, errorMessage, accountId, failureCode, observedCount)
+                                ReportProgressRequest(deviceId, completed, release, errorMessage, accountId, failureCode, observedCount, clientTaskId)
                             )
                         )
                     } catch (_: Throwable) {}

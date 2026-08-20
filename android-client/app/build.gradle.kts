@@ -166,6 +166,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+        keepDebugSymbols += setOf(
+            "**/libandroidx.graphics.path.so",
+            "**/libdatastore_shared_counter.so"
+            )
+        }
     }
     testOptions {
         unitTests {

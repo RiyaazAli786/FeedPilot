@@ -38,6 +38,7 @@ class LiveCoinSyncManager @Inject constructor(
     private var webSocket: WebSocket? = null
     private var isConnectingOrConnected = false
     private var reconnectJob: Job? = null
+    private var activeToken: String? = null
     private val jsonParser = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
     private val _isConnected = MutableStateFlow(false)
@@ -61,8 +62,16 @@ class LiveCoinSyncManager @Inject constructor(
     @Synchronized
     fun startSync(token: String? = authRepository.currentAccessToken()) {
         val jwt = token ?: authRepository.currentAccessToken()
-        if (jwt.isNullOrBlank() || isConnectingOrConnected) return
+        if (jwt.isNullOrBlank()) return
+        if (isConnectingOrConnected && activeToken == jwt) return
+        if (isConnectingOrConnected && activeToken != jwt) {
+            webSocket?.close(1000, "Token refreshed")
+            webSocket = null
+            isConnectingOrConnected = false
+            _isConnected.value = false
+        }
         isConnectingOrConnected = true
+        activeToken = jwt
         connectWebSocket(jwt)
     }
 
@@ -73,6 +82,7 @@ class LiveCoinSyncManager @Inject constructor(
         reconnectJob = null
         webSocket?.close(1000, "Logout / Client stop")
         webSocket = null
+        activeToken = null
         _isConnected.value = false
     }
 
@@ -80,7 +90,7 @@ class LiveCoinSyncManager @Inject constructor(
         val baseUrl = BuildConfig.API_BASE_URL.trimEnd('/')
         val wsUrl = baseUrl
             .replace("http://", "ws://")
-            .replace("https://", "wss://") + "hubs/coin-sync?access_token=$token"
+            .replace("https://", "wss://") + "/hubs/coin-sync?access_token=$token"
 
         val request = Request.Builder()
             .url(wsUrl)
@@ -118,7 +128,7 @@ class LiveCoinSyncManager @Inject constructor(
                 Log.w(TAG, "WebSocket failure: ${t.message}")
                 _isConnected.value = false
                 isConnectingOrConnected = false
-                scheduleReconnect()
+                scheduleReconnect(refreshToken = response?.code == 401 || response?.code == 403)
             }
         })
     }
@@ -176,12 +186,20 @@ class LiveCoinSyncManager @Inject constructor(
         }
     }
 
-    private fun scheduleReconnect() {
+    private fun scheduleReconnect(refreshToken: Boolean = false) {
         if (!authRepository.isLoggedIn.value) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             delay(5000L)
-            val token = authRepository.currentAccessToken()
+            val token = if (refreshToken) {
+                authRepository.refreshTokens()
+                    ?: run {
+                        authRepository.reloadDeviceSession(BuildConfig.VERSION_NAME)
+                        authRepository.currentAccessToken()
+                    }
+            } else {
+                authRepository.currentAccessToken()
+            }
             if (!token.isNullOrBlank()) {
                 Log.d(TAG, "Attempting WebSocket reconnect...")
                 startSync(token)
