@@ -195,6 +195,21 @@ object DatabaseModule {
         }
     }
 
+
+    private val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status_createdAt ON tasks (status, createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_accountId_status_createdAt ON tasks (accountId, status, createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_orderId_status ON tasks (orderId, status)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_accountId_taskType_status_createdAt ON tasks (accountId, taskType, status, createdAt)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_account_logs_accountId_target ON account_logs (accountId, target)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_account_logs_accountId_action_success_timestampMs ON account_logs (accountId, action, success, timestampMs)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_account_logs_accountId_action_target ON account_logs (accountId, action, target)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_pending_earnings_orderId_accountId ON pending_earnings (orderId, accountId)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_pending_earnings_taskId ON pending_earnings (taskId)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -204,7 +219,7 @@ object DatabaseModule {
                 MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
                 MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18,
-                MIGRATION_18_19, MIGRATION_19_20
+                MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21
             )
             .fallbackToDestructiveMigration()
             .fallbackToDestructiveMigrationOnDowngrade()

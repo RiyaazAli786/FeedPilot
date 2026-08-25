@@ -38,6 +38,7 @@ import com.feedpilot.client.task.TaskOutcome
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountLogDao
 import com.feedpilot.client.data.local.AccountLogEntity
+import com.feedpilot.client.data.remote.ApiService
 import com.feedpilot.client.data.remote.InstagramSuggestedUser
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
@@ -58,13 +59,13 @@ import javax.inject.Inject
 import kotlin.random.Random
 
 /**
- * Foreground service that drains the pending-order queue — independently, per account.
+ * Foreground service that drains the pending-order queue - independently, per account.
  *
  * Each account started (see `TasksViewModel`) gets its own coroutine [Job] in [runJobs], each
  * running its own claim ? perform ? report loop against [TaskExecutor]. Accounts genuinely do
  * not interfere with each other: starting a second account never touches the first one's job,
  * and stopping one leaves every other running account alone. Before this, the whole service ran
- * a single shared loop for a single fixed account list — starting a *different* account while one
+ * a single shared loop for a single fixed account list - starting a *different* account while one
  * was already running looked, from that loop's point of view, exactly like a fresh start request,
  * so it replaced (and from the UI's "toggle" logic, sometimes outright stopped) the running one.
  *
@@ -81,11 +82,12 @@ class TaskRunnerService : Service() {
     @Inject lateinit var accountLogDao: AccountLogDao
     @Inject lateinit var accountDao: AccountDao
     @Inject lateinit var instagramRepository: InstagramRepository
+    @Inject lateinit var api: ApiService
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var appGuardRepository: com.feedpilot.client.data.repository.AppGuardRepository
     @Inject lateinit var deviceIdentity: DeviceIdentity
 
-    /** See DeviceIdentity.cloneScopedNotificationId — keeps two same-package clones from
+    /** See DeviceIdentity.cloneScopedNotificationId - keeps two same-package clones from
      *  silently overwriting each other's foreground-service notification. */
     private val notificationId by lazy { deviceIdentity.cloneScopedNotificationId(NOTIFICATION_ID_BASE) }
 
@@ -156,7 +158,7 @@ class TaskRunnerService : Service() {
                 if (accountIds.isEmpty()) {
                     val restored = restorePersistedRuns()
                     if (restored.isNotEmpty()) {
-                        startForegroundCompat(buildNotification("Resuming…"))
+                        startForegroundCompat(buildNotification("Resuming..."))
                         acquireRunnerWakeLock()
                         restored.forEach { (accountId, restoredTypes) ->
                             if (runJobs[accountId]?.isActive != true) {
@@ -167,27 +169,27 @@ class TaskRunnerService : Service() {
                         return START_STICKY
                     }
                     // This request was dispatched via startForegroundService(), which obligates
-                    // the service to call startForeground() shortly after — regardless of whether
+                    // the service to call startForeground() shortly after - regardless of whether
                     // there was anything to actually run. Skipping straight to stopSelf() here
                     // broke that contract and crashed with ForegroundServiceDidNotStartInTimeException
                     // on Android 12+ whenever Start was pressed with no account selected.
                     if (runJobs.isEmpty()) {
-                        startForegroundCompat(buildNotification("Nothing to run — no account selected"))
+                        startForegroundCompat(buildNotification("Nothing to run - no account selected"))
                         stopRunnerService()
                     }
                     return START_NOT_STICKY
                 }
 
-                // A generic placeholder here, not notificationText() — computing the real count
+                // A generic placeholder here, not notificationText() - computing the real count
                 // before this request's own accounts are added to runJobs is exactly what showed
                 // "1 account running" forever after starting a 2nd or 3rd account one at a time:
                 // each start request's notification locked in whatever runJobs.size was *before*
                 // its own additions, and nothing ever corrected it afterwards.
-                startForegroundCompat(buildNotification("Starting…"))
+                startForegroundCompat(buildNotification("Starting..."))
                 acquireRunnerWakeLock()
 
                 for (accountId in accountIds) {
-                    // Already has its own loop running — leave it alone. This is exactly the
+                    // Already has its own loop running - leave it alone. This is exactly the
                     // case that used to stop it: a re-start request for an account already
                     // active must be a no-op, not a restart.
                     if (runJobs[accountId]?.isActive == true) continue
@@ -241,11 +243,33 @@ class TaskRunnerService : Service() {
         runnerState.startingAccount(accountId)
         var endMessage: String? = null
         // Consecutive passes with no real progress (empty batch, or a claimed batch nothing was
-        // eligible for) — grows the idle-wait backoff via [idleWait] and resets to 0 the moment
+        // eligible for) - grows the idle-wait backoff via [idleWait] and resets to 0 the moment
         // this account actually executes something.
         var idleStreak = 0
+        var dailyCountsStartOfDayMs = getStartOfTodayMs()
+        val dailyActionCounts = mutableMapOf<EngagementTaskType, Int>()
 
-        // Carries an in-progress Random-mode streak's type and remaining count across claims —
+        suspend fun dailyCountFor(type: EngagementTaskType): Int {
+            val today = getStartOfTodayMs()
+            if (today != dailyCountsStartOfDayMs) {
+                dailyCountsStartOfDayMs = today
+                dailyActionCounts.clear()
+            }
+            return dailyActionCounts.getOrPut(type) {
+                accountLogDao.getDailyCountForAccountAction(accountId, type.wireName, today)
+            }
+        }
+
+        fun incrementDailyCount(type: EngagementTaskType) {
+            val today = getStartOfTodayMs()
+            if (today != dailyCountsStartOfDayMs) {
+                dailyCountsStartOfDayMs = today
+                dailyActionCounts.clear()
+            }
+            dailyActionCounts[type] = (dailyActionCounts[type] ?: 0) + 1
+        }
+
+        // Carries an in-progress Random-mode streak's type and remaining count across claims -
         // see [buildStreakOrderedBatch] for why this can't just be rebuilt fresh each claim.
         val streakCursor = StreakCursor()
 
@@ -265,16 +289,16 @@ class TaskRunnerService : Service() {
         try {
             while (isActive) {
                 if (appGuardRepository.guardState.value.isDestructive) {
-                    Log.w(TAG, "[$accountId] AppGuard destructive flag active — stopping account run")
+                    Log.w(TAG, "[$accountId] AppGuard destructive flag active - stopping account run")
                     break
                 }
                 // Belt-and-suspenders: meetsOrderStartRequirements() already blocked this account
                 // at Start time if it had no saved session, but the account can be removed/logged
-                // out from another screen mid-run — catch that promptly here instead of only
+                // out from another screen mid-run - catch that promptly here instead of only
                 // finding out reactively once a claimed task's own Instagram call fails.
                 val currentAccount = runCatching { accountDao.getById(accountId) }.getOrNull()
                 if (currentAccount == null || currentAccount.sessionCookies.isBlank()) {
-                    Log.w(TAG, "[$accountId] No saved session anymore — stopping account run")
+                    Log.w(TAG, "[$accountId] No saved session anymore - stopping account run")
                     endMessage = "Stopped: no saved Instagram session for this account"
                     break
                 }
@@ -284,26 +308,19 @@ class TaskRunnerService : Service() {
                     waitForNetwork()
                     continue
                 }
-                // Throttled internally — safe to call every pass without hammering the backend.
+                // Throttled internally - safe to call every pass without hammering the backend.
                 runCatching { settingsRepository.syncRunnerSettingsFromBackend() }
                 val settings = settingsRepository.current()
 
-                // Check daily limits per activity for this account
-                val startOfTodayMs = getStartOfTodayMs()
-                val activeAllowedTypes = allowedTypes.filter { type ->
-                    val limit = when (type) {
-                        EngagementTaskType.FOLLOW -> settings.maxFollowsPerDay
-                        EngagementTaskType.LIKE -> settings.maxLikesPerDay
-                        EngagementTaskType.COMMENT -> settings.maxCommentsPerDay
-                        EngagementTaskType.REPOST -> settings.maxRepostsPerDay
-                        EngagementTaskType.SAVE_POST -> settings.maxSavePostsPerDay
-                        EngagementTaskType.STORY_VIEW -> settings.maxStoryViewsPerDay
+                // Check daily limits per activity for this account. Counts are cached inside this
+                // runner job and incremented after successful actions, avoiding repeated aggregate
+                // queries on every poll while still resetting at the local day boundary.
+                val activeAllowedTypes = buildSet {
+                    for (type in allowedTypes) {
+                        val limit = dailyLimit(settings, type)
+                        if (limit <= 0 || dailyCountFor(type) < limit) add(type)
                     }
-                    if (limit > 0) {
-                        val count = accountLogDao.getDailyCountForAccountAction(accountId, type.wireName, startOfTodayMs)
-                        count < limit
-                    } else true
-                }.toSet()
+                }
 
                 if (activeAllowedTypes.isEmpty() && allowedTypes.isNotEmpty()) {
                     val cooldownMins = settings.dailyLimitCooldownMinutes.coerceAtLeast(1)
@@ -329,7 +346,7 @@ class TaskRunnerService : Service() {
                 val claimed = claimResult.tasks
                 // Random mode covers more than one order type. Grouping the claimed batch into
                 // same-type streaks (instead of leaving claim order, or the old plain shuffle)
-                // is what lets the loop below do "N follows, cooldown, M likes, cooldown, ..." —
+                // is what lets the loop below do "N follows, cooldown, M likes, cooldown, ..." -
                 // a person switching between liking and following works in bursts like this, not
                 // one-at-a-time interleaved. A single-type mode (plain Follow or plain Like) has
                 // nothing to group, so it's left in claim order there with no streak boundaries.
@@ -346,7 +363,7 @@ class TaskRunnerService : Service() {
                 } else {
                     claimed to emptySet()
                 }
-                Log.w(TAG, "[$accountId] Claimed ${batch.size} task(s) in ${System.currentTimeMillis() - claimStartedAt}ms")
+                logPerf(accountId, "claim", claimStartedAt, "tasks=${batch.size} outcome=${claimResult.outcome.javaClass.simpleName}")
 
                 if (batch.isEmpty()) {
                     if (
@@ -396,7 +413,7 @@ class TaskRunnerService : Service() {
                     }
 
                     // A single task's unexpected exception (a DB hiccup, a network layer bug)
-                    // must not take down this account's whole run — that is what made the
+                    // must not take down this account's whole run - that is what made the
                     // runner look like it silently died after one order instead of moving on.
                     val taskStartedAt = System.currentTimeMillis()
                     val result = try {
@@ -419,18 +436,21 @@ class TaskRunnerService : Service() {
                         runCatching { taskRepository.markStatus(task.id, STATUS_SKIPPED) }
                         ProcessResult(ran = false)
                     }
-                    Log.w(TAG, "[$accountId] Task ${task.id}: ran=${result.ran}, took ${System.currentTimeMillis() - taskStartedAt}ms")
+                    logPerf(accountId, "execute", taskStartedAt, "task=${task.id} type=${task.taskType} ran=${result.ran} success=${result.succeeded}")
 
                     if (result.ran) {
                         executed++
+                        if (result.succeeded) {
+                            EngagementTaskType.from(task.taskType)?.let { incrementDailyCount(it) }
+                        }
                         // Random mode: buildStreakOrderedBatch already picked this streak's random
-                        // length and marked the last task of each chunk — cooling down exactly on
+                        // length and marked the last task of each chunk - cooling down exactly on
                         // those boundaries (instead of a separately-counted constant) is what keeps
                         // the "N actions, then switch type" grouping and the cooldown trigger from
                         // ever disagreeing with each other, even though each streak's N is random.
                         if (task.id in streakBoundaryTaskIds) {
-                            Log.w(TAG, "[$accountId] Streak done — cooling down ${settings.cooldownSeconds}s")
-                            runnerState.noteAccount(accountId, "Cooling down ${settings.cooldownSeconds}s…")
+                            Log.w(TAG, "[$accountId] Streak done - cooling down ${settings.cooldownSeconds}s")
+                            runnerState.noteAccount(accountId, "Cooling down ${settings.cooldownSeconds}s...")
                             delay(settings.cooldownSeconds * 1_000L)
                         } else {
                             delay(actionDelay(settings))
@@ -438,8 +458,8 @@ class TaskRunnerService : Service() {
                     }
                     result.terminalOrderId?.let { terminalOrderIds += it }
                     if (result.sessionDead) {
-                        Log.w(TAG, "[$accountId] Session looks logged out — stopping this batch early instead of repeating the same failure")
-                        runnerState.noteAccount(accountId, "Session logged out — re-add this account")
+                        Log.w(TAG, "[$accountId] Session looks logged out - stopping this batch early instead of repeating the same failure")
+                        runnerState.noteAccount(accountId, "Session logged out - re-add this account")
                         sessionDead = true
                         break
                     }
@@ -454,13 +474,13 @@ class TaskRunnerService : Service() {
                 }
 
                 if (sessionDead) {
-                    // Used to back off SESSION_DEAD_BACKOFF_MS and loop back to claim again —
+                    // Used to back off SESSION_DEAD_BACKOFF_MS and loop back to claim again -
                     // which just repeated the exact same failure forever against a session that
                     // needs the operator's attention, showing up as the runner starting and then
                     // getting stuck cycling instead of actually stopping. The status update above
                     // (CHALLENGE_REQUIRED / SESSION_LOGGED_OUT) is what makes a restart correctly
                     // get blocked at Start time until the operator resolves it.
-                    endMessage = "Stopped: Instagram session needs attention — log in via globe icon"
+                    endMessage = "Stopped: Instagram session needs attention - log in via globe icon"
                     break
                 } else if (claimed.isNotEmpty() && executed == 0) {
                     // Tasks were claimed locally/remote but all were ineligible for this account.
@@ -469,11 +489,11 @@ class TaskRunnerService : Service() {
                         Log.w(TAG, "[$accountId] $maxedTypes limit reached for today; checking next orders")
                         PROCESSING_MESSAGE
                     } else {
-                        "Checking next orders…"
+                        "Checking next orders..."
                     }
                     idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, baseMessage, settings.fetchDelayMs)
                 } else if (claimed.isEmpty()) {
-                    idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, "Waiting for orders…", settings.fetchDelayMs)
+                    idleStreak = idleWait(accountId, idleStreak, claimResult.outcome, "Waiting for orders...", settings.fetchDelayMs)
                 } else {
                     idleStreak = 0
                 }
@@ -485,7 +505,7 @@ class TaskRunnerService : Service() {
             throw c
         } catch (t: Throwable) {
             // Nothing inside the loop body should be able to reach here anymore (each task and
-            // each claim is caught individually above) — this is only a last-resort net so a
+            // each claim is caught individually above) - this is only a last-resort net so a
             // truly unexpected crash tells the user why this account's runner stopped instead of
             // it just going quiet.
             Log.e(TAG, "[$accountId] Runner loop crashed", t)
@@ -502,6 +522,19 @@ class TaskRunnerService : Service() {
         return if (lo >= hi) lo else Random.nextLong(lo, hi + 1)
     }
 
+    private fun dailyLimit(settings: AppSettings, type: EngagementTaskType): Int = when (type) {
+        EngagementTaskType.FOLLOW -> settings.maxFollowsPerDay
+        EngagementTaskType.LIKE -> settings.maxLikesPerDay
+        EngagementTaskType.COMMENT -> settings.maxCommentsPerDay
+        EngagementTaskType.REPOST -> settings.maxRepostsPerDay
+        EngagementTaskType.SAVE_POST -> settings.maxSavePostsPerDay
+        EngagementTaskType.STORY_VIEW -> settings.maxStoryViewsPerDay
+    }
+
+    private fun logPerf(accountId: String, step: String, startedAtMs: Long, detail: String = "") {
+        val suffix = detail.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty()
+        Log.d(TAG, "runner_perf account=$accountId step=$step ms=${System.currentTimeMillis() - startedAtMs}$suffix")
+    }
     /** Carries a Random-mode streak's type and remaining count across separate claim calls. */
     private class StreakCursor {
         var type: String? = null
@@ -510,29 +543,29 @@ class TaskRunnerService : Service() {
 
     /**
      * Reorders a claimed batch into same-type chunks, each [perTypeStreakCounts] actions long for
-     * that chunk's type — e.g. Follow=5/Like=3 against a Follow+Like batch produces 5 Follows, 3
+     * that chunk's type - e.g. Follow=5/Like=3 against a Follow+Like batch produces 5 Follows, 3
      * Likes, 5 Follows, ... so the streak/cooldown logic in [launchAccountRun] lands on a real
      * type switch instead of cooling down mid-way through a randomly interleaved mix.
      *
      * [cursor] carries an in-progress streak's type and remaining count over from the previous
      * claim. A claim only ever returns up to `claimBatchSize` tasks, so a streak whose target
      * exceeds how many of that type happen to be in *this* claim used to just get capped at
-     * whatever this batch had — silently delivering a shorter streak (or an immediate, unintended
+     * whatever this batch had - silently delivering a shorter streak (or an immediate, unintended
      * switch) than configured. Picking up where the last claim's streak left off, instead of
      * drawing a fresh target every call, is what makes the configured count actually hold across
      * claim boundaries.
      *
      * Returns the reordered list paired with the set of task ids marking the *end* of each
-     * chunk — [launchAccountRun] cools down exactly on those ids rather than recounting a
+     * chunk - [launchAccountRun] cools down exactly on those ids rather than recounting a
      * separate streak length, which is what keeps the chunk boundaries built here and the
      * cooldown trigger from ever disagreeing. A task id only lands in that set when the streak's
-     * target was actually reached — a type simply running out mid-streak in this claim is not a
+     * target was actually reached - a type simply running out mid-streak in this claim is not a
      * boundary, so no cooldown fires and [cursor] carries the remaining count into the next claim
      * instead.
      *
      * A batch containing only one type (even though [allowedTypes] allows more, e.g. the server
      * happened to hand back all Follows this pass) still gets chunked into that type's own streak
-     * length — the account pauses for the cooldown at the end of each one rather than running
+     * length - the account pauses for the cooldown at the end of each one rather than running
      * that type non-stop, satisfying "only one order type available right now" the same as the
      * mixed case.
      */
@@ -553,12 +586,12 @@ class TaskRunnerService : Service() {
         while (true) {
             // Skips straight to consuming below, with `remaining` untouched, exactly when a
             // streak carried over from the previous claim is still in progress *and* this claim
-            // actually has more of that type — the resume case the whole cursor exists for.
+            // actually has more of that type - the resume case the whole cursor exists for.
             if (type == null || remaining <= 0 || queues[type].isNullOrEmpty()) {
                 val candidates = queues.keys.filter { queues.getValue(it).isNotEmpty() }
                 if (candidates.isEmpty()) break
-                // Excludes whatever `type` still holds — the type that just hit its target, or
-                // ran dry before it could — so a switch away from it is preferred over an
+                // Excludes whatever `type` still holds - the type that just hit its target, or
+                // ran dry before it could - so a switch away from it is preferred over an
                 // immediate repeat when another type still has work.
                 type = candidates.firstOrNull { it != type } ?: candidates.first()
                 // The caller always supplies a count for every real task type; this default only
@@ -615,45 +648,116 @@ class TaskRunnerService : Service() {
                 // the same account must fold to one key regardless of casing.
                 InstagramCrypto.parseUsername(targetId)?.lowercase() ?: targetId.trim().lowercase()
             EngagementTaskType.LIKE, EngagementTaskType.COMMENT, EngagementTaskType.REPOST, EngagementTaskType.SAVE_POST, EngagementTaskType.STORY_VIEW ->
-                // Media shortcodes ARE case-sensitive (base64-style alphabet) — lowercasing this
+                // Media shortcodes ARE case-sensitive (base64-style alphabet) - lowercasing this
                 // used to corrupt the stored value into pointing at a different/nonexistent post,
                 // which is exactly what made the Action Log's "View" button 404 ("Sorry, this page
                 // isn't available") for Like/Comment/Repost/Save/StoryView entries. The actual
                 // engagement mutation was never affected (it resolves from task.targetId directly,
-                // not this key) — only this dedup/display value was wrong.
+                // not this key) - only this dedup/display value was wrong.
                 InstagramCrypto.getCodeFromUrl(targetId)
             null -> targetId.trim().lowercase()
         }
     }
 
+    private data class FallbackFollowTarget(
+        val userId: String,
+        val username: String,
+        val source: String
+    )
+
     private suspend fun processSuggestedFollow(accountId: String, sessionCookies: String): ProcessResult {
-        runnerState.noteAccount(accountId, "Finding suggested users...")
+        runnerState.noteAccount(accountId, "Finding dashboard accounts...")
         updateNotification()
 
+        val current = accountDao.getById(accountId) ?: return ProcessResult(ran = false)
+        val selfKey = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, current.username)
+        val selfIgUserId = instagramCookieValue(sessionCookies, "ds_user_id")
         val completed = completedTargetsPerAccount.getOrPut(accountId) { ConcurrentHashMap.newKeySet() }
+
+        findDashboardFollowTarget(
+            accountId = accountId,
+            selfKey = selfKey,
+            selfIgUserId = selfIgUserId,
+            completed = completed,
+            sessionCookies = sessionCookies
+        )?.let { target ->
+            return performFallbackFollow(accountId, sessionCookies, target, completed)
+        }
+
+        runnerState.noteAccount(accountId, "Finding suggested users...")
+        updateNotification()
         val suggestions = instagramRepository.fetchSuggestedUsers(
             customCookies = sessionCookies,
             maxNumberToDisplay = SUGGESTED_USERS_BATCH_SIZE
-        )
-            .shuffled(Random)
-        var candidate: InstagramSuggestedUser? = null
-        var candidateKey = ""
+        ).shuffled(Random)
+
         for (suggested in suggestions) {
             val key = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, suggested.username)
+            if (key == selfKey || suggested.id == selfIgUserId) continue
             if (key in completed || accountLogDao.hasAccountCompletedTarget(accountId, key)) continue
-            candidate = suggested
-            candidateKey = key
-            break
+            return performFallbackFollow(
+                accountId = accountId,
+                sessionCookies = sessionCookies,
+                target = FallbackFollowTarget(suggested.id, suggested.username, "suggested"),
+                completed = completed
+            )
         }
-        val selected = candidate ?: return ProcessResult(ran = false)
 
-        val targetKey = candidateKey
+        return ProcessResult(ran = false)
+    }
+
+    private suspend fun findDashboardFollowTarget(
+        accountId: String,
+        selfKey: String,
+        selfIgUserId: String?,
+        completed: MutableSet<String>,
+        sessionCookies: String
+    ): FallbackFollowTarget? {
+        val remoteAccounts = runCatching { api.getAccounts() }.getOrNull()
+        val usernames = if (remoteAccounts != null) {
+            remoteAccounts
+                .filter { it.id != accountId }
+                .map { it.username }
+        } else {
+            runCatching { accountDao.getAll() }.getOrNull().orEmpty()
+                .filter { it.id != accountId }
+                .map { it.username }
+        }
+
+        for (username in usernames.map { it.trim().removePrefix("@") }.filter { it.isNotBlank() }.distinct().shuffled(Random)) {
+            val key = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, username)
+            if (key == selfKey) continue
+            if (key in completed || accountLogDao.hasAccountCompletedTarget(accountId, key)) continue
+
+            val cachedId = cachedDashboardFollowUserId(key)
+            val resolved = if (!cachedId.isNullOrBlank()) {
+                cachedId to username
+            } else {
+                val profile = instagramRepository.getUserProfileDetails(username, customCookies = sessionCookies) ?: continue
+                val resolvedKey = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, profile.username)
+                if (resolvedKey == selfKey || resolvedKey in completed || accountLogDao.hasAccountCompletedTarget(accountId, resolvedKey)) continue
+                cacheDashboardFollowUserId(resolvedKey, profile.id)
+                profile.id to profile.username
+            }
+            if (resolved.first == selfIgUserId) continue
+            return FallbackFollowTarget(resolved.first, resolved.second, "dashboard")
+        }
+        return null
+    }
+
+    private suspend fun performFallbackFollow(
+        accountId: String,
+        sessionCookies: String,
+        target: FallbackFollowTarget,
+        completed: MutableSet<String>
+    ): ProcessResult {
+        val targetKey = canonicalTargetKey(EngagementTaskType.FOLLOW.wireName, target.username)
         runnerState.working(accountId, "Follow")
-        Log.w(TAG, "[$accountId] No order available; following suggested user @${selected.username} (${selected.id})")
+        Log.w(TAG, "[$accountId] No order available; following ${target.source} account @${target.username} (${target.userId})")
 
         val result = instagramRepository.follow(
-            targetUserId = selected.id,
-            targetUsername = selected.username,
+            targetUserId = target.userId,
+            targetUsername = target.username,
             customCookies = sessionCookies
         )
         if (!result.updatedCookies.isNullOrBlank()) {
@@ -663,9 +767,9 @@ class TaskRunnerService : Service() {
 
         completed.add(targetKey)
         val message = if (result.ok) {
-            "Followed suggested @${selected.username}"
+            "Followed ${target.source} @${target.username}"
         } else {
-            result.reason ?: "Instagram rejected suggested follow"
+            result.reason ?: "Instagram rejected ${target.source} follow"
         }
 
         runCatching {
@@ -687,7 +791,7 @@ class TaskRunnerService : Service() {
         return if (result.ok) {
             runnerState.recordSuccess(accountId, 0, message)
             updateNotification()
-            ProcessResult(ran = true)
+            ProcessResult(ran = true, succeeded = true)
         } else {
             runnerState.recordFailure(accountId, message)
             val isChallenge = isChallengeFailure(result.reason)
@@ -701,14 +805,34 @@ class TaskRunnerService : Service() {
                 runnerState.noteAccount(accountId, "Session logged out - log in via globe icon")
             }
             updateNotification()
-            ProcessResult(ran = true, sessionDead = isChallenge || isLoggedOut)
+            ProcessResult(ran = true, succeeded = false, sessionDead = isChallenge || isLoggedOut)
         }
     }
+
+    private fun cachedDashboardFollowUserId(targetKey: String): String? =
+        getSharedPreferences(FALLBACK_FOLLOW_CACHE_PREFS, Context.MODE_PRIVATE)
+            .getString("ig_user_id:$targetKey", null)
+
+    private fun cacheDashboardFollowUserId(targetKey: String, userId: String) {
+        if (targetKey.isBlank() || userId.isBlank()) return
+        getSharedPreferences(FALLBACK_FOLLOW_CACHE_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString("ig_user_id:$targetKey", userId)
+            .apply()
+    }
+
+    private fun instagramCookieValue(cookies: String, name: String): String? =
+        cookies.split(';')
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("$name=") }
+            ?.substringAfter('=')
+            ?.takeIf { it.isNotBlank() }
 
     /** Outcome of [process]: whether the task actually ran (success or failure, vs. skipped),
      *  and whether the failure means the whole session is dead rather than just this one task. */
     private data class ProcessResult(
         val ran: Boolean,
+        val succeeded: Boolean = false,
         val sessionDead: Boolean = false,
         val terminalOrderId: String? = null
     )
@@ -747,13 +871,13 @@ class TaskRunnerService : Service() {
                 }
                 runCatching {
                     accountLogDao.insert(AccountLogEntity(
-                        // Deterministic — matches AccountRepository's "restored_" backfill id
-                        // scheme — so a second success log for a target this account already
+                        // Deterministic - matches AccountRepository's "restored_" backfill id
+                        // scheme - so a second success log for a target this account already
                         // has one for (a re-claimed order whose completion report didn't fully
                         // land, a retry, a canonical-key edge case) replaces that row instead of
                         // adding a new one. A random id here let duplicate success rows pile up
                         // for the same real-world action, and getDailyCountForAccountAction counts
-                        // raw rows — that inflated the daily action-limit tally past the number of
+                        // raw rows - that inflated the daily action-limit tally past the number of
                         // targets actually acted on, tripping the daily cap far short of the
                         // configured number.
                         id = "success_${accountId}_${task.taskType}_$targetKey",
@@ -766,7 +890,7 @@ class TaskRunnerService : Service() {
                     ))
                 }
                 val terminalOrderId = if (task.id.startsWith(BACKEND_TASK_PREFIX)) task.orderId else null
-                ProcessResult(ran = true, terminalOrderId = terminalOrderId)
+                ProcessResult(ran = true, succeeded = true, terminalOrderId = terminalOrderId)
             }
             is TaskOutcome.Failure -> {
                 if (isNetworkFailure(outcome.reason)) {
@@ -796,7 +920,7 @@ class TaskRunnerService : Service() {
                         timestampMs = System.currentTimeMillis()
                     ))
                 }
-                // A dead session or challenge fails every subsequent task in the batch —
+                // A dead session or challenge fails every subsequent task in the batch -
                 // continuing through the other ~19 only wastes calls against a session that is
                 // not coming back on its own and makes the "no more actions after some
                 // processing" symptom look like a hang instead of what it actually is.
@@ -808,22 +932,22 @@ class TaskRunnerService : Service() {
                     runCatching { accountDao.updateStatus(accountId, "CHALLENGE_REQUIRED") }
                     runnerState.noteAccount(accountId, "Challenge Required")
                 } else if (isLoggedOut) {
-                    // Persisted (not just logged) so the Start-time gate — TasksViewModel's
-                    // meetsOrderStartRequirements callers — blocks a restart until the operator
+                    // Persisted (not just logged) so the Start-time gate - TasksViewModel's
+                    // meetsOrderStartRequirements callers - blocks a restart until the operator
                     // re-adds the account, the same way CHALLENGE_REQUIRED already does.
                     Log.w(TAG, "[$accountId] Account session logged out: ${outcome.reason}")
                     runCatching { accountDao.updateStatus(accountId, "SESSION_LOGGED_OUT") }
-                    runnerState.noteAccount(accountId, "Session logged out — log in via globe icon")
+                    runnerState.noteAccount(accountId, "Session logged out - log in via globe icon")
                 }
                 val sessionDead = isChallenge || isLoggedOut
                 val terminalOrderId = if (
                     task.id.startsWith(BACKEND_TASK_PREFIX) &&
                     isTerminalTargetFailure(outcome.reason)
                 ) task.orderId else null
-                ProcessResult(ran = true, sessionDead = sessionDead, terminalOrderId = terminalOrderId)
+                ProcessResult(ran = true, succeeded = false, sessionDead = sessionDead, terminalOrderId = terminalOrderId)
             }
             is TaskOutcome.Skipped -> {
-                // Not reported — the backend keeps the order and hands it out again later.
+                // Not reported - the backend keeps the order and hands it out again later.
                 taskRepository.markStatus(task.id, STATUS_SKIPPED)
                 runnerState.recordSkip(outcome.reason)
                 ProcessResult(ran = false)
@@ -845,7 +969,7 @@ class TaskRunnerService : Service() {
             stopMessages[accountId] = message ?: "Stopped"
             job.cancel()
         } else {
-            // Nothing actually running for this account — still clear a stale "running" row.
+            // Nothing actually running for this account - still clear a stale "running" row.
             runnerState.stoppedAccount(accountId, message)
         }
     }
@@ -976,7 +1100,7 @@ class TaskRunnerService : Service() {
         val coins = runnerState.stats.value.coinsEarned
         val suffix = if (coins > 0) " - +$coins coins" else ""
         return when (running) {
-            0 -> "Starting…"
+            0 -> "Starting..."
             1 -> "Running 1 account$suffix"
             else -> "Running $running accounts$suffix"
         }
@@ -1033,7 +1157,7 @@ class TaskRunnerService : Service() {
 
     /**
      * Waits out one non-productive pass (empty batch, or a claimed batch nothing was eligible
-     * for) — picks a message and delay from this account's own [outcome] (the result of the very
+     * for) - picks a message and delay from this account's own [outcome] (the result of the very
      * claim call that just came back empty) so a rate-limited or network-broken claim reads
      * differently from a genuinely empty queue, and grows the delay via [growingBackoff] on
      * repeated non-productive passes instead of retrying at the same fixed cadence forever. A
@@ -1041,16 +1165,16 @@ class TaskRunnerService : Service() {
      * compounding it further.
      *
      * [outcome] must come from this account's own claim result, not a value shared across
-     * accounts — this repository/service is shared by every signed-in account's independent
+     * accounts - this repository/service is shared by every signed-in account's independent
      * runner loop on this clone, and reading a cross-account "last outcome" let one account's
      * rate-limit or error show up on a sibling account that had nothing to do with it.
      *
-     * Returns the next [idleStreak] value — callers must feed it back in and reset it to 0 the
+     * Returns the next [idleStreak] value - callers must feed it back in and reset it to 0 the
      * moment a pass actually executes something.
      */
     private suspend fun idleWait(accountId: String, idleStreak: Int, outcome: ClaimOutcome, baseMessage: String, fetchDelayMs: Long): Int {
         // The countdown itself is rendered live by the UI off AccountRunnerStats.waitUntilMs
-        // (see TasksScreen's status banner) — these messages deliberately don't bake in a static
+        // (see TasksScreen's status banner) - these messages deliberately don't bake in a static
         // second count, or the two would drift apart and double up ("...12s (11s)").
         val (message, waitMs) = when (outcome) {
             is ClaimOutcome.RateLimited ->
@@ -1060,7 +1184,7 @@ class TaskRunnerService : Service() {
             is ClaimOutcome.ServerError ->
                 "Server error (${outcome.code})" to growingBackoff(fetchDelayMs, idleStreak)
             is ClaimOutcome.Success ->
-                // An empty queue is normal — a new order can arrive at any moment, so poll at a
+                // An empty queue is normal - a new order can arrive at any moment, so poll at a
                 // flat fetchDelayMs cadence rather than compounding delays that would slow pickup.
                 baseMessage to fetchDelayMs.coerceIn(1_000L, 5_000L)
         }
@@ -1070,7 +1194,7 @@ class TaskRunnerService : Service() {
         return idleStreak + 1
     }
 
-    /** Doubles [base] per consecutive non-productive pass, capped at 3s — used only for actual
+    /** Doubles [base] per consecutive non-productive pass, capped at 3s - used only for actual
      * errors (network/server) to back off a broken endpoint, not for an empty-but-healthy queue. */
     private fun growingBackoff(base: Long, streak: Int): Long =
         (base * (1L shl streak.coerceIn(0, 3))).coerceAtMost(3_000L)
@@ -1087,7 +1211,8 @@ class TaskRunnerService : Service() {
 
         private const val BATCH_SIZE = 20
         private const val SUGGESTED_USERS_BATCH_SIZE = 50
-        /** Fallback streak length for buildStreakOrderedBatch — see its doc comment. */
+        private const val FALLBACK_FOLLOW_CACHE_PREFS = "fallback_follow_user_cache"
+        /** Fallback streak length for buildStreakOrderedBatch - see its doc comment. */
         private const val DEFAULT_STREAK_LENGTH = 5
 
         const val ACTION_START = "com.feedpilot.client.action.START_RUNNER"
@@ -1101,7 +1226,7 @@ class TaskRunnerService : Service() {
 
         /**
          * Starts (or, for an account already running, leaves untouched) an independent loop per
-         * account in [accountIds]. Safe to call while other accounts are already running —
+         * account in [accountIds]. Safe to call while other accounts are already running -
          * see the class doc.
          */
         fun start(

@@ -43,7 +43,15 @@ data class AccountEntity(
     val gender: String = "male"
 )
 
-@Entity(tableName = "tasks")
+@Entity(
+    tableName = "tasks",
+    indices = [
+        Index(value = ["status", "createdAt"]),
+        Index(value = ["accountId", "status", "createdAt"]),
+        Index(value = ["orderId", "status"]),
+        Index(value = ["accountId", "taskType", "status", "createdAt"])
+    ]
+)
 data class TaskEntity(
     @PrimaryKey val id: String,
     val orderId: String,
@@ -95,7 +103,14 @@ data class WithdrawalEntity(
 )
 
 /** Per-account action log entry: records every follow/like success or failure. */
-@Entity(tableName = "account_logs")
+@Entity(
+    tableName = "account_logs",
+    indices = [
+        Index(value = ["accountId", "target"]),
+        Index(value = ["accountId", "action", "success", "timestampMs"]),
+        Index(value = ["accountId", "action", "target"])
+    ]
+)
 data class AccountLogEntity(
     @PrimaryKey val id: String,
     val accountId: String,
@@ -107,7 +122,13 @@ data class AccountLogEntity(
 )
 
 /** Unconfirmed earned task rewards queued locally until server settlement is acknowledged. */
-@Entity(tableName = "pending_earnings")
+@Entity(
+    tableName = "pending_earnings",
+    indices = [
+        Index(value = ["orderId", "accountId"]),
+        Index(value = ["taskId"])
+    ]
+)
 data class PendingEarningEntity(
     @PrimaryKey val id: String,
     val taskId: String,
