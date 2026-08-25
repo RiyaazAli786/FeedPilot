@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -43,6 +44,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -632,14 +635,15 @@ private fun ModeSelector(
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = if (locked)
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f)
             else
-                selectorSurface,
-            border = if (locked) null else androidx.compose.foundation.BorderStroke(
+                AppTheme.brand.premiumSurface,
+            border = BorderStroke(
                 1.dp,
-                selectorAccent.copy(alpha = 0.45f)
+                if (locked) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                else selectorAccent.copy(alpha = 0.42f)
             ),
-            modifier = Modifier.clip(RoundedCornerShape(10.dp))
+            modifier = Modifier.clip(RoundedCornerShape(8.dp))
         ) {
             Row(
                 Modifier
@@ -647,7 +651,7 @@ private fun ModeSelector(
                         if (!locked) Modifier.clickableSurface { expanded = true }
                         else Modifier  // no-op - can't change mode while running
                     )
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 9.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -710,21 +714,29 @@ private fun AccountActionButton(
     tint: Color,
     size: Int = 34,
     iconSize: Int = 17,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val shape = RoundedCornerShape(if (size >= 34) 10.dp else 7.dp)
+    val buttonColor = if (enabled) color else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+    val iconTint = if (enabled) tint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
     Surface(
-        shape = CircleShape,
-        color = color,
+        shape = shape,
+        color = buttonColor,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 0.72f else 0.35f)),
         modifier = Modifier
             .size(size.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick)
+            .clip(shape)
+            .then(
+                if (enabled) Modifier.clickable(onClick = onClick)
+                else Modifier.semantics { disabled() }
+            )
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 icon,
                 contentDescription = contentDescription,
-                tint = tint,
+                tint = iconTint,
                 modifier = Modifier.size(iconSize.dp)
             )
         }
@@ -985,9 +997,15 @@ private fun AccountTaskCard(
         }
 
     Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp,
+        shape = RoundedCornerShape(8.dp),
+        color = AppTheme.brand.premiumSurface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(
+            1.dp,
+            if (isRunningOrValidating) AppTheme.brand.orange.copy(alpha = 0.55f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.95f)
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .then(loginClickModifier)
@@ -996,7 +1014,7 @@ private fun AccountTaskCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 6.dp, end = 6.dp, top = 5.dp, bottom = 0.dp),
+                    .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
@@ -1023,7 +1041,7 @@ private fun AccountTaskCard(
                         )
                     }
                 }
-                Spacer(Modifier.width(7.dp))
+                Spacer(Modifier.width(9.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -1039,7 +1057,7 @@ private fun AccountTaskCard(
                         AccountActionButton(
                             icon = Icons.Filled.Edit,
                             contentDescription = "Update profile",
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                             tint = AppTheme.brand.orange,
                             size = 22,
                             iconSize = 12,
@@ -1097,10 +1115,10 @@ private fun AccountTaskCard(
                     AccountActionButton(
                         icon = if (isRunningOrValidating) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (isRunningOrValidating) "Pause Task Runner" else "Start Task Runner",
-                        color = if (isRunningOrValidating) AppTheme.brand.orange else MaterialTheme.colorScheme.primaryContainer,
-                        tint = if (isRunningOrValidating) Color.White else MaterialTheme.colorScheme.primary,
-                        size = 34,
-                        iconSize = 16,
+                        color = if (isRunningOrValidating) AppTheme.brand.orange else AppTheme.brand.coinGold.copy(alpha = 0.18f),
+                        tint = if (isRunningOrValidating) Color.White else AppTheme.brand.mutedGold,
+                        size = 36,
+                        iconSize = 17,
                         onClick = onStartSingle
                     )
                 }
@@ -1110,7 +1128,7 @@ private fun AccountTaskCard(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 48.dp, end = 6.dp, bottom = 5.dp),
+                    .padding(start = 56.dp, end = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -1129,19 +1147,21 @@ private fun AccountTaskCard(
                     AccountActionButton(
                         icon = Icons.Filled.Refresh,
                         contentDescription = "Refresh Profile Picture",
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         size = 26,
                         iconSize = 13,
+                        enabled = !isRunningOrValidating,
                         onClick = onRefreshProfile
                     )
                     AccountActionButton(
                         icon = Icons.Filled.Language,
                         contentDescription = "Open in browser",
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         size = 26,
                         iconSize = 13,
+                        enabled = !isRunningOrValidating,
                         onClick = onOpenSession
                     )
                     AccountActionButton(
@@ -1156,7 +1176,7 @@ private fun AccountTaskCard(
                     AccountActionButton(
                         icon = Icons.Filled.Close,
                         contentDescription = "Remove Account",
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         size = 26,
                         iconSize = 13,
@@ -1169,7 +1189,7 @@ private fun AccountTaskCard(
             if (showBanner) {
                 Surface(
                     color = AppTheme.brand.orange,
-                    shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                    shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -1221,7 +1241,7 @@ private fun AccountTaskCard(
             } else if (isChallenged) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                    shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onOpenSession)
@@ -1251,7 +1271,7 @@ private fun AccountTaskCard(
             } else if (isSessionLoggedOut) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp),
+                    shape = RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable(onClick = onOpenSession)
