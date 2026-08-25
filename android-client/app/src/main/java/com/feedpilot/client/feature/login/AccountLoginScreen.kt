@@ -29,6 +29,7 @@ import com.feedpilot.client.feature.accounts.InstagramIcon
 import com.feedpilot.client.ui.components.LoginColors
 import com.feedpilot.client.ui.components.PurpleTopBar
 import com.feedpilot.client.ui.components.loginTextFieldColors
+import com.feedpilot.client.ui.theme.AppTheme
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -63,7 +64,7 @@ fun AccountLoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(LoginColors.surface)
+            .background(MaterialTheme.colorScheme.background)
             .navigationBarsPadding()
             .imePadding()
     ) {
@@ -74,8 +75,9 @@ fun AccountLoginScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp, vertical = 8.dp)
                 .height(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                .clip(RoundedCornerShape(8.dp))
+                .background(AppTheme.brand.pillBackground)
+                .border(1.dp, AppTheme.brand.hairline, RoundedCornerShape(8.dp))
                 .padding(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -83,7 +85,7 @@ fun AccountLoginScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(if (selectedTab == 0) MaterialTheme.colorScheme.primary else Color.Transparent)
                     .clickable { selectedTab = 0 },
                 contentAlignment = Alignment.Center
@@ -99,7 +101,7 @@ fun AccountLoginScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(if (selectedTab == 1) MaterialTheme.colorScheme.primary else Color.Transparent)
                     .clickable { selectedTab = 1 },
                 contentAlignment = Alignment.Center
@@ -179,7 +181,7 @@ fun AccountLoginScreen(
                         )
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = loginTextFieldColors(),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -198,7 +200,7 @@ fun AccountLoginScreen(
                         )
                     },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
@@ -256,10 +258,10 @@ fun AccountLoginScreen(
                         }
                     },
                     enabled = !isLoading,
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4CB5F9),
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -268,7 +270,7 @@ fun AccountLoginScreen(
                     if (isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp
                         )
                     } else {

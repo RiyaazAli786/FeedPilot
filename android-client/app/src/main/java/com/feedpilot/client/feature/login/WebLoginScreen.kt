@@ -340,7 +340,7 @@ fun WebLoginScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(LoginColors.surface)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
             PurpleTopBar(
@@ -360,8 +360,8 @@ fun WebLoginScreen(
             if (isLoading) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFF4CB5F9),
-                    trackColor = LoginColors.border
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.outlineVariant
                 )
             }
 
@@ -708,8 +708,8 @@ fun WebLoginScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = LoginColors.surface,
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 6.dp
                 ) {
                     Row(
@@ -717,7 +717,7 @@ fun WebLoginScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        CircularProgressIndicator(color = Color(0xFF4CB5F9))
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Column {
                             Text(
                                 "Session Captured!",
@@ -753,8 +753,8 @@ private fun StatusOverlay(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = LoginColors.surface,
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
             modifier = Modifier.padding(32.dp)
         ) {
@@ -776,10 +776,10 @@ private fun StatusOverlay(
                     }
                     Button(
                         onClick = onAction,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF4CB5F9),
-                            contentColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
                         Text(actionLabel, fontWeight = FontWeight.Bold)

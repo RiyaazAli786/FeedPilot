@@ -26,9 +26,9 @@ fun UpdatesScreen(
                 state.checking -> {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(8.dp))
-                    Text("Checking for updates…")
+                    Text("Checking for updates...")
                 }
-                state.upToDate -> Text("You're on the latest version 🎉")
+                state.upToDate -> Text("You're on the latest version")
                 state.release != null -> {
                     val release = state.release!!
                     Text(

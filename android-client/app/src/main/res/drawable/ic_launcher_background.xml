@@ -1,7 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  FeedPilot graphite-to-midnight gradient with cool cyan and blue ambient halo.
--->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -9,40 +6,38 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Obsidian and graphite base -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="linear"
                 android:startX="0" android:startY="0"
                 android:endX="108" android:endY="108"
-                android:startColor="#07141D"
-                android:centerColor="#050A10"
-                android:endColor="#020407" />
+                android:startColor="#232116"
+                android:centerColor="#0E100C"
+                android:endColor="#030403" />
         </aapt:attr>
     </path>
 
-    <!-- Cyan radial glow behind the FeedPilot emblem -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="54" android:centerY="52"
-                android:gradientRadius="48"
-                android:startColor="#6625D9D0"
-                android:endColor="#0025D9D0" />
+                android:centerX="50" android:centerY="38"
+                android:gradientRadius="52"
+                android:startColor="#55F5D98B"
+                android:centerColor="#229C7732"
+                android:endColor="#00000000" />
         </aapt:attr>
     </path>
 
-    <!-- Subtle electric-blue highlight ring -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="54" android:centerY="48"
-                android:gradientRadius="36"
-                android:startColor="#334D7CFF"
-                android:endColor="#004D7CFF" />
+                android:centerX="77" android:centerY="80"
+                android:gradientRadius="42"
+                android:startColor="#3341D6B1"
+                android:endColor="#00000000" />
         </aapt:attr>
     </path>
 </vector>

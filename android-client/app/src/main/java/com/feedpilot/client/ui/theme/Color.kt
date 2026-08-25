@@ -2,42 +2,49 @@ package com.feedpilot.client.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// ---------- Accent (gold — matches the diamond icon) ----------
-val Gold = Color(0xFF25D9D0)
-val GoldBright = Color(0xFF6EF7EE)
-val GoldDeep = Color(0xFF0B8F9C)
-val AccentText = Color(0xFF8DEDE8)
+// ---------- Brand: executive charcoal, ivory, and minted gold ----------
+val PremiumGold = Color(0xFFD8B86A)
+val PremiumGoldBright = Color(0xFFF5D98B)
+val PremiumGoldDeep = Color(0xFF9C7732)
+val PremiumCopper = Color(0xFFC97D4D)
+val PremiumMint = Color(0xFF41D6B1)
+val PremiumBlue = Color(0xFF5F8DFF)
 
-val Orange = Color(0xFF4D7CFF)
-val OrangeDark = Color(0xFF2554D9)
+val Gold = PremiumGold
+val GoldBright = PremiumGoldBright
+val GoldDeep = PremiumGoldDeep
+val AccentText = PremiumGoldBright
+val Orange = PremiumCopper
+val OrangeDark = Color(0xFFA55D35)
+val CoinGold = PremiumGold
+val DiamondBlue = PremiumBlue
 
-val CoinGold = Color(0xFF25D9D0)
-val DiamondBlue = Color(0xFF56C6F5)
+// ---------- Light ----------
+val LightBackground = Color(0xFFF7F4EC)
+val LightSurface = Color(0xFFFFFCF5)
+val LightSurfaceElevated = Color(0xFFFFFFFF)
+val LightOnSurface = Color(0xFF171512)
+val LightOnSurfaceVariant = Color(0xFF625C50)
+val LightBorder = Color(0xFFE1D7C4)
 
-// ---------- Light (neutral, non-purple) ----------
-val LightBackground = Color(0xFFF3F7FA)
-val LightSurface = Color(0xFFFFFFFF)
-val LightOnSurface = Color(0xFF101820)
-val LightOnSurfaceVariant = Color(0xFF58626D)
-val LightBorder = Color(0xFFD9E3EA)
-
-// ---------- Dark (premium charcoal) ----------
-val DarkBackground = Color(0xFF060B10)
-val DarkSurface = Color(0xFF0D151C)
-val DarkSurfaceVariant = Color(0xFF14212B)
-val DarkOnSurface = Color(0xFFF2F7F8)
-val DarkOnSurfaceVariant = Color(0xFF9FB1BD)
-val DarkBorder = Color(0xFF243541)
+// ---------- Dark ----------
+val DarkBackground = Color(0xFF070807)
+val DarkSurface = Color(0xFF11120F)
+val DarkSurfaceVariant = Color(0xFF1A1C18)
+val DarkSurfaceElevated = Color(0xFF202119)
+val DarkOnSurface = Color(0xFFF7F1E2)
+val DarkOnSurfaceVariant = Color(0xFFC4BBA7)
+val DarkBorder = Color(0xFF383426)
 
 // ---------- Header / nav surfaces ----------
-val HeaderTop = Color(0xFF13232E)
-val HeaderBottom = Color(0xFF071016)
-val NavSurface = Color(0xFF09131A)
+val HeaderTop = Color(0xFF202015)
+val HeaderMid = Color(0xFF11130F)
+val HeaderBottom = Color(0xFF050605)
+val NavSurface = Color(0xFF0D0E0B)
 
 // ---------- Status ----------
-val StatusGreen = Color(0xFF2FBF71)
-val StatusYellow = Color(0xFFF9A825)
-val StatusRed = Color(0xFFE5484D)
+val StatusGreen = Color(0xFF36C484)
+val StatusYellow = Color(0xFFF0B84B)
+val StatusRed = Color(0xFFE85A5A)
 
-// Text placed on the gold accent (buttons, chips).
-val OnAccent = Color(0xFF031013)
+val OnAccent = Color(0xFF151007)

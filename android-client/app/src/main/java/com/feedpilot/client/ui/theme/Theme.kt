@@ -9,39 +9,40 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 private val LightColors = lightColorScheme(
-    primary = Gold,
-    onPrimary = OnAccent,
-    primaryContainer = GoldDeep,
-    onPrimaryContainer = Color.White,
-    secondary = Orange,
-    onSecondary = OnAccent,
-    secondaryContainer = Color(0xFFDDE8FF),
-    onSecondaryContainer = Color(0xFF071A45),
-    tertiary = Gold,
-    tertiaryContainer = Color(0xFFD8F8F5),
-    onTertiaryContainer = Color(0xFF042326),
+    primary = PremiumGoldDeep,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFF3E4BE),
+    onPrimaryContainer = Color(0xFF2E220C),
+    secondary = PremiumCopper,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFF5D5C3),
+    onSecondaryContainer = Color(0xFF3D1909),
+    tertiary = PremiumMint,
+    tertiaryContainer = Color(0xFFD9F7EE),
+    onTertiaryContainer = Color(0xFF06241C),
     background = LightBackground,
     onBackground = LightOnSurface,
     surface = LightSurface,
     onSurface = LightOnSurface,
-    surfaceVariant = LightSurface,
+    surfaceVariant = Color(0xFFF0E8D9),
     onSurfaceVariant = LightOnSurfaceVariant,
     outline = LightBorder,
+    outlineVariant = Color(0xFFECE2CF),
     error = StatusRed
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Gold,
+    primary = PremiumGold,
     onPrimary = OnAccent,
-    primaryContainer = GoldDeep,
-    onPrimaryContainer = Color.White,
-    secondary = Orange,
-    onSecondary = OnAccent,
-    secondaryContainer = Color(0xFF0E245A),
-    onSecondaryContainer = GoldBright,
-    tertiary = Gold,
-    tertiaryContainer = Color(0xFF052D32),
-    onTertiaryContainer = GoldBright,
+    primaryContainer = Color(0xFF3C2F13),
+    onPrimaryContainer = PremiumGoldBright,
+    secondary = PremiumCopper,
+    onSecondary = Color(0xFF1B0D06),
+    secondaryContainer = Color(0xFF432312),
+    onSecondaryContainer = Color(0xFFFFD8BE),
+    tertiary = PremiumMint,
+    tertiaryContainer = Color(0xFF0D342C),
+    onTertiaryContainer = Color(0xFFB9F8E4),
     background = DarkBackground,
     onBackground = DarkOnSurface,
     surface = DarkSurface,
@@ -49,10 +50,10 @@ private val DarkColors = darkColorScheme(
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant,
     outline = DarkBorder,
+    outlineVariant = Color(0xFF2D2B22),
     error = StatusRed
 )
 
-/** Extra brand colors that dynamically adapt between Light and Dark themes. */
 data class BrandColors(
     val headerGradient: Brush,
     val pillBackground: Color,
@@ -63,21 +64,27 @@ data class BrandColors(
     val orange: Color,
     val navBar: Color,
     val onNavSelected: Color,
-    val onNavUnselected: Color
+    val onNavUnselected: Color,
+    val premiumSurface: Color,
+    val hairline: Color,
+    val mutedGold: Color
 )
 
 val LocalBrandColors = androidx.compose.runtime.staticCompositionLocalOf {
     BrandColors(
-        headerGradient = Brush.verticalGradient(listOf(HeaderTop, HeaderBottom)),
-        pillBackground = Color(0x33FFFFFF),
-        headerContentColor = Color.White,
-        coinGold = CoinGold,
-        diamondBlue = DiamondBlue,
-        magenta = AccentText,
-        orange = Orange,
+        headerGradient = Brush.verticalGradient(listOf(HeaderTop, HeaderMid, HeaderBottom)),
+        pillBackground = Color(0x1FF5D98B),
+        headerContentColor = DarkOnSurface,
+        coinGold = PremiumGold,
+        diamondBlue = PremiumBlue,
+        magenta = PremiumGoldBright,
+        orange = PremiumCopper,
         navBar = NavSurface,
-        onNavSelected = Gold,
-        onNavUnselected = Color(0x99FFFFFF)
+        onNavSelected = PremiumGoldBright,
+        onNavUnselected = Color(0x99F7F1E2),
+        premiumSurface = DarkSurfaceElevated,
+        hairline = DarkBorder,
+        mutedGold = PremiumGoldDeep
     )
 }
 
@@ -88,29 +95,35 @@ fun FeedPilotTheme(
 ) {
     val brand = if (darkTheme) {
         BrandColors(
-            headerGradient = Brush.verticalGradient(listOf(HeaderTop, HeaderBottom)),
-            pillBackground = Color(0x33FFFFFF),
-            headerContentColor = Color.White,
-            coinGold = CoinGold,
-            diamondBlue = DiamondBlue,
-            magenta = AccentText,
-            orange = Orange,
+            headerGradient = Brush.verticalGradient(listOf(HeaderTop, HeaderMid, HeaderBottom)),
+            pillBackground = Color(0x24F5D98B),
+            headerContentColor = DarkOnSurface,
+            coinGold = PremiumGold,
+            diamondBlue = PremiumBlue,
+            magenta = PremiumGoldBright,
+            orange = PremiumCopper,
             navBar = NavSurface,
-            onNavSelected = Gold,
-            onNavUnselected = Color(0x99FFFFFF)
+            onNavSelected = PremiumGoldBright,
+            onNavUnselected = Color(0x99F7F1E2),
+            premiumSurface = DarkSurfaceElevated,
+            hairline = DarkBorder,
+            mutedGold = PremiumGoldDeep
         )
     } else {
         BrandColors(
-            headerGradient = Brush.verticalGradient(listOf(Color(0xFFFFFFFF), Color(0xFFEBEBF0))),
-            pillBackground = Color(0x12000000),
+            headerGradient = Brush.verticalGradient(listOf(Color(0xFFFFFCF5), Color(0xFFF0E6D2))),
+            pillBackground = Color(0x1A9C7732),
             headerContentColor = LightOnSurface,
-            coinGold = CoinGold,
-            diamondBlue = DiamondBlue,
-            magenta = Gold,
-            orange = Orange,
-            navBar = Color(0xFFFFFFFF),
-            onNavSelected = GoldDeep,
-            onNavUnselected = Color(0xFF64717B)
+            coinGold = PremiumGoldDeep,
+            diamondBlue = PremiumBlue,
+            magenta = PremiumGoldDeep,
+            orange = PremiumCopper,
+            navBar = LightSurfaceElevated,
+            onNavSelected = PremiumGoldDeep,
+            onNavUnselected = Color(0xFF756E60),
+            premiumSurface = LightSurfaceElevated,
+            hairline = LightBorder,
+            mutedGold = Color(0xFFB08A42)
         )
     }
 
@@ -118,12 +131,12 @@ fun FeedPilotTheme(
         MaterialTheme(
             colorScheme = if (darkTheme) DarkColors else LightColors,
             typography = Typography,
+            shapes = AppShapes,
             content = content
         )
     }
 }
 
-/** Convenience accessor for brand colors inside composables. */
 object AppTheme {
     val brand: BrandColors
         @Composable get() = LocalBrandColors.current

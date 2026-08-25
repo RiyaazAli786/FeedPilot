@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status-bar icon for the task runner. Must be a white-on-transparent silhouette. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
-    android:viewportHeight="24"
-    android:tint="#FFFFFFFF">
+    android:viewportHeight="24">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M12,21.35l-1.45,-1.32C5.4,15.36 2,12.28 2,8.5 2,5.42 4.42,3 7.5,3c1.74,0 3.41,0.81 4.5,2.09C13.09,3.81 14.76,3 16.5,3 19.58,3 22,5.42 22,8.5c0,3.78 -3.4,6.86 -8.55,11.54L12,21.35z" />
+        android:fillColor="#D8B86A"
+        android:pathData="M4,5 L12,5 C15.5,5 18,7.1 18,10.1 C18,13.1 15.5,15.2 12,15.2 L8.7,15.2 L8.7,20 L4,20 Z" />
+    <path
+        android:fillColor="#151007"
+        android:pathData="M8.7,8.7 L12,8.7 C12.9,8.7 13.5,9.2 13.5,10.1 C13.5,11 12.9,11.5 12,11.5 L8.7,11.5 Z" />
+    <path
+        android:fillColor="#41D6B1"
+        android:pathData="M12.4,11.1 L21,6.7 L18.1,17.4 L15.2,14.1 L12.4,15.6 Z" />
 </vector>

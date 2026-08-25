@@ -60,7 +60,7 @@ data class TasksUiState(
     val accounts: List<AccountEntity> = emptyList(),
     val enabledAccountIds: Set<String> = emptySet(),
     val runner: RunnerStats = RunnerStats(),
-    /** Accounts currently mid session-check — shows the progress spinner on that card. */
+    /** Accounts currently mid session-check - shows the progress spinner on that card. */
     val verifyingAccountIds: Set<String> = emptySet(),
     val validatingAccountIds: Set<String> = emptySet(),
     val settings: AppSettings = AppSettings()
@@ -112,7 +112,7 @@ class TasksViewModel @Inject constructor(
     private val verifyingAccountIds = MutableStateFlow<Set<String>>(emptySet())
     private val validatingAccountIds = MutableStateFlow<Set<String>>(emptySet())
     private val _loginMessage = MutableStateFlow<String?>(null)
-    /** One-shot toast text for the account-card login/verify flow — see [consumeLoginMessage]. */
+    /** One-shot toast text for the account-card login/verify flow - see [consumeLoginMessage]. */
     val loginMessage: StateFlow<String?> = _loginMessage.asStateFlow()
     private val _profileUpdateState = MutableStateFlow(ProfileUpdateState())
     val profileUpdateState: StateFlow<ProfileUpdateState> = _profileUpdateState.asStateFlow()
@@ -171,7 +171,7 @@ class TasksViewModel @Inject constructor(
     }
 
     /**
-     * Starts or stops just [accountId]'s own runner loop — never any other account's.
+     * Starts or stops just [accountId]'s own runner loop - never any other account's.
      */
     fun startSingleAccount(accountId: String) {
         if (runnerState.isAccountRunning(accountId) || accountId in validatingAccountIds.value) {
@@ -184,15 +184,15 @@ class TasksViewModel @Inject constructor(
             try {
                 val account = accountDao.getById(accountId)
                 if (account != null && account.status.contains("CHALLENGE", ignoreCase = true)) {
-                    _loginMessage.value = "Account @${account.username} has an Instagram Challenge Required. Tap the browser (??) icon on the account card to resolve it."
+                    _loginMessage.value = "Account @${account.username} has an Instagram Challenge Required. Tap the browser icon on the account card to resolve it."
                     return@launch
                 }
-                // Set by TaskRunnerService the moment a task fails with "Session logged out" —
+                // Set by TaskRunnerService the moment a task fails with "Session logged out" -
                 // without this check a manually-restarted run would just immediately hit the
                 // same failure and stop again instead of being blocked up front with a clear
                 // "re-add this account" message.
                 if (account != null && account.status.contains("LOGGED_OUT", ignoreCase = true)) {
-                    _loginMessage.value = "Account @${account.username}'s Instagram session is logged out. Tap the browser (??) icon on the account card to log in."
+                    _loginMessage.value = "Account @${account.username}'s Instagram session is logged out. Tap the browser icon on the account card to log in."
                     return@launch
                 }
 //                if (account != null && !accountRepository.isUsernamePicked(account.username)) {
@@ -288,11 +288,11 @@ class TasksViewModel @Inject constructor(
         for (id in accountIds) {
             val account = accountDao.getById(id)
             if (account != null && account.status.contains("CHALLENGE", ignoreCase = true)) {
-                blocked += "Account @${account.username} has an Instagram Challenge Required. Open browser (??) to resolve."
+                blocked += "Account @${account.username} has an Instagram Challenge Required. Open browser to resolve."
                 continue
             }
             if (account != null && account.status.contains("LOGGED_OUT", ignoreCase = true)) {
-                blocked += "Account @${account.username}'s Instagram session is logged out. Open browser (??) to log in."
+                blocked += "Account @${account.username}'s Instagram session is logged out. Open browser to log in."
                 continue
             }
 //            if (account != null && !accountRepository.isUsernamePicked(account.username)) {
@@ -330,7 +330,7 @@ class TasksViewModel @Inject constructor(
 
     /**
      * Confirms an account's saved session is still actually signed in on instagram.com and,
-     * on success, lights up its green dot. Tapped from the account card — see
+     * on success, lights up its green dot. Tapped from the account card - see
      * [AccountRepository.verifySession].
      */
     fun verifyAccountLogin(accountId: String) {
@@ -340,7 +340,7 @@ class TasksViewModel @Inject constructor(
             val result = accountRepository.verifySession(accountId)
             verifyingAccountIds.value = verifyingAccountIds.value - accountId
             _loginMessage.value = when (result) {
-                is com.feedpilot.client.common.Resource.Success -> "Logged in — account activated"
+                is com.feedpilot.client.common.Resource.Success -> "Logged in - account activated"
                 is com.feedpilot.client.common.Resource.Error -> result.message
                 is com.feedpilot.client.common.Resource.Loading -> null
             }
@@ -467,13 +467,13 @@ class TasksViewModel @Inject constructor(
      * Retries a failed action log entry for an Instagram account.
      *
      * This drives Instagram directly and is never reported to the backend (there is no live
-     * order/task behind an old log entry to report against) — its "success" is only this device's
+     * order/task behind an old log entry to report against) - its "success" is only this device's
      * own on-device check, not a backend-confirmed completion the way a normal claimed task's is.
      * On success it still awards the dashboard-configured coin reward for that action type (per
      * product decision: manual retries should pay out like any other completed action), priced
      * via the same rewardCoinsForTaskType RunnerSettingsStore mirror TaskRepository uses. Because
      * there is no backend round-trip to reconcile against, this credit is permanent and cannot
-     * self-correct the way a normal claimed task's optimistic credit does — keep that in mind if
+     * self-correct the way a normal claimed task's optimistic credit does - keep that in mind if
      * account/wallet totals are ever audited against the backend's own numbers.
      */
     fun retryFailedActionLog(log: AccountLogEntity, onDone: (() -> Unit)? = null) {
@@ -557,11 +557,11 @@ class TasksViewModel @Inject constructor(
             return dbComment
         }
         val defaultComments = listOf(
-            "Awesome post! ??",
-            "Great content, keep it up! ??",
-            "Love this! ??",
-            "Super cool! ?",
-            "Amazing view! ??"
+            "Awesome post!",
+            "Great content, keep it up!",
+            "Love this!",
+            "Super cool!",
+            "Amazing view!"
         )
         val index = kotlin.math.abs(target.hashCode()) % defaultComments.size
         return defaultComments[index]

@@ -413,7 +413,7 @@ fun SettingsScreen(
             )
             SettingsRow(
                 label = if (updatesState.checking) "Checking for updates..." else "Check for Updates",
-                subtitle = "Current version v${BuildConfig.VERSION_NAME} • ${if (isOnline) "Online ??" else "Offline ??"}",
+                subtitle = "Current version v${BuildConfig.VERSION_NAME} - ${if (isOnline) "Online" else "Offline"}",
                 icon = Icons.Filled.SystemUpdate,
                 onClick = {
                     userTriggeredCheck = true

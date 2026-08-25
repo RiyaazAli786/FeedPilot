@@ -6,21 +6,22 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,11 +29,6 @@ import androidx.compose.ui.unit.sp
 import com.feedpilot.client.common.formatCoins
 import com.feedpilot.client.ui.theme.AppTheme
 
-/**
- * The adaptive header shown on every main screen:
- * - Coin balance pill (center)
- * - Settings gear (top-right)
- */
 @Composable
 fun AppHeader(
     coins: Long,
@@ -49,28 +45,24 @@ fun AppHeader(
             .background(AppTheme.brand.headerGradient)
             .statusBarsPadding()
             .padding(horizontal = 16.dp)
-            .padding(top = 12.dp, bottom = 18.dp),
+            .padding(top = 14.dp, bottom = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         val isOnline by com.feedpilot.client.common.rememberConnectivityState()
         Box(Modifier.fillMaxWidth()) {
-            // Single Unified Version & Connectivity Badge (Top Left)
             if (!latestVersionName.isNullOrBlank()) {
-                val dotColor = if (isOnline) Color(0xFF4CAF50) else Color(0xFFF44336)
+                val dotColor = if (isOnline) Color(0xFF36C484) else Color(0xFFE85A5A)
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (isOnline) Color(0xFF4CAF50).copy(alpha = 0.6f) else Color(0xFFF44336).copy(alpha = 0.6f)
-                    ),
-                    shadowElevation = 1.dp,
+                    shape = RoundedCornerShape(8.dp),
+                    color = AppTheme.brand.premiumSurface.copy(alpha = 0.78f),
+                    border = BorderStroke(1.dp, dotColor.copy(alpha = 0.45f)),
+                    shadowElevation = 3.dp,
                     modifier = Modifier.align(Alignment.CenterStart)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -81,14 +73,13 @@ fun AppHeader(
                         Text(
                             text = "v$latestVersionName",
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp
                         )
                     }
                 }
             }
 
-            // Balance Pills (Center)
             Row(
                 Modifier.align(Alignment.Center),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -98,7 +89,6 @@ fun AppHeader(
                 if (!plan.isNullOrBlank() && plan != "Free") PlanBadge(plan)
             }
 
-            // Settings Button (Top Right)
             CircleIconButton(
                 onClick = onSettings,
                 modifier = Modifier.align(Alignment.CenterEnd)
@@ -116,15 +106,12 @@ fun AppHeader(
 
 @Composable
 private fun BalancePill(icon: @Composable () -> Unit, value: Long, onClick: (() -> Unit)? = null) {
-    // Count up to the new balance rather than snapping, so earning a coin is visible.
     val animatedValue by animateIntAsState(
         targetValue = value.toInt(),
         animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
         label = "balanceCount"
     )
 
-    // A brief swell on the way up draws the eye; it must not fire when the balance drops,
-    // which happens routinely when an order is paid for.
     var previous by remember { mutableLongStateOf(value) }
     val gained = value > previous
     LaunchedEffect(value) { previous = value }
@@ -132,7 +119,7 @@ private fun BalancePill(icon: @Composable () -> Unit, value: Long, onClick: (() 
     val scale = remember { Animatable(1f) }
     LaunchedEffect(value) {
         if (gained) {
-            scale.animateTo(1.18f, tween(160, easing = FastOutSlowInEasing))
+            scale.animateTo(1.14f, tween(160, easing = FastOutSlowInEasing))
             scale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
         }
     }
@@ -140,20 +127,18 @@ private fun BalancePill(icon: @Composable () -> Unit, value: Long, onClick: (() 
     Row(
         Modifier
             .scale(scale.value)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(8.dp))
             .background(AppTheme.brand.pillBackground)
+            .border(1.dp, AppTheme.brand.hairline.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .padding(horizontal = 13.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
     ) {
         icon()
-        // "Wallet" distinguishes this spendable total from the per-account lifetime "Earned"
-        // figure on the Tasks list — the two are separate ledgers (spending/withdrawing only
-        // moves this one) and looked like a bug when shown as two unlabeled numbers side by side.
         Text(
             "Wallet",
-            color = AppTheme.brand.headerContentColor.copy(alpha = 0.75f),
+            color = AppTheme.brand.headerContentColor.copy(alpha = 0.68f),
             fontWeight = FontWeight.Medium,
             fontSize = 10.sp
         )
@@ -166,24 +151,18 @@ private fun BalancePill(icon: @Composable () -> Unit, value: Long, onClick: (() 
     }
 }
 
-/** Small premium badge showing the active paid tier (Silver / Gold / Platinum). */
 @Composable
 private fun PlanBadge(plan: String) {
     Row(
         Modifier
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(8.dp))
             .background(AppTheme.brand.coinGold)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        Icon(
-            Icons.Filled.WorkspacePremium,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(14.dp)
-        )
-        Text(plan, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Icon(Icons.Filled.WorkspacePremium, contentDescription = null, tint = Color(0xFF171007), modifier = Modifier.size(14.dp))
+        Text(plan, color = Color(0xFF171007), fontWeight = FontWeight.Bold, fontSize = 12.sp)
     }
 }
 
@@ -192,11 +171,11 @@ fun CoinDot(size: Int = 18) {
     Box(
         Modifier
             .size(size.dp)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(6.dp))
             .background(AppTheme.brand.coinGold),
         contentAlignment = Alignment.Center
     ) {
-        Icon(Icons.Default.Star, contentDescription = null, tint = Color.White, modifier = Modifier.size((size - 6).dp))
+        Icon(Icons.Default.WorkspacePremium, contentDescription = null, tint = Color(0xFF171007), modifier = Modifier.size((size - 6).dp))
     }
 }
 
@@ -209,8 +188,9 @@ fun CircleIconButton(
     Box(
         modifier
             .size(40.dp)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(8.dp))
             .background(AppTheme.brand.pillBackground)
+            .border(1.dp, AppTheme.brand.hairline.copy(alpha = 0.75f), RoundedCornerShape(8.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { content() }

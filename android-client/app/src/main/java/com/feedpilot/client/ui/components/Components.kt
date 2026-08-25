@@ -1,5 +1,6 @@
 package com.feedpilot.client.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,17 +30,12 @@ import com.feedpilot.client.ui.theme.StatusGreen
 import com.feedpilot.client.ui.theme.StatusRed
 import com.feedpilot.client.ui.theme.StatusYellow
 
-/** Maps a backend account status string to a traffic-light color. */
 fun statusColor(status: String): Color = when (status) {
     "Active" -> StatusGreen
     "Suspended", "Disabled", "LoginFailed" -> StatusRed
     else -> StatusYellow
 }
 
-/**
- * Helper to strip unwanted prefixes (like "code: ", "handle: ", "user: ", "@", "https://...")
- * so copying from order history or profile cards yields the raw handle or post code.
- */
 fun cleanCopyText(raw: String): String {
     var text = raw.trim()
     text = text.replace(Regex("""^(code|handle|user|post|target):\s*""", RegexOption.IGNORE_CASE), "")
@@ -54,10 +51,6 @@ fun cleanCopyText(raw: String): String {
     return text.trimEnd('/')
 }
 
-/**
- * Small icon button that copies an Instagram handle or code to the clipboard and confirms with a toast.
- * Strips prefixes like "code: ", "@", "https://..." before copying.
- */
 @Composable
 fun CopyUsernameButton(
     username: String,
@@ -76,12 +69,7 @@ fun CopyUsernameButton(
         },
         modifier = Modifier.size(28.dp).then(modifier)
     ) {
-        Icon(
-            Icons.Filled.ContentCopy,
-            contentDescription = "Copy $username",
-            tint = tint,
-            modifier = Modifier.size(15.dp)
-        )
+        Icon(Icons.Filled.ContentCopy, contentDescription = "Copy $username", tint = tint, modifier = Modifier.size(15.dp))
     }
 }
 
@@ -95,7 +83,6 @@ fun StatusDot(status: String, modifier: Modifier = Modifier) {
     )
 }
 
-/** White rounded card used throughout the app (matches the design's soft-shadow tiles). */
 @Composable
 fun AppCard(
     modifier: Modifier = Modifier,
@@ -103,9 +90,9 @@ fun AppCard(
     content: @Composable () -> Unit
 ) {
     val base = Modifier
-        .clip(RoundedCornerShape(16.dp))
+        .clip(RoundedCornerShape(8.dp))
         .background(MaterialTheme.colorScheme.surface)
-        .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
+        .border(1.dp, AppTheme.brand.hairline, RoundedCornerShape(8.dp))
     Box(
         modifier
             .then(base)
@@ -113,7 +100,6 @@ fun AppCard(
     ) { content() }
 }
 
-/** The white "@username · id" chip shown under the header on Followers / Posts screens. */
 @Composable
 fun AccountChip(
     username: String,
@@ -126,7 +112,11 @@ fun AccountChip(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(shape = CircleShape, color = Color.White) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = AppTheme.brand.premiumSurface,
+            border = BorderStroke(1.dp, AppTheme.brand.hairline)
+        ) {
             Row(
                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -137,26 +127,24 @@ fun AccountChip(
             }
         }
         if (accountId != null) {
-            Surface(shape = RoundedCornerShape(12.dp), color = Color(0x33FFFFFF)) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = AppTheme.brand.pillBackground,
+                border = BorderStroke(1.dp, AppTheme.brand.hairline.copy(alpha = 0.75f))
+            ) {
                 Row(
                     Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.Badge, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                    Text(accountId, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Icon(Icons.Default.Badge, contentDescription = null, tint = AppTheme.brand.headerContentColor, modifier = Modifier.size(16.dp))
+                    Text(accountId, color = AppTheme.brand.headerContentColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 }
             }
         }
     }
 }
 
-/**
- * @param isActive Shows a green dot badge over the bottom-right corner — this account's session
- *   has been confirmed logged in on instagram.com, as opposed to merely holding stored cookies.
- * @param isUpgraded Shows a gold crown badge over the top-right corner — this account currently
- *   has a live 24h upgrade window (+2 coins per action). See [com.feedpilot.client.common.isUpgradedWithin24h].
- */
 @Composable
 fun Avatar(
     url: String?,
@@ -172,10 +160,18 @@ fun Avatar(
                 Modifier
                     .size(size.dp)
                     .clip(shape)
-                    .background(AppTheme.brand.magenta.copy(alpha = 0.15f)),
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                AppTheme.brand.mutedGold.copy(alpha = 0.34f),
+                                AppTheme.brand.diamondBlue.copy(alpha = 0.18f)
+                            )
+                        )
+                    )
+                    .border(1.dp, AppTheme.brand.hairline, shape),
                 contentAlignment = Alignment.Center
             ) {
-                Text("👤", fontSize = (size / 2).sp)
+                Text("FP", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = (size / 3).sp)
             }
         } else {
             AsyncImage(
@@ -209,19 +205,13 @@ fun Avatar(
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(1.5.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFFFB800)),
+                    .background(AppTheme.brand.coinGold),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Filled.WorkspacePremium,
-                    contentDescription = "Upgraded",
-                    tint = Color.White,
-                    modifier = Modifier.size(badgeSize * 0.72f)
-                )
+                Icon(Icons.Filled.WorkspacePremium, contentDescription = "Upgraded", tint = Color(0xFF171007), modifier = Modifier.size(badgeSize * 0.72f))
             }
         }
     }
 }
 
-fun Modifier.clickableRow(onClick: () -> Unit): Modifier =
-    this.clickable(onClick = onClick)
+fun Modifier.clickableRow(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

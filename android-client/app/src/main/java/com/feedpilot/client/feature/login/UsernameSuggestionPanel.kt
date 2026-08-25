@@ -416,7 +416,7 @@ fun UsernameSuggestionPanel(
                                                 },
                                                 enabled = applyingUsernameState == null && !isSuggPicked,
                                                 shape = RoundedCornerShape(8.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50), contentColor = Color.White),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary),
                                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                                 modifier = Modifier.height(28.dp)
                                             ) {
@@ -435,7 +435,7 @@ fun UsernameSuggestionPanel(
                         }
                     } else {
                         Text(
-                            if (result.available) "This handle is available." else "Taken — choose another recommendation.",
+                            if (result.available) "This handle is available." else "Taken - choose another recommendation.",
                             fontSize = 12.sp,
                             color = if (result.available) Color(0xFF4EAE4E) else Color(0xFFFF5252),
                             fontWeight = FontWeight.SemiBold
