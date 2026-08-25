@@ -633,7 +633,7 @@ public class OrderProcessingController : ControllerBase
             workerCoinsAwarded = newlyDone * baseActionReward;
 
             var credit = await _wallets.CreditAsync(
-                userId, workerCoinsAwarded, WalletTransactionType.Earn, actionReference ?? $"order:{order.Id}", ct);
+                userId, workerCoinsAwarded, WalletTransactionType.Earn, actionReference, ct);
             if (credit.Success) workerWalletBalance = credit.Balance;
 
             // Same crediting the wallet just got, but on the specific Account's own tally —
@@ -1008,7 +1008,7 @@ public class OrderProcessingController : ControllerBase
         var legacyBatchCoins = totalCoinsAwarded - individuallyCreditedCoins;
         if (legacyBatchCoins > 0)
         {
-            await _wallets.CreditAsync(userId, legacyBatchCoins, WalletTransactionType.Earn, "order:batch", ct);
+            await _wallets.CreditAsync(userId, legacyBatchCoins, WalletTransactionType.Earn, null, ct);
         }
 
         await _db.SaveChangesAsync(ct);

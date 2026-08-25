@@ -53,7 +53,6 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(req.ActiveAccount)) device.ActiveAccount = req.ActiveAccount;
         if (req.LoggedInAccounts is not null)
             device.LoggedInAccountsJson = JsonSerializer.Serialize(req.LoggedInAccounts);
-        device.AppInstanceId = req.AppInstanceId;
 
         device.LastSeenAt = DateTime.UtcNow;
         if (userId.HasValue)
@@ -137,18 +136,6 @@ public class DevicesController : ControllerBase
                 d.DeviceId == deviceId &&
                 d.AppInstanceId == instance, ct);
             if (exact is not null) return exact;
-        }
-
-        // Original app auto-restore may receive a fresh private appInstanceId after Clear Data
-        // while still recovering the same backend user. Keep that as one original row instead of
-        // counting it as another clone.
-        if (userId.HasValue)
-        {
-            var restoredOriginal = await _db.Devices.FirstOrDefaultAsync(d =>
-                d.AppId == appId &&
-                d.InstallationId == installationId &&
-                d.UserId == userId.Value, ct);
-            if (restoredOriginal is not null) return restoredOriginal;
         }
 
         if (string.IsNullOrWhiteSpace(instance))

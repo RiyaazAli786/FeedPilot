@@ -64,11 +64,40 @@ public class AdminPickedUsernamesController : ControllerBase
         if (string.IsNullOrWhiteSpace(deviceId))
             return BadRequest(new ApiError("Device ID is required.", "MISSING_DEVICE_ID"));
 
-        var alreadyPicked = await _db.PickedUsernames.AnyAsync(p => p.Username == cleanUsername, ct);
-        if (alreadyPicked)
-            return Conflict(new ApiError(
-                $"'@{cleanUsername}' is already picked by a device or clone — choose a different username.",
-                "USERNAME_ALREADY_PICKED"));
+        var existingPicks = await _db.PickedUsernames
+            .Where(p => p.Username == cleanUsername)
+            .OrderByDescending(p => p.PickedAt)
+            .ToListAsync(ct);
+
+        var existingForTarget = existingPicks.FirstOrDefault(
+            p => p.DeviceId == deviceId && p.AppId == appId);
+        if (existingForTarget is not null)
+        {
+            return Ok(new
+            {
+                message = $"'@{cleanUsername}' is already assigned to this device/clone.",
+                id = existingForTarget.Id
+            });
+        }
+
+        if (existingPicks.Count > 0 && !req.ForceReassign)
+        {
+            var current = existingPicks[0];
+            return Conflict(new
+            {
+                message = $"'@{cleanUsername}' is already assigned to another device/clone.",
+                code = "USERNAME_ALREADY_ASSIGNED",
+                username = cleanUsername,
+                assignedDeviceId = current.DeviceId,
+                assignedAppId = current.AppId,
+                assignedPickedAt = current.PickedAt
+            });
+        }
+
+        if (existingPicks.Count > 0)
+        {
+            _db.PickedUsernames.RemoveRange(existingPicks);
+        }
 
         var picked = new PickedUsername
         {
@@ -82,7 +111,9 @@ public class AdminPickedUsernamesController : ControllerBase
 
         return Ok(new
         {
-            message = $"'@{cleanUsername}' assigned to this device/clone.",
+            message = existingPicks.Count > 0
+                ? $"'@{cleanUsername}' reassigned to this device/clone."
+                : $"'@{cleanUsername}' assigned to this device/clone.",
             id = picked.Id
         });
     }
@@ -94,6 +125,6 @@ public class AdminPickedUsernamesController : ControllerBase
         if (picked is null) return NotFound(new ApiError("Not found.", "not_found"));
         _db.PickedUsernames.Remove(picked);
         await _db.SaveChangesAsync(ct);
-        return Ok();
+        return NoContent();
     }
 }

@@ -85,7 +85,7 @@ class DeviceIdentity @Inject constructor(
     /**
      * Identifies this build as one clone among many. Derived from the package name at runtime
      * rather than a compile-time constant, because clones are produced by a cloner tool that
-     * rewrites the package name of an already-built APK â€” it cannot change a baked-in
+     * rewrites the package name of an already-built APK — it cannot change a baked-in
      * BuildConfig value. So each clone reports a distinct app id automatically, with no
      * per-clone source change.
      */
@@ -118,7 +118,7 @@ class DeviceIdentity @Inject constructor(
      *    backend device/user on the same phone.
      *  - It stays stable across APK signing-key changes for the same physical device.
      *
-     * Deliberately NOT stored in app prefs â€” prefs are wiped on reinstall, which would defeat
+     * Deliberately NOT stored in app prefs — prefs are wiped on reinstall, which would defeat
      * the point. It is recomputed each launch from values that persist outside the app.
      */
     @get:SuppressLint("HardwareIds")
@@ -149,7 +149,7 @@ class DeviceIdentity @Inject constructor(
      *
      * Folds in [installationId] on top of the hardware id so app clones on the same
      * physical/emulated hardware get separate accounts instead of colliding into one shared
-     * wallet â€” see [installationId]'s doc for why that component is what actually makes clones
+     * wallet — see [installationId]'s doc for why that component is what actually makes clones
      * distinct, since the hardware/package/user-handle components alone are not.
      */
     val accountBindingInstallationId: String by lazy {
@@ -160,19 +160,19 @@ class DeviceIdentity @Inject constructor(
 
     /**
      * Human-readable "manufacturer model" (e.g. "samsung SM-G991B"), for display in logs and the
-     * dashboard only â€” never used for identity/binding, unlike [hardwareDeviceId].
+     * dashboard only — never used for identity/binding, unlike [hardwareDeviceId].
      */
     val deviceLabel: String get() = "${Build.MANUFACTURER} ${Build.MODEL}"
 
     /**
      * Scopes a local notification's fixed base ID to this clone specifically.
      *
-     * Android's NotificationManager namespaces notifications by (package, user profile) â€” never
-     * by anything the app itself controls â€” so two same-package "clones" produced by
+     * Android's NotificationManager namespaces notifications by (package, user profile) — never
+     * by anything the app itself controls — so two same-package "clones" produced by
      * virtualization-style cloner tools (see [installationId]'s doc for why those are
      * indistinguishable to the OS) share one real notification namespace. Two such clones both
      * calling `notify(4201, ...)` or `startForeground(4201, ...)` for their own independent
-     * TaskRunnerService don't get two notifications â€” the second call silently replaces the
+     * TaskRunnerService don't get two notifications — the second call silently replaces the
      * first, so only one clone's status is ever visible even while both are actually running.
      *
      * Folding in [installationId] (not [appId]/[hardwareDeviceId] alone, which are identical
@@ -298,5 +298,4 @@ class DeviceIdentity @Inject constructor(
         private val WIDEVINE_UUID = UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L)
     }
 }
-
 

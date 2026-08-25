@@ -149,7 +149,7 @@ private fun BalancePill(icon: @Composable () -> Unit, value: Long, onClick: (() 
     ) {
         icon()
         // "Wallet" distinguishes this spendable total from the per-account lifetime "Earned"
-        // figure on the Tasks list â€” the two are separate ledgers (spending/withdrawing only
+        // figure on the Tasks list — the two are separate ledgers (spending/withdrawing only
         // moves this one) and looked like a bug when shown as two unlabeled numbers side by side.
         Text(
             "Wallet",

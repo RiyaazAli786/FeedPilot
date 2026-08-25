@@ -365,14 +365,14 @@ private fun OrderHistoryCard(
     val cleanTarget = run {
         val raw = log.targetUsername.trimStart('@').removePrefix("post_")
         when {
-            // Instagram post URL → extract shortcode: /p/CODE/ or /reel/CODE/
+            // Instagram post URL ? extract shortcode: /p/CODE/ or /reel/CODE/
             raw.contains("/p/") || raw.contains("/reel/") -> {
                 val segment = if (raw.contains("/p/")) raw.substringAfter("/p/") else raw.substringAfter("/reel/")
                 segment.substringBefore("/").substringBefore("?").take(20)
             }
-            // Story URL → extract username only
+            // Story URL ? extract username only
             raw.contains("/stories/") -> raw.substringAfter("/stories/").substringBefore("/").substringBefore("?")
-            // Full profile URL → extract username
+            // Full profile URL ? extract username
             raw.startsWith("http") -> raw.substringAfter("instagram.com/").trimEnd('/').substringBefore("/").substringBefore("?")
             // Already a plain handle or ID
             else -> raw.take(24)
@@ -395,7 +395,7 @@ private fun OrderHistoryCard(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SourceBadge(log.orderSource)
                 Text(
-                    text = "${log.orderType} · Qty ${log.quantity}",
+                    text = "${log.orderType} � Qty ${log.quantity}",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -564,7 +564,7 @@ private fun OrderLogWebViewDialog(
                 }
 
                 if (activeCookies == null) {
-                    // Still loading the active session — show spinner
+                    // Still loading the active session � show spinner
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,

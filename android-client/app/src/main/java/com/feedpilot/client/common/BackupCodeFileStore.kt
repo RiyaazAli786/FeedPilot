@@ -16,15 +16,15 @@ import javax.inject.Singleton
 
 /**
  * Writes a human-readable copy of a generated Backup Code to the device's public Downloads
- * folder â€” a fallback for an operator who generated a code but didn't copy/save it anywhere
+ * folder — a fallback for an operator who generated a code but didn't copy/save it anywhere
  * before losing local app data.
  *
  * Deliberately write-only: the app never reads this file back automatically. Doing so would
- * reopen exactly the bug [DeviceIdentity.installationId]'s doc describes â€” a same-package
+ * reopen exactly the bug [DeviceIdentity.installationId]'s doc describes — a same-package
  * "clone" produced by a virtualization-style cloner tool shares this exact public storage with
  * the original install, so an auto-read here would silently hand a brand-new clone the
  * original's account again. This file exists purely for a human (the operator, or support) to
- * find later in a file manager and paste into the Restore screen by hand â€” never for the app
+ * find later in a file manager and paste into the Restore screen by hand — never for the app
  * itself to act on.
  *
  * The filename includes this install's own [DeviceIdentity.installationId] fragment (not
@@ -119,7 +119,7 @@ class BackupCodeFileStore @Inject constructor(
         resolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
     }
 
-    // Pre-API 29 requires WRITE_EXTERNAL_STORAGE, which this app does not request â€” this is a
+    // Pre-API 29 requires WRITE_EXTERNAL_STORAGE, which this app does not request — this is a
     // best-effort fallback there (silently a no-op via the runCatching in save()), matching how
     // MediaStoreIdentityStore's own legacy path already behaves on those same OS versions.
     @Suppress("DEPRECATION")

@@ -56,12 +56,12 @@ class UpgradeViewModel @Inject constructor(
     /**
      * [_state] holds whatever the last full checklist reload found; [UpgradeRunnerState.snapshot]
      * holds whatever [UpgradeRunnerService] is reporting live for the task it's currently running
-     * (or just finished) â€” a task started here keeps running in that service specifically so it
+     * (or just finished) — a task started here keeps running in that service specifically so it
      * survives this ViewModel being cleared, so its progress has to be picked up from there
      * rather than from anything only this ViewModel would remember. Combining them on every
      * emission (rather than a one-shot merge) means that even a ViewModel created *after* the
-     * service already started a task â€” e.g. the user left the Upgrade screen mid-upload and came
-     * back â€” immediately reflects it instead of showing a stale Pending row until the service's
+     * service already started a task — e.g. the user left the Upgrade screen mid-upload and came
+     * back — immediately reflects it instead of showing a stale Pending row until the service's
      * next progress tick.
      */
     val state: StateFlow<UpgradeUiState> = combine(_state, upgradeRunnerState.snapshot) { local, snap ->
@@ -101,7 +101,7 @@ class UpgradeViewModel @Inject constructor(
     fun loadUpgradeState() = viewModelScope.launch {
         _state.update { it.copy(isLoading = true) }
 
-        // Pulls the latest UpgradedAt from the backend first â€” it's the source of truth for the
+        // Pulls the latest UpgradedAt from the backend first — it's the source of truth for the
         // 24h window, and a stale local copy (e.g. upgraded from another session) must not read
         // as still-upgraded, or as upgradeable, past its actual expiry.
         runCatching { accountRepository.refresh() }
@@ -120,7 +120,7 @@ class UpgradeViewModel @Inject constructor(
         }
 
         // A task the runner service is still working on for this account must not be clobbered
-        // by a fresh-from-Instagram Pending row here â€” the merge above only overlays [_state]'s
+        // by a fresh-from-Instagram Pending row here — the merge above only overlays [_state]'s
         // *current* task, and a reload replaces the whole list, so without this a checklist
         // reload mid-upload would flash the task back to its pre-upload state for a moment.
         val runningTaskId = upgradeRunnerState.snapshot.value
@@ -176,7 +176,7 @@ class UpgradeViewModel @Inject constructor(
             UpgradeTaskItem("posts", "6\nPosts", "Send 6 Posts", "Upload at least 6 posts to your Instagram account",
                 statusOf(postsToday >= 6)),
             // Instagram has no "when was this set" signal for a profile photo or bio the way it
-            // does for posts (upload timestamp) and stories (expire after 24h) â€” a photo/bio from
+            // does for posts (upload timestamp) and stories (expire after 24h) — a photo/bio from
             // months ago would otherwise read as "done" forever. Also requiring today's local
             // verification timestamp (set by UpgradeRunnerService once this app confirms it) is
             // what makes these two behave like the other two: complete only for today, and reset
@@ -192,7 +192,7 @@ class UpgradeViewModel @Inject constructor(
     }
 
     /**
-     * Starts (or, if already running, leaves alone) [taskId] on [UpgradeRunnerService] â€” its
+     * Starts (or, if already running, leaves alone) [taskId] on [UpgradeRunnerService] — its
      * upload/verify work happens there, independent of this screen, so navigating away or
      * closing the app no longer cancels it. See [UpgradeRunnerService] for why.
      */
@@ -252,7 +252,7 @@ class UpgradeViewModel @Inject constructor(
         // [state], which overlays UpgradeRunnerService's live per-task progress on top of the last
         // loadUpgradeState() snapshot. [_state] alone is only refreshed by that one-shot reload, so
         // once the last task finished via the runner service, [_state].checklistComplete was still
-        // stuck at false â€” the button read that stale flag and rejected an already-complete
+        // stuck at false — the button read that stale flag and rejected an already-complete
         // checklist even though every row on screen showed COMPLETED.
         val s = state.value
         val activeAcc = s.activeAccount
@@ -285,7 +285,7 @@ class UpgradeViewModel @Inject constructor(
                 }
                 is Resource.Error -> _state.update {
                     // A 409 from the backend means another device/tab already upgraded this
-                    // account today â€” reflect that instead of just showing a raw error.
+                    // account today — reflect that instead of just showing a raw error.
                     val alreadyUpgraded = result.message.contains("already upgraded", ignoreCase = true)
                     it.copy(isLoading = false, isUpgraded = it.isUpgraded || alreadyUpgraded, message = result.message)
                 }

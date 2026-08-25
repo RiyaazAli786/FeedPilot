@@ -71,7 +71,7 @@ class StartViewModel @Inject constructor(
     }
 
     /**
-     * Restores a Backup Code from the very first screen a brand-new install lands on â€” a fresh
+     * Restores a Backup Code from the very first screen a brand-new install lands on — a fresh
      * install, a data clear, and a reinstall are all indistinguishable from here (each starts
      * with zero linked accounts), so this is offered unconditionally rather than trying to guess
      * which case it is. See AuthRepository.restoreWithBackupCode for the actual mechanism.
@@ -80,15 +80,15 @@ class StartViewModel @Inject constructor(
         viewModelScope.launch {
             when (val res = authRepository.restoreWithBackupCode(code)) {
                 is Resource.Success -> {
-                    // Re-cache the code on this install too â€” otherwise Settings' "Backup Code"
+                    // Re-cache the code on this install too — otherwise Settings' "Backup Code"
                     // section would think this install was never secured, even though it just was.
                     secureStorage.put(SecureStorage.KEY_BACKUP_CODE, code.trim())
                     walletRepository.refresh()
                     // Retried, not fire-and-forget: this is the account_logs completed-task
                     // backfill's first and highest-stakes chance to land before the operator taps
-                    // Start â€” see AccountRepository.refreshWithRetry's doc for why that matters.
+                    // Start — see AccountRepository.refreshWithRetry's doc for why that matters.
                     accountRepository.refreshWithRetry()
-                    onResult(true, "Account restored â€” your coins are back.")
+                    onResult(true, "Account restored — your coins are back.")
                 }
                 is Resource.Error -> onResult(false, res.message ?: "Could not restore with that code.")
                 Resource.Loading -> Unit
@@ -145,7 +145,7 @@ fun StartScreen(
             .fillMaxSize()
             .background(gradientBg)
             // The activity is edge-to-edge, so the gradient fills the whole screen but content
-            // must stay clear of the status and navigation bars â€” without this the bottom
+            // must stay clear of the status and navigation bars — without this the bottom
             // "Safe & Secure" row is drawn underneath the navigation bar and gets clipped.
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(24.dp),
@@ -203,7 +203,7 @@ fun StartScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF25D9D0).copy(alpha = 0.42f))
                 ) {
                     Text(
-                        text = "Instant Followers â€¢ Real Likes â€¢ Automated Coins",
+                        text = "Instant Followers • Real Likes • Automated Coins",
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -267,7 +267,7 @@ fun StartScreen(
                         modifier = Modifier.size(13.dp)
                     )
                     Text(
-                        text = "Safe & Secure â€¢ Direct Instagram OAuth",
+                        text = "Safe & Secure • Direct Instagram OAuth",
                         color = Color.White.copy(alpha = 0.5f),
                         fontSize = 12.sp
                     )
@@ -276,7 +276,7 @@ fun StartScreen(
                 Spacer(Modifier.height(12.dp))
 
                 // Offered unconditionally on the very first screen a brand-new install lands
-                // on â€” see StartViewModel.restoreWithBackupCode for why a fresh install, a data
+                // on — see StartViewModel.restoreWithBackupCode for why a fresh install, a data
                 // clear, and a reinstall can't be told apart here, so this can't be shown only
                 // when it's "needed".
                 if (isOriginalApp) {

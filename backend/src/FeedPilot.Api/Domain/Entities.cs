@@ -298,6 +298,41 @@ public class Device
     public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
 }
 
+public enum InstallationStatus
+{
+    Active = 1,
+    Revoked = 2,
+    Replaced = 3
+}
+
+/// <summary>
+/// Cryptographically-verifiable identity for one app installation. This is additive to the
+/// existing Device table so old clients can keep working while newer clients register keys.
+/// </summary>
+public class AppInstallation
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string InstallationId { get; set; } = string.Empty;
+    public string PublicKey { get; set; } = string.Empty;
+    public Guid? UserId { get; set; }
+    public InstallationStatus Status { get; set; } = InstallationStatus.Active;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
+    public DateTime? RevokedAt { get; set; }
+
+    public User? User { get; set; }
+}
+
+/// <summary>Single-use, short-lived challenge for installation signature verification.</summary>
+public class InstallationChallenge
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string InstallationId { get; set; } = string.Empty;
+    public string Challenge { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? UsedAt { get; set; }
+}
 /// <summary>Release metadata used by the auto-update flow.</summary>
 public class AppRelease
 {

@@ -73,7 +73,7 @@ data class IgActionResult(
      * (csrftoken most often). Null when nothing changed. Instagram rotates cookies on ordinary
      * write responses the same way a browser's cookie jar picks them up automatically; a caller
      * that keeps reusing the cookie string it started the session with, forever, eventually gets
-     * rejected as logged-out even though the account never actually signed out â€” it just never
+     * rejected as logged-out even though the account never actually signed out — it just never
      * saw the rotation. The caller is expected to persist this back onto the account so the next
      * request (and the next app launch) uses it.
      */
@@ -87,28 +87,28 @@ data class IgActionResult(
          * Turns an Instagram response into a specific, user-facing reason. The distinctions
          * matter: a rate-limit, a logged-out session, a checkpoint and an action-block each
          * need a different response from the operator, and the old code reported them all the
-         * same. Order matters â€” a logged-out session is a 404 "not-logged-in" page, so that is
+         * same. Order matters — a logged-out session is a 404 "not-logged-in" page, so that is
          * matched before the generic 404-means-missing-post case.
          */
         fun classify(action: String, httpCode: Int, body: String): IgActionResult {
             val b = body.lowercase()
             val reason = when {
                 httpCode == 429 || b.contains("please wait a few minutes") ->
-                    "Rate limited by Instagram (429) â€” too many actions; wait a while and retry"
+                    "Rate limited by Instagram (429) — too many actions; wait a while and retry"
                 b.contains("login_required") || b.contains("not-logged-in") ||
                     b.contains("\"logout_reason\"") || httpCode == 401 ->
-                    "Session logged out â€” cookies are expired or region-locked; re-add the account with a fresh session"
+                    "Session logged out — cookies are expired or region-locked; re-add the account with a fresh session"
                 b.contains("checkpoint_required") || b.contains("challenge_required") ->
-                    "Account checkpoint â€” verify this account in the Instagram app, then re-add it"
+                    "Account checkpoint — verify this account in the Instagram app, then re-add it"
                 b.contains("feedback_required") || b.contains("spam") ->
-                    "Instagram action-block (feedback_required) â€” this account is temporarily blocked from ${action}s"
+                    "Instagram action-block (feedback_required) — this account is temporarily blocked from ${action}s"
                 // Distinct from the generic 404 below: this is Instagram saying the *account* id
                 // is gone (deleted/renamed since it was last resolved), not that a post is
                 // missing. Matched first so a caller (e.g. a follow whose target id came from the
                 // backend's resolve-cache) can tell a stale cached id apart from a dead post and
                 // re-resolve instead of just failing.
                 b.contains("user_not_found") ->
-                    "Target Instagram account not found (deleted or renamed) â€” HTTP 404"
+                    "Target Instagram account not found (deleted or renamed) — HTTP 404"
                 b.contains("media_not_found") || (httpCode == 404) ->
                     "Post not found or unavailable (404)"
                 else -> {
@@ -135,9 +135,9 @@ data class PreLoginData(
     val version: String,
     val lsdToken: String = "",
     /**
-     * Every cookie this fetch was issued (datr, mid, ig_did, csrftokenâ€¦), as a `Cookie` header
+     * Every cookie this fetch was issued (datr, mid, ig_did, csrftoken…), as a `Cookie` header
      * value. A real browser always carries these into the very next request; sending the login
-     * POST without them â€” a CSRF header with no matching cookie jar at all â€” is one of the
+     * POST without them — a CSRF header with no matching cookie jar at all — is one of the
      * clearest automation signals Instagram's login endpoint checks for.
      */
     val cookies: String = ""
@@ -156,7 +156,7 @@ data class InstagramUserProfileDetails(
     val isVerified: Boolean,
     val externalUrl: String? = null,
     /**
-     * Instagram always serves *some* profile_pic_url, even unset â€” a generated default avatar â€”
+     * Instagram always serves *some* profile_pic_url, even unset — a generated default avatar —
      * so a non-blank URL alone cannot tell "has a real photo" from "never uploaded one". This is
      * IG's own flag for that distinction, returned by the authenticated user/info endpoints.
      */
@@ -169,7 +169,7 @@ data class InstagramUserFeedItem(
     val caption: String?,
     val mediaType: Int,
     val displayUrl: String?,
-    /** Direct CDN url for a video/reel, straight from the feed â€” no second lookup needed. */
+    /** Direct CDN url for a video/reel, straight from the feed — no second lookup needed. */
     val videoUrl: String? = null,
     val likeCount: Long,
     val commentCount: Long,
@@ -369,7 +369,7 @@ class InstagramWebClient @Inject constructor(
             if (lsdToken.isBlank()) {
                 lsdToken = DEFAULT_LSD_TOKEN
             }
-            Log.e(TAG, "PreLogin: HTTP ${response.code}, csrf=${csrfToken.take(12)}â€¦, lsd=${lsdToken.take(12)}â€¦, setCookieCount=${allSetCookies.size}")
+            Log.e(TAG, "PreLogin: HTTP ${response.code}, csrf=${csrfToken.take(12)}…, lsd=${lsdToken.take(12)}…, setCookieCount=${allSetCookies.size}")
 
             val deviceId = extractJsonValue(responseText, "device_id") ?: ""
 
@@ -389,7 +389,7 @@ class InstagramWebClient @Inject constructor(
                 Log.w(TAG, "Error parsing encryption block", e)
             }
 
-            // The csrftoken extracted above is only ever right if it also shows up here â€” build
+            // The csrftoken extracted above is only ever right if it also shows up here — build
             // the header from the very same Set-Cookie values rather than re-deriving it.
             val preLoginCookies = parseSetCookies(allSetCookies) + ("csrftoken" to csrfToken)
 
@@ -412,7 +412,7 @@ class InstagramWebClient @Inject constructor(
         try {
             val fp = activeFingerprint
             val preLogin = fetchPreLoginData()
-            Log.e(TAG, "PreLoginKeys: keyId=${preLogin.keyId}, pubKeyLen=${preLogin.publicKey.length}, version=${preLogin.version}, csrf=${preLogin.csrfToken.take(12)}â€¦")
+            Log.e(TAG, "PreLoginKeys: keyId=${preLogin.keyId}, pubKeyLen=${preLogin.publicKey.length}, version=${preLogin.version}, csrf=${preLogin.csrfToken.take(12)}…")
             val encPassword = InstagramCrypto.encryptInstagramPassword(
                 password = password,
                 keyId = preLogin.keyId,
@@ -465,7 +465,7 @@ class InstagramWebClient @Inject constructor(
                 Log.e(TAG, "LoginResponse: HTTP ${response.code}, body(500)=${responseText.take(500)}")
                 // The login response only re-issues what changed (typically a rotated
                 // csrftoken); datr/mid/ig_did came from pre-login and never repeat here, so the
-                // pre-login cookies are the base and the responses are layered on top â€” dropping
+                // pre-login cookies are the base and the responses are layered on top — dropping
                 // them would hand back a session missing the identifiers Instagram already
                 // associated with this "browser".
                 val loginClaim = response.header("X-Ig-Set-WWW-Claim")?.trim()
@@ -775,7 +775,7 @@ class InstagramWebClient @Inject constructor(
      * Finishes a login that Instagram challenged with two-factor auth by submitting the code the
      * user typed.
      *
-     * Runs on [TwoFactorRequired.sessionCookies] â€” the identifier is only valid for the session
+     * Runs on [TwoFactorRequired.sessionCookies] — the identifier is only valid for the session
      * that was challenged, so a fresh one would be rejected. A wrong or expired code comes back as
      * [InstagramLoginResult.Failure] carrying Instagram's own wording, and the challenge stays
      * usable for another try.
@@ -847,7 +847,7 @@ class InstagramWebClient @Inject constructor(
     /** Turns Instagram's `two_factor_info` into something worth showing above a code field. */
     private fun describeTwoFactorDelivery(info: JSONObject?): String? {
         if (info == null) return null
-        // Worded to complete "Enter the code from â€¦", whichever branch wins.
+        // Worded to complete "Enter the code from …", whichever branch wins.
         val phone = info.optString("obfuscated_phone_number").trim()
         return when {
             info.optBoolean("totp_two_factor_on") -> "your authenticator app"
@@ -951,9 +951,9 @@ class InstagramWebClient @Inject constructor(
             // A 200 that says the account exists ("user":true) but was not authenticated is
             // Instagram rejecting the credentials themselves. The direct-login password path does
             // not perform Instagram's real sealed-box encryption, so it lands here even for a
-            // correct password â€” the reliable path is the in-app web login.
+            // correct password — the reliable path is the in-app web login.
             responseText.contains("\"user\":true") || responseText.contains("\"user\": true") ->
-                "Could not sign in with username and password. Use \"Log in via Web\" instead â€” it signs in through Instagram directly."
+                "Could not sign in with username and password. Use \"Log in via Web\" instead — it signs in through Instagram directly."
             else ->
                 "Could not sign in. Please use \"Log in via Web\" instead."
         }
@@ -1248,7 +1248,7 @@ class InstagramWebClient @Inject constructor(
     }
 
     /**
-     * Likes a post through the `PolarisAPILikePostMutation` GraphQL mutation â€” the same request
+     * Likes a post through the `PolarisAPILikePostMutation` GraphQL mutation — the same request
      * the Instagram web client sends. There is no REST fallback: Instagram retired
      * `/api/v1/web/likes/../like/` for the web client, so falling back only produced a
      * confusing second failure.
@@ -1278,7 +1278,7 @@ class InstagramWebClient @Inject constructor(
     /**
      * Reposts (reshares) a post via the `usePolarisCreateMediaRepostMutation` GraphQL mutation.
      * Shares the signed GraphQL path with [like] so both carry the plumbing Instagram requires
-     * on writes â€” most importantly the per-session LSD token.
+     * on writes — most importantly the per-session LSD token.
      */
     suspend fun repost(
         mediaCodeOrId: String,
@@ -1538,7 +1538,7 @@ class InstagramWebClient @Inject constructor(
 
     /**
      * Shared driver for the media mutations (like, repost, save). Both are GraphQL writes that
-     * Instagram signs with a per-session LSD token, so they must send identical plumbing â€”
+     * Instagram signs with a per-session LSD token, so they must send identical plumbing —
      * keeping them on one path is what stops one silently drifting out of date.
      *
      * `media_id` comes from the post link (or the numeric id straight from the feed) and
@@ -1562,7 +1562,7 @@ class InstagramWebClient @Inject constructor(
                 is MediaIdResolution.Found -> resolution.id
                 is MediaIdResolution.Fallback -> resolution.id
                 MediaIdResolution.NotFound -> {
-                    // Instagram's media-info endpoint already gave a clean, unambiguous answer â€”
+                    // Instagram's media-info endpoint already gave a clean, unambiguous answer —
                     // classify it the same way a failed mutation attempt against a dead id would
                     // be, instead of spending a whole GraphQL round trip to rediscover the same
                     // thing through a less reliable error message.
@@ -1793,7 +1793,7 @@ class InstagramWebClient @Inject constructor(
     /**
      * Reads the per-session LSD token the web client stamps on GraphQL writes. Instagram embeds
      * it in the page HTML; a token captured earlier is session-bound and rejected, so it must be
-     * fetched fresh. Returns null when not found â€” the caller then sends without it.
+     * fetched fresh. Returns null when not found — the caller then sends without it.
      */
     private fun fetchLsdToken(sessionCookies: String): String? = try {
         val request = Request.Builder()
@@ -1815,12 +1815,12 @@ class InstagramWebClient @Inject constructor(
     /**
      * Outcome of [resolveMediaId]. A confirmed [NotFound] (Instagram's media-info endpoint
      * answering, e.g., `{"message":"Media not found or unavailable","status":"fail"}`) is
-     * distinct from every other failure â€” a network blip, a non-2xx that isn't a not-found
-     * response â€” which fall back to a locally-decoded id and let the mutation attempt run anyway,
+     * distinct from every other failure — a network blip, a non-2xx that isn't a not-found
+     * response — which fall back to a locally-decoded id and let the mutation attempt run anyway,
      * same as before this distinction existed. Conflating the two used to mean a genuinely deleted
      * post never surfaced as "not found" from here at all: the caller quietly retried with the
      * local guess, and whatever the mutation itself returned for a bogus id was whatever
-     * [IgActionResult.classify] happened to make of it â€” not necessarily recognized as not-found,
+     * [IgActionResult.classify] happened to make of it — not necessarily recognized as not-found,
      * so the backend order never got marked NotFound and kept getting reclaimed and reattempted
      * instead.
      */
@@ -1832,7 +1832,7 @@ class InstagramWebClient @Inject constructor(
 
     /**
      * Resolves a post shortcode/URL to its numeric media id, then confirms it against the
-     * media-info API â€” that endpoint only ever accepts a numeric id, so both the "already
+     * media-info API — that endpoint only ever accepts a numeric id, so both the "already
      * numeric" and "decoded from a shortcode" cases below must land on one before it's ever
      * called, and *neither* case is trusted without the API call: a numeric id that looks
      * well-formed can still point at a since-deleted post, so skipping the call for it would
@@ -1846,7 +1846,7 @@ class InstagramWebClient @Inject constructor(
             numeric
         } else {
             // getIdFromCode falls back to returning the input shortcode verbatim if it hits a
-            // character outside its base64-style alphabet â€” non-numeric, and the media-info API
+            // character outside its base64-style alphabet — non-numeric, and the media-info API
             // would just reject it outright, so that case is treated the same as not being able
             // to resolve an id at all rather than sent to the API.
             InstagramCrypto.getIdFromCode(trimmed).ifBlank { null }?.takeIf { it.all(Char::isDigit) }
@@ -1890,8 +1890,8 @@ class InstagramWebClient @Inject constructor(
     /**
      * The liker's IG-scoped actor id, taken from the `rur` session cookie.
      *
-     * `rur` looks like `<datacenter>,<actor_id>,<timestamp>:<signature>` â€” e.g.
-     * `LDC,17841461448020249,1786521172:01ffâ€¦`. The actor id is the long numeric field, which
+     * `rur` looks like `<datacenter>,<actor_id>,<timestamp>:<signature>` — e.g.
+     * `LDC,17841461448020249,1786521172:01ff…`. The actor id is the long numeric field, which
      * is NOT the same as `ds_user_id` (that is the legacy id). Browser exports URL-encode the
      * separators (`%2C`, `%3A`) and cookie jars sometimes octal-escape them (`\054`, `\072`);
      * both forms are normalised before splitting. Picking the longest all-digit field lands on
@@ -1917,7 +1917,7 @@ class InstagramWebClient @Inject constructor(
      * Resolves profile details for the currently logged-in Instagram session.
      */
     suspend fun fetchCurrentLoggedInUser(sessionCookies: String): InstagramUserProfileDetails? = withContext(Dispatchers.IO) {
-        // Best-effort â€” a WebView-captured session doesn't always carry `rur`/`ds_user_id` in the
+        // Best-effort — a WebView-captured session doesn't always carry `rur`/`ds_user_id` in the
         // exact form this parses (cookie scoping/rotation can drop them from the merged jar even
         // though the session itself is perfectly valid). Deliberately NOT an early return: the
         // current_user/ fallback below needs no pre-known id at all, so a session that fails to
@@ -1927,14 +1927,14 @@ class InstagramWebClient @Inject constructor(
         Log.w(TAG, "fetchCurrentLoggedInUser: userId=$userId, csrfToken=$csrfToken, cookies=$sessionCookies")
 
         // Set once either attempt actually gets a response back from Instagram, regardless of its
-        // status code. If neither attempt manages this â€” a timeout, no connectivity, a DNS/TLS
-        // failure â€” every catch block below swallows its exception and this method would
+        // status code. If neither attempt manages this — a timeout, no connectivity, a DNS/TLS
+        // failure — every catch block below swallows its exception and this method would
         // otherwise fall through to the same `null` a genuinely logged-out session produces,
         // which is what made a plain network blip show up as "Instagram session expired" to the
         // user instead of "couldn't check right now, try again".
         var reachedInstagram = false
 
-        // 1. Try /api/v1/users/{userId}/info/ â€” only possible once an id is known.
+        // 1. Try /api/v1/users/{userId}/info/ — only possible once an id is known.
         //
         // Deliberately on www.instagram.com, not i.instagram.com: the latter is the
         // mobile-app API surface and expects the official app's request signing, so it silently
@@ -2004,7 +2004,7 @@ class InstagramWebClient @Inject constructor(
             Log.w(TAG, "fetchCurrentLoggedInUser via Web HTML fallback failed", e)
         }
 
-        // Both attempts failed before ever getting a response â€” this is a connectivity problem,
+        // Both attempts failed before ever getting a response — this is a connectivity problem,
         // not evidence the session is dead, so it must not be reported as one.
         if (!reachedInstagram) {
             throw java.io.IOException("Could not reach Instagram to verify the session")
@@ -2047,7 +2047,7 @@ class InstagramWebClient @Inject constructor(
      * Whether the account has an active (not-yet-expired) story right now.
      *
      * `/api/v1/feed/user/{userId}/story/` answers `{"reel": {...}}` when a story is live and
-     * `{"reel": null}` (still 200) when it isn't â€” same www.instagram.com cookie-auth surface as
+     * `{"reel": null}` (still 200) when it isn't — same www.instagram.com cookie-auth surface as
      * [fetchCurrentLoggedInUser], for the same reason (i.instagram.com expects app-signed
      * requests a captured web session never has).
      */
@@ -2104,14 +2104,14 @@ class InstagramWebClient @Inject constructor(
      * Resolves a username or profile URL to the numeric Instagram user ID.
      *
      * Prefers the same `www.instagram.com/api/v1` path that [fetchUserProfileDetails] uses.
-     * The legacy `?__a=1` endpoint below is kept only as a fallback â€” Instagram now answers
+     * The legacy `?__a=1` endpoint below is kept only as a fallback — Instagram now answers
      * it with a login page for most callers, so on its own it returned null every time,
      * silently breaking every follow task that needed an ID.
      */
     suspend fun resolveUserId(usernameOrUrl: String, sessionCookies: String? = null): String? = withContext(Dispatchers.IO) {
         val username = InstagramCrypto.parseUsername(usernameOrUrl) ?: usernameOrUrl
 
-        // Already an ID â€” nothing to resolve.
+        // Already an ID — nothing to resolve.
         if (username.isNotBlank() && username.all(Char::isDigit)) return@withContext username
 
         fetchUserProfileDetails(username, sessionCookies)
@@ -2523,7 +2523,7 @@ class InstagramWebClient @Inject constructor(
         if (userId.isBlank()) return@withContext null
         try {
             val maxParam = if (!maxId.isNullOrBlank()) "&max_id=$maxId" else ""
-            // www.instagram.com, not i.instagram.com â€” see the note in fetchCurrentLoggedInUser.
+            // www.instagram.com, not i.instagram.com — see the note in fetchCurrentLoggedInUser.
             val url = "https://www.instagram.com/api/v1/feed/user/$userId/username/?count=12$maxParam"
             val csrfToken = if (!sessionCookies.isNullOrBlank()) extractCookie(sessionCookies, "csrftoken") else null
 
@@ -3456,7 +3456,7 @@ class InstagramWebClient @Inject constructor(
         joinCookies(parseSetCookies(setCookies))
 
     /**
-     * Reduces `Set-Cookie` headers (or the pairs of an existing `Cookie` header) to name â†’ value,
+     * Reduces `Set-Cookie` headers (or the pairs of an existing `Cookie` header) to name ? value,
      * so two responses can be merged instead of one replacing the other wholesale.
      */
     private fun parseSetCookies(setCookies: List<String>): Map<String, String> {
@@ -3486,8 +3486,8 @@ class InstagramWebClient @Inject constructor(
         extractCookie(sessionCookies, WWW_CLAIM_KEY)?.ifBlank { null } ?: "0"
 
     /**
-     * Folds any `Set-Cookie` headers â€” and a rotated WWW-Claim token, if this response issued one
-     * â€” from an action response into [original]'s jar. Returns null when nothing actually changed
+     * Folds any `Set-Cookie` headers — and a rotated WWW-Claim token, if this response issued one
+     * — from an action response into [original]'s jar. Returns null when nothing actually changed
      * from what [original] already had, so callers are not tempted to write back an "updated"
      * value that is byte-for-byte the same as before on every single request.
      */
@@ -3808,7 +3808,7 @@ class InstagramWebClient @Inject constructor(
     /**
      * Signs a request the same way [DeviceSigningInterceptor] does for the app's main API client.
      * [client] here is the `@InstagramClient` instance, which deliberately carries no signing
-     * interceptor since most of its traffic goes straight to instagram.com â€” calls that instead
+     * interceptor since most of its traffic goes straight to instagram.com — calls that instead
      * target our own backend (like [pickUsername]) have to sign themselves or the backend's
      * RequestSigningMiddleware rejects them with "Invalid request signature."
      */
@@ -3841,7 +3841,7 @@ class InstagramWebClient @Inject constructor(
 
         /**
          * Synthetic key the WWW-Claim token rides under inside the opaque cookie/session blob
-         * (see [extractWwwClaim]/[mergeSetCookiesAndClaim]). Not a real Instagram cookie name â€”
+         * (see [extractWwwClaim]/[mergeSetCookiesAndClaim]). Not a real Instagram cookie name —
          * Instagram's cookie parser silently ignores unrecognized names, so folding it into the
          * same string that's already persisted and synced as `SessionData` is safe and needs no
          * extra storage.
@@ -3863,4 +3863,3 @@ data class UsernameValidationResult(
     val suggestions: List<String>,
     val error: String? = null
 )
-

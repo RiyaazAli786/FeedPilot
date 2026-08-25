@@ -40,7 +40,7 @@ import javax.inject.Inject
  * verify) to completion independently of [com.feedpilot.client.feature.upgrade.UpgradeScreen].
  *
  * This used to run inside [com.feedpilot.client.feature.upgrade.UpgradeViewModel] on
- * `viewModelScope`, which is cancelled the moment that screen is popped off the back stack â€”
+ * `viewModelScope`, which is cancelled the moment that screen is popped off the back stack —
  * navigating away (or switching tabs) mid-upload silently killed the task with nothing
  * uploaded, and tapping the same task again just repeated the same partial work. Running it
  * here instead means it survives navigating away, backgrounding the app, or locking the screen.
@@ -56,13 +56,13 @@ class UpgradeRunnerService : Service() {
     @Inject lateinit var accountRepository: com.feedpilot.client.data.repository.AccountRepository
     @Inject lateinit var deviceIdentity: DeviceIdentity
 
-    /** See DeviceIdentity.cloneScopedNotificationId â€” keeps two same-package clones from
+    /** See DeviceIdentity.cloneScopedNotificationId — keeps two same-package clones from
      *  silently overwriting each other's foreground-service notification. */
     private val notificationId by lazy { deviceIdentity.cloneScopedNotificationId(NOTIFICATION_ID_BASE) }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** At most one task runs at a time â€” a second start request for the same task is a no-op. */
+    /** At most one task runs at a time — a second start request for the same task is a no-op. */
     private var job: Job? = null
     private var runningAccountId: String? = null
     private var runningTaskId: String? = null
@@ -81,7 +81,7 @@ class UpgradeRunnerService : Service() {
 
         if (accountId.isNullOrBlank() || taskId.isNullOrBlank()) {
             // Obligated to call startForeground() shortly after startForegroundService() even
-            // when there is nothing to run â€” see TaskRunnerService's identical handling.
+            // when there is nothing to run — see TaskRunnerService's identical handling.
             if (job?.isActive != true) {
                 startForegroundCompat(buildNotification("Nothing to run"))
                 stopSelf()
@@ -90,12 +90,12 @@ class UpgradeRunnerService : Service() {
         }
 
         if (job?.isActive == true) {
-            // Already running some task â€” a duplicate tap on the checklist must not start a
+            // Already running some task — a duplicate tap on the checklist must not start a
             // second run of it (or of a different task) in parallel.
             return START_NOT_STICKY
         }
 
-        startForegroundCompat(buildNotification("Startingâ€¦"))
+        startForegroundCompat(buildNotification("Starting…"))
         runningAccountId = accountId
         runningTaskId = taskId
         stoppedFromRecents = false
@@ -236,7 +236,7 @@ class UpgradeRunnerService : Service() {
         val finalProgress = _lastProgress[taskId]?.let { text ->
             if (success) text.replace("Uploading", "Uploaded").replace("Publishing", "Uploaded") else null
         }
-        val message = if (success) "Task verified â€” completed on Instagram." else (failureReason ?: "Not done yet â€” complete this on Instagram or tap again to retry.")
+        val message = if (success) "Task verified — completed on Instagram." else (failureReason ?: "Not done yet — complete this on Instagram or tap again to retry.")
         Log.i(TAG, "runTask finished: taskId=$taskId success=$success reason=$failureReason")
         runnerState.finish(accountId, taskId, success, finalProgress, message)
         return success
@@ -317,7 +317,7 @@ class UpgradeRunnerService : Service() {
         }
     }
 
-    /** Tracks the latest progress line per task so it can be "Uploadedâ€¦"-ified on success above. */
+    /** Tracks the latest progress line per task so it can be "Uploaded…"-ified on success above. */
     private val _lastProgress = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private fun setProgress(accountId: String, taskId: String, text: String) {

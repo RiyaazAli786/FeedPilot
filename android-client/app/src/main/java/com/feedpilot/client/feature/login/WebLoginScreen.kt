@@ -63,7 +63,7 @@ private const val MAX_RESET_ATTEMPTS = 2
  * snapshot. Covers the gap between the SPA's client-side route change (near-instant) and its
  * background requests actually finishing and rotating cookies (see the comment at the call site),
  * plus the extra round trip through the "Save Your Login Info?" (One Tap) interstitial that
- * Instagram's own post-login redirect can now show before landing on the real home feed â€” see
+ * Instagram's own post-login redirect can now show before landing on the real home feed — see
  * [isHomeFeedUrl]'s call site.
  */
 private const val HOME_FEED_SETTLE_DELAY_MS = 5_000L
@@ -94,7 +94,7 @@ private class ResetState {
  *
  * The flush is the part that matters: `removeAllCookies` drops the in-memory jar but leaves the
  * on-disk copy until it is flushed, so the old session came back on the next start and the login
- * page opened already authenticated â€” no form, and the stale session captured on the first
+ * page opened already authenticated — no form, and the stale session captured on the first
  * callback. DOM storage and the cache go too, since Instagram restores state from both.
  */
 private fun resetBrowserSession(webView: WebView, onDone: () -> Unit) {
@@ -120,13 +120,13 @@ private fun resetBrowserSession(webView: WebView, onDone: () -> Unit) {
  * Loads [url] only once this WebView actually has a height.
  *
  * The initial load is kicked off from inside the Compose `AndroidView` factory, before Compose has
- * measured the view â€” so its height is still 0. Instagram's login page sizes itself to the viewport
+ * measured the view — so its height is still 0. Instagram's login page sizes itself to the viewport
  * (100vh / 100% chains), and a load issued at 0 height lays the whole page out at zero height and
  * paints nothing, even though the form is present in the DOM. Waiting for the first non-zero layout
  * makes Instagram lay out against the real viewport and render normally.
  */
 private fun WebView.loadUrlWhenSized(url: String) {
-    // Already measured â€” load now; otherwise wait for the first layout, which is when Compose
+    // Already measured — load now; otherwise wait for the first layout, which is when Compose
     // gives the view its real height.
     if (height > 0) loadUrl(url) else doOnLayout { loadUrl(url) }
 }
@@ -134,7 +134,7 @@ private fun WebView.loadUrlWhenSized(url: String) {
 /**
  * Types [username] into Instagram's login form. The field is a React-controlled input, so a bare
  * `el.value = "..."` assignment (fine for the read-only scraping in [VIEWER_USERNAME_JS]) would
- * not update React's internal state or enable the "Log in" button â€” this goes through the native
+ * not update React's internal state or enable the "Log in" button — this goes through the native
  * value setter and dispatches a bubbling `input` event, which is what React actually listens for.
  */
 private fun WebView.fillUsernameFieldAttempt(username: String, onResult: (Boolean) -> Unit) {
@@ -157,7 +157,7 @@ private fun WebView.fillUsernameFieldAttempt(username: String, onResult: (Boolea
 /**
  * Retries [fillUsernameFieldAttempt] until it succeeds or the attempts run out.
  *
- * `onPageFinished`/`isLoading = false` only mark the initial document load â€” Instagram's login
+ * `onPageFinished`/`isLoading = false` only mark the initial document load — Instagram's login
  * form is hydrated into the DOM by React afterward, so a single attempt fired right when the
  * suggestion sheet's "Pick" button is tapped can run before `input[name="username"]` exists yet,
  * silently doing nothing. Polling covers that gap the same way [AccountLoginScreen] avoids it
@@ -251,7 +251,7 @@ private suspend fun WebView.fillTwoFactorCode(
 
 /**
  * Reads the logged-in handle straight off the page. The cookie jar only carries the numeric
- * `ds_user_id`, and Instagram does not always expose `_sharedData`, so a blank result is normal â€”
+ * `ds_user_id`, and Instagram does not always expose `_sharedData`, so a blank result is normal —
  * the caller resolves the handle over the API in that case.
  */
 private const val VIEWER_USERNAME_JS =
@@ -413,8 +413,8 @@ fun WebLoginScreen(
                         webView = this
                         // Fill the AndroidView slot with a definite size. Without explicit
                         // match-parent params the WebView can measure itself at zero height, and
-                        // Instagram's login page â€” laid out against the viewport with 100vh/100%
-                        // rules â€” then collapses to a blank page even though its form is in the DOM.
+                        // Instagram's login page — laid out against the viewport with 100vh/100%
+                        // rules — then collapses to a blank page even though its form is in the DOM.
                         layoutParams = android.view.ViewGroup.LayoutParams(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -471,7 +471,7 @@ fun WebLoginScreen(
                                 error: WebResourceError?
                             ) {
                                 super.onReceivedError(view, request, error)
-                                // Sub-resource failures are routine and must not blank the page â€”
+                                // Sub-resource failures are routine and must not blank the page —
                                 // only report a failure of the document itself.
                                 if (request?.isForMainFrame == true) {
                                     isLoading = false
@@ -484,11 +484,11 @@ fun WebLoginScreen(
                              * first; every Instagram auth cookie is domain-wide (`Domain=
                              * .instagram.com`) so it alone normally already carries everything.
                              * The other hosts are only consulted to fill in a name this device
-                             * genuinely never saw from www â€” first-writer-wins, deliberately,
+                             * genuinely never saw from www — first-writer-wins, deliberately,
                              * rather than the old last-write-wins merge. That order let
-                             * i.instagram.com or accounts.instagram.com â€” hosts this WebView never
+                             * i.instagram.com or accounts.instagram.com — hosts this WebView never
                              * actually navigated to, queried only because CookieManager answers
-                             * for any domain-matching URL regardless of visit history â€” silently
+                             * for any domain-matching URL regardless of visit history — silently
                              * overwrite a correct www-scoped value with a blank or stale one for
                              * the same cookie name, which is exactly the kind of corruption that
                              * made a freshly captured session read as already logged out.
@@ -535,8 +535,8 @@ fun WebLoginScreen(
                                 }
 
                                 // ds_user_id is only issued once Instagram has authenticated the
-                                // user, so requiring it â€” not just a sessionid, which exists for
-                                // logged-out visitors too â€” is what makes this "logged in".
+                                // user, so requiring it — not just a sessionid, which exists for
+                                // logged-out visitors too — is what makes this "logged in".
                                 val userId = cookies["ds_user_id"]?.takeIf { it.isNotBlank() }
                                 val signedIn = userId != null && !cookies["sessionid"].isNullOrBlank()
 
@@ -552,7 +552,7 @@ fun WebLoginScreen(
                                     // Instagram answered as an already-signed-in user: the reset
                                     // did not take, so there is no form to fill in. Wipe harder
                                     // and reload instead of silently linking whoever was signed
-                                    // in last â€” that link is what looked like an account logging
+                                    // in last — that link is what looked like an account logging
                                     // itself in from the login screen.
                                     if (view != null && reset.attempts < MAX_RESET_ATTEMPTS) {
                                         reset.attempts++
@@ -571,17 +571,17 @@ fun WebLoginScreen(
                                 if (!signedIn) return
 
                                 // The login POST/redirect only issues ds_user_id + sessionid.
-                                // Cookies the write APIs actually check â€” rur (used to derive the
-                                // actor id), ig_did, a rotated csrftoken â€” are only set once the
+                                // Cookies the write APIs actually check — rur (used to derive the
+                                // actor id), ig_did, a rotated csrftoken — are only set once the
                                 // real home feed itself loads, so capture cannot happen right
                                 // here. This used to force a navigation straight to
                                 // https://www.instagram.com/, which also skipped past whatever
-                                // interstitial Instagram itself wanted to show first â€” most
+                                // interstitial Instagram itself wanted to show first — most
                                 // commonly "Save Your Login Info?" (One Tap). A real browser never
                                 // skips that, so forcing past it was as much an automation tell as
                                 // it was a correctness risk. Instead, just let Instagram's own
                                 // redirect chain run: if it has not landed on the real home feed
-                                // yet, do nothing and wait for the next settle callback â€” a tap on
+                                // yet, do nothing and wait for the next settle callback — a tap on
                                 // "Save Info"/"Not Now" in the visible WebView, or Instagram's own
                                 // auto-advance, will fire one.
                                 reset.awaitingHomeLoad = true
@@ -591,7 +591,7 @@ fun WebLoginScreen(
                                 // feed. That still is not necessarily done loading in the
                                 // background: Instagram's web app is a client-side-routed SPA, so
                                 // doUpdateVisitedHistory (one of the two triggers for this method)
-                                // fires the instant the URL bar updates via pushState â€” which
+                                // fires the instant the URL bar updates via pushState — which
                                 // happens close to immediately, well before the background
                                 // requests that actually rotate rur/csrftoken/ig_did have
                                 // finished. Give the page a beat to actually finish loading in the
@@ -621,7 +621,7 @@ fun WebLoginScreen(
                             }
 
                             /**
-                             * Takes the real, final cookie snapshot â€” called once, after the home
+                             * Takes the real, final cookie snapshot — called once, after the home
                              * feed has had time to finish its own background requests (see the
                              * comment above the call site). Reads cookies fresh rather than reusing
                              * whatever [onPageSettled] saw when it scheduled this, since the whole

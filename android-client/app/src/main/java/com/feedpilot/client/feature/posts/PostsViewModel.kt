@@ -38,9 +38,9 @@ data class PostItem(
     val caption: String? = null,
     /** Numeric media id used by the like/repost mutations. */
     val mediaId: String = "",
-    /** Already liked â€” the Like action is hidden/disabled so it can't be repeated. */
+    /** Already liked — the Like action is hidden/disabled so it can't be repeated. */
     val hasLiked: Boolean = false,
-    /** Already reposted in this session â€” same idea as [hasLiked]. */
+    /** Already reposted in this session — same idea as [hasLiked]. */
     val hasReposted: Boolean = false,
     /** Instagram allows the viewer to reshare this media. */
     val canReshare: Boolean = true,
@@ -286,7 +286,7 @@ class PostsViewModel @Inject constructor(
             content.update {
                 it.copy(
                     message = if (order != null) {
-                        "Order placed â€” $likesCount likes (${order.coinsSpent} coins). Status: ${order.status}."
+                        "Order placed — $likesCount likes (${order.coinsSpent} coins). Status: ${order.status}."
                     } else {
                         errMsg ?: "Could not place the order"
                     }
@@ -316,7 +316,7 @@ class PostsViewModel @Inject constructor(
     }
 
     /**
-     * Maps a feed item to a card. The video url comes straight from the feed â€” resolving it
+     * Maps a feed item to a card. The video url comes straight from the feed — resolving it
      * later via media-info returns nothing for anonymous callers, which left reels unplayable.
      */
     private fun com.feedpilot.client.data.remote.InstagramUserFeedItem.toPostItem(): PostItem {
@@ -342,7 +342,7 @@ class PostsViewModel @Inject constructor(
         content.update { c -> c.copy(posts = c.posts.map { if (it.id == id) change(it) else it }) }
     }
 
-    /** Likes a post. Never runs for one already liked â€” the UI hides the action. */
+    /** Likes a post. Never runs for one already liked — the UI hides the action. */
     fun likePost(post: PostItem) {
         if (post.hasLiked || post.busy) return
         updatePost(post.id) { it.copy(busy = true) }
@@ -380,7 +380,7 @@ class PostsViewModel @Inject constructor(
     private val _commentSheet = MutableStateFlow<CommentSheetState?>(null)
     val commentSheet: StateFlow<CommentSheetState?> = _commentSheet.asStateFlow()
 
-    /** Opens the comment sheet â€” only for posts that actually allow comments. */
+    /** Opens the comment sheet — only for posts that actually allow comments. */
     fun openComments(post: PostItem) {
         if (post.commentsDisabled) {
             content.update { it.copy(message = "Comments are turned off for this post") }

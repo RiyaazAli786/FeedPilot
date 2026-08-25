@@ -25,6 +25,8 @@ public class AppDbContext : DbContext
     public DbSet<SmmProviderConfig> SmmProviderConfigs => Set<SmmProviderConfig>();
     public DbSet<CoinTransfer> CoinTransfers => Set<CoinTransfer>();
     public DbSet<PickedUsername> PickedUsernames => Set<PickedUsername>();
+    public DbSet<AppInstallation> AppInstallations => Set<AppInstallation>();
+    public DbSet<InstallationChallenge> InstallationChallenges => Set<InstallationChallenge>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -206,6 +208,25 @@ public class AppDbContext : DbContext
             e.Property(x => x.DeviceId).HasMaxLength(128).IsRequired();
             e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
         });
+
+        b.Entity<AppInstallation>(e =>
+        {
+            e.HasIndex(x => x.InstallationId).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.Status);
+            e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.PublicKey).HasMaxLength(512).IsRequired();
+            e.HasOne(x => x.User).WithMany()
+                .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<InstallationChallenge>(e =>
+        {
+            e.HasIndex(x => x.InstallationId);
+            e.HasIndex(x => x.ExpiresAt);
+            e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.Challenge).HasMaxLength(128).IsRequired();
+        });
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -280,15 +301,15 @@ public class AppDbContext : DbContext
         if (string.IsNullOrWhiteSpace(link)) return null;
         var trimmed = link.Trim();
         if (trimmed.StartsWith('@')) return trimmed.TrimStart('@');
-        try
+
+        var domainAt = trimmed.IndexOf("instagram.com/", StringComparison.OrdinalIgnoreCase);
+        if (domainAt >= 0)
         {
-            if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-                !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                trimmed = "https://" + trimmed;
-            }
-            var uri = new Uri(trimmed);
-            var segments = uri.AbsolutePath.Trim('/').Split('/');
+            var afterDomain = trimmed[(domainAt + "instagram.com/".Length)..];
+            var path = afterDomain.Split('?', '#')[0].Trim('/');
+            if (path.Length == 0) return trimmed;
+
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
             if (segments.Length > 0)
             {
                 var first = segments[0];
@@ -302,8 +323,31 @@ public class AppDbContext : DbContext
                 }
                 return first;
             }
-            return null;
         }
-        catch { return trimmed.TrimStart('@'); }
+
+        if (Uri.TryCreate(trimmed.StartsWith("http://") || trimmed.StartsWith("https://") ? trimmed : "https://" + trimmed, UriKind.Absolute, out var uri))
+        {
+            if (!uri.Host.Contains('.'))
+            {
+                return uri.Host;
+            }
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length > 0)
+            {
+                var first = segments[0];
+                if (segments.Length > 1 && (
+                    first.Equals("p", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reel", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reels", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("tv", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return segments[1];
+                }
+                return first;
+            }
+        }
+
+        var bare = trimmed.Split('/', '?', '#', '\\')[0].Trim();
+        return string.IsNullOrWhiteSpace(bare) ? null : bare;
     }
 }

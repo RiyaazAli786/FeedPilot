@@ -10,7 +10,7 @@ import javax.inject.Singleton
 interface TaskHandler {
     val type: EngagementTaskType
 
-    /** Performs the order for [accountId]. Throwing is allowed â€” [TaskExecutor] maps it to a failure. */
+    /** Performs the order for [accountId]. Throwing is allowed — [TaskExecutor] maps it to a failure. */
     suspend fun perform(task: TaskEntity, accountId: String): TaskOutcome
 }
 
@@ -26,7 +26,7 @@ class LikeTaskHandler @Inject constructor(
     override suspend fun perform(task: TaskEntity, accountId: String): TaskOutcome {
         if (task.targetId.isBlank()) return TaskOutcome.Failure("Order has no target post")
 
-        // Best effort â€” a target we can't preview is still worth attempting.
+        // Best effort — a target we can't preview is still worth attempting.
         val preview = targets.fetchPost(task.targetId)
         val label = (preview as? Resource.Success)?.data?.id ?: task.targetId
 
@@ -49,7 +49,7 @@ class FollowTaskHandler @Inject constructor(
     override suspend fun perform(task: TaskEntity, accountId: String): TaskOutcome {
         if (task.targetId.isBlank()) return TaskOutcome.Failure("Order has no target account")
 
-        // task.targetId can be a raw profile URL, not just a bare username â€” engine.follow()
+        // task.targetId can be a raw profile URL, not just a bare username — engine.follow()
         // below normalizes it internally before resolving, but this preview lookup didn't, so it
         // was handing Instagram's profile API something it was never meant to parse as a
         // username. That's what let a lookup resolve to the wrong account (observed: the log
@@ -57,7 +57,7 @@ class FollowTaskHandler @Inject constructor(
         // though the follow below, which normalizes correctly, still landed on the right one.
         val cleanTargetId = com.feedpilot.client.common.InstagramCrypto.parseUsername(task.targetId) ?: task.targetId
 
-        // Best effort â€” a target we can't preview is still worth attempting.
+        // Best effort — a target we can't preview is still worth attempting.
         val profile = targets.fetchProfile(cleanTargetId)
         val username = (profile as? Resource.Success)?.data?.username ?: cleanTargetId
         if (profile is Resource.Success && profile.data.isPrivate) {

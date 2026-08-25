@@ -26,20 +26,20 @@ private interface WebViewTelemetryEntryPoint {
 
 /**
  * Best-effort visibility into the JSON API calls a login/session WebView's own page JavaScript
- * makes â€” Android's WebView APIs only let native code substitute a response *before* a request
+ * makes — Android's WebView APIs only let native code substitute a response *before* a request
  * runs ([android.webkit.WebViewClient.shouldInterceptRequest]), not read the real one after it
  * completes, so this instead patches `fetch`/`XMLHttpRequest` inside the page itself and relays
- * each JSON response â€” already decoded (gzip, charset) by the browser engine, not re-derived here
- * â€” to the backend's `/api/log/instagram-call` relay (see [InstagramCallTelemetry], which does the
+ * each JSON response — already decoded (gzip, charset) by the browser engine, not re-derived here
+ * — to the backend's `/api/log/instagram-call` relay (see [InstagramCallTelemetry], which does the
  * same for this app's own OkHttp-based Instagram calls; this is the WebView-side counterpart for
- * traffic that never goes through OkHttp at all â€” the WebView login/session flows use the platform
+ * traffic that never goes through OkHttp at all — the WebView login/session flows use the platform
  * WebView's own network stack). That endpoint forwards to the Telegram monitoring chat
  * (`TelegramRequestLogger.LogClientApiCallAsync`), redacting credentials server-side same as any
- * other relayed call. Non-JSON responses (images, scripts, the page's own HTML) are not reported â€”
+ * other relayed call. Non-JSON responses (images, scripts, the page's own HTML) are not reported —
  * this is meant to surface the same kind of API traffic already visible for the OkHttp-based
  * client, not a full page capture.
  *
- * Gated on [BuildConfig.LOG_HTTP_BODY] (the `LOG_HTTP_RESPONSES` env var at build time â€” see
+ * Gated on [BuildConfig.LOG_HTTP_BODY] (the `LOG_HTTP_RESPONSES` env var at build time — see
  * build.gradle.kts) and a complete no-op when it's off: these are login/session WebViews whose
  * traffic includes Instagram's session cookies, so this must never run unnoticed in a shipped
  * build.
@@ -66,7 +66,7 @@ object WebViewNetworkLogging {
     }
 
     /**
-     * Call from [android.webkit.WebViewClient.onPageStarted]. Re-injected on every navigation â€”
+     * Call from [android.webkit.WebViewClient.onPageStarted]. Re-injected on every navigation —
      * `fetch`/`XMLHttpRequest` live on `window`, which is torn down and rebuilt fresh for each
      * new document, so a patch installed for one page does not carry over to the next.
      */
@@ -99,7 +99,7 @@ object WebViewNetworkLogging {
           window.__tfNetLogInstalled = true;
           var MAX = $MAX_BODY_CHARS;
           function trunc(s) {
-            try { return (typeof s === 'string' && s.length > MAX) ? (s.slice(0, MAX) + 'â€¦[truncated]') : s; }
+            try { return (typeof s === 'string' && s.length > MAX) ? (s.slice(0, MAX) + '…[truncated]') : s; }
             catch (e) { return s; }
           }
           function isJson(contentType) {

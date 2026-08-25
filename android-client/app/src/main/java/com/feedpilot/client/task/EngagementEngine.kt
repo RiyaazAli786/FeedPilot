@@ -15,7 +15,7 @@ import kotlin.random.Random
 sealed interface EngagementResult {
     data object Success : EngagementResult
 
-    /** [reason] is user-visible â€” it lands on the account card and in the action log. */
+    /** [reason] is user-visible — it lands on the account card and in the action log. */
     data class Failure(val reason: String) : EngagementResult
 }
 
@@ -24,7 +24,7 @@ sealed interface EngagementResult {
  *
  * This is the single seam between the order pipeline and whatever drives the social platform.
  * Implementations must only return [EngagementResult.Success] when the action genuinely
- * happened â€” a simulated or assumed success is reported to the backend as real work and
+ * happened — a simulated or assumed success is reported to the backend as real work and
  * earns coins for it.
  */
 interface EngagementEngine {
@@ -51,7 +51,7 @@ interface EngagementEngine {
 /**
  * Stand-in engine that performs no automation and always reports success.
  *
- * For local development against the scaffold backend only â€” bind it in `di/TaskModule` in
+ * For local development against the scaffold backend only — bind it in `di/TaskModule` in
  * place of [InstagramEngagementEngine]. It must never be used as a fallback behind the real
  * engine: doing so turns every failed action into a paid, falsely-completed order.
  */

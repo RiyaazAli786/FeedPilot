@@ -54,24 +54,24 @@ class TaskRepository @Inject constructor(
         deviceIdentity.stableAppInstallationId
 
     /**
-     * Serializes [settleOrder] per orderId. Orders aren't scoped to one account â€” any account
-     * running on this device can pick up units of the same order â€” and [TaskDao.completedCountForOrder]/
+     * Serializes [settleOrder] per orderId. Orders aren't scoped to one account — any account
+     * running on this device can pick up units of the same order — and [TaskDao.completedCountForOrder]/
      * [TaskDao.markOrderTasksReported] are device-wide, not account-scoped. Two accounts finishing
      * a unit of the *same* order around the same moment (the common case once a second account
      * starts: both freshly claimed accounts tend to land on the same newly-available orders) used
      * to each read completedCountForOrder before either had flipped its rows to 'Reported', each
      * compute an absolute `total` from that same stale snapshot, and send it to the backend's
-     * monotonic Progress endpoint â€” whichever report lands second sends a `total` the backend has
+     * monotonic Progress endpoint — whichever report lands second sends a `total` the backend has
      * already met or exceeded, so its own genuinely-new completions score `newlyDone = 0` and get
      * awarded zero coins, yet still get marked 'Reported' and are never retried. A per-order lock
-     * held across the whole settle (read â†’ report â†’ mark-reported) closes that window: the second
+     * held across the whole settle (read ? report ? mark-reported) closes that window: the second
      * account's settle call now waits until the first's markOrderTasksReported has actually run, so
      * its own completedCountForOrder read starts from an up-to-date baseline instead of a stale one.
      */
     private val orderSettleMutexes = ConcurrentHashMap<String, Mutex>()
     private fun orderSettleMutex(orderId: String): Mutex =
         // computeIfAbsent, not the Kotlin `getOrPut` extension: getOrPut is a plain get-then-put
-        // on the Map interface, so it is not itself atomic even backed by a ConcurrentHashMap â€”
+        // on the Map interface, so it is not itself atomic even backed by a ConcurrentHashMap —
         // two accounts racing on the same brand-new orderId can each observe a null lookup, each
         // mint their own Mutex(), and each lock only their own instance while just one wins the
         // put, leaving both settleOrder calls to run unlocked against each other. That reopened
@@ -86,7 +86,7 @@ class TaskRepository @Inject constructor(
 
     /**
      * What a single [claimPending] call actually returned, paired with the tasks. Handed straight
-     * back to the caller instead of published on a repository-wide flow â€” this repository is a
+     * back to the caller instead of published on a repository-wide flow — this repository is a
      * singleton shared by every signed-in account's independent runner loop on this clone (see
      * [deviceId]), and a shared "last outcome" meant one account's rate-limit/network/server
      * result could be read by a different account's idle-wait, showing that account a message
@@ -110,16 +110,16 @@ class TaskRepository @Inject constructor(
 
     /**
      * Fetches orders queued for processing from the SMM Admin pull API
-     * (https://smmorigin.com/adminapi/v2/orders/pull) â€” separately for the Follow and Like
-     * service IDs â€” as well as the backend server endpoint. Used for a full manual/periodic
+     * (https://smmorigin.com/adminapi/v2/orders/pull) — separately for the Follow and Like
+     * service IDs — as well as the backend server endpoint. Used for a full manual/periodic
      * refresh (pull-to-refresh, [com.feedpilot.client.worker.SyncWorker]); the runner loop's own
      * per-account polling goes through [claimPending] instead, which does not always repeat the
-     * bulk pull below â€” see its doc comment for why.
+     * bulk pull below — see its doc comment for why.
      */
     suspend fun downloadPending(limit: Int = 20): Resource<List<TaskEntity>> {
         // Every task here is work for a signed-in account to carry out on Instagram. With none
         // signed in, claiming any of it would only strand orders that another device could serve,
-        // so nothing is pulled â€” not from the admin queue, the order pool, or the backend.
+        // so nothing is pulled — not from the admin queue, the order pool, or the backend.
         if (!sessionGate.isSignedIn()) return Resource.Success(emptyList())
         val bulk = pullBulkSources(limit)
         val claimedFromBackend = claimFromBackend(null, null, limit).tasks
@@ -130,17 +130,17 @@ class TaskRepository @Inject constructor(
     }
 
     /**
-     * Pulls from the two *bulk* sources â€” the SMM admin queue (up to [PULL_BATCH_SIZE] orders
+     * Pulls from the two *bulk* sources — the SMM admin queue (up to [PULL_BATCH_SIZE] orders
      * per service id) and the legacy backend task queue. Both can hand back far more rows than
      * any one account needs in a pass, so [claimPending] only bothers calling this when the
-     * local pool is actually running low â€” unlike [claimFromBackend], which is cheap and always
+     * local pool is actually running low — unlike [claimFromBackend], which is cheap and always
      * attempted regardless.
      */
     private suspend fun pullBulkSources(limit: Int): Resource<List<TaskEntity>> = try {
         val tasksList = mutableListOf<TaskEntity>()
 
         // 1. Pull live orders per service ID so each order's task type is known up front.
-        //    These are the admin queue's own service IDs â€” deliberately NOT the provider row's
+        //    These are the admin queue's own service IDs — deliberately NOT the provider row's
         //    followServiceId/likeServiceId, which belong to the user panel we buy from and
         //    number their services differently.
         try {
@@ -234,10 +234,10 @@ class TaskRepository @Inject constructor(
     private data class BackendClaimResult(val outcome: ClaimOutcome, val tasks: List<TaskEntity>)
 
     /**
-     * Claims a small lease window straight from our own backend â€” already capped at
+     * Claims a small lease window straight from our own backend — already capped at
      * [BACKEND_MAX_CLAIM_BATCH] and per-device rate-limited server-side, so unlike
      * [pullBulkSources] this is cheap enough to attempt on every single [claimPending] pass. That
-     * matters: this is the one source whose freshness an operator actually notices â€” an order
+     * matters: this is the one source whose freshness an operator actually notices — an order
      * placed moments ago needs to show up on the very next poll, not only once the local pool
      * (which can be full of rows this particular account cannot act on: wrong order type for its
      * mode, or targets it already completed) happens to run dry.
@@ -257,11 +257,11 @@ class TaskRepository @Inject constructor(
             if (requestedTypes != null && requestedTypes.size > 1) {
                 val perTypeBatchSize = maxOf(1, kotlin.math.ceil(BACKEND_MAX_CLAIM_BATCH.toDouble() / requestedTypes.size).toInt())
                 // Each type is claimed via its own request so one popular type (e.g. Follow)
-                // can't crowd the others out of a shared batch â€” but these must run concurrently,
+                // can't crowd the others out of a shared batch — but these must run concurrently,
                 // not one after another. Awaiting them sequentially multiplied a single claim
                 // pass's round-trip latency by the number of allowed types (up to 6x in Random
-                // mode), which is what made claiming visibly stall on "Checking next ordersâ€¦".
-                // An order's type is fixed, so results across these calls can never overlap â€”
+                // mode), which is what made claiming visibly stall on "Checking next orders…".
+                // An order's type is fixed, so results across these calls can never overlap —
                 // no cross-request de-dup exclusion is needed the way the sequential version had.
                 val perTypeOutcomes = coroutineScope {
                     requestedTypes.map { type ->
@@ -315,7 +315,7 @@ class TaskRepository @Inject constructor(
                 }
                 val taskType = order.orderType
 
-                // Only the outstanding actions are queued â€” an order part-way through must
+                // Only the outstanding actions are queued — an order part-way through must
                 // not be re-run from zero.
                 val remaining = if (order.remaining > 0) {
                     order.remaining
@@ -423,14 +423,14 @@ class TaskRepository @Inject constructor(
     }
 
     /**
-     * Reports a manually retried Action Log entry (TasksViewModel.retryFailedActionLog) â€” there is
+     * Reports a manually retried Action Log entry (TasksViewModel.retryFailedActionLog) — there is
      * no backend task/order behind an old log entry, so this reports the action fresh instead of
      * reconciling against one. Unlike the old local-only credit this replaced (a direct
      * `walletRepository.addCoins` call with no backend record at all, permanently unreconciled
-     * against the server â€” see git history), the award now comes back from
+     * against the server — see git history), the award now comes back from
      * RunnerSettingsStore.GetActionCoinReward on the backend, the same source of truth every
      * other completion is priced from, and lands through the same confirmed-only credit path.
-     * On any failure (network, auth, validation) this credits nothing â€” a manual retry that can't
+     * On any failure (network, auth, validation) this credits nothing — a manual retry that can't
      * reach the backend simply isn't paid, rather than paying locally and hoping it reconciles.
      */
     suspend fun submitManualActionResult(
@@ -455,7 +455,7 @@ class TaskRepository @Inject constructor(
     }
 
     /**
-     * Single-task reconciliation, for the legacy queue only â€” every legacy report is exactly one
+     * Single-task reconciliation, for the legacy queue only — every legacy report is exactly one
      * task's worth (`POST /api/tasks/result` never batches), so its one pending-earning row and
      * this one [backendAwarded] figure are always a matched pair. Order-backed tasks go through
      * [reconcilePendingBatch] instead: one settle report there can confirm several accumulated
@@ -465,11 +465,11 @@ class TaskRepository @Inject constructor(
      * [locallyCredited] is what [applyLocalReward] already applied, computed from this device's
      * own RunnerSettings cache (synced at most every [SettingsRepository]-defined interval, so it
      * can briefly lag a dashboard price change). [backendAwarded] is what RunnerSettingsStore
-     * actually priced this same completion at, read live from the DB â€” reconcile any gap now
+     * actually priced this same completion at, read live from the DB — reconcile any gap now
      * instead of leaving a stale local price as a silent, permanent over/under-credit.
      *
      * The wallet side goes through [WalletRepository.creditConfirmedEarning] rather than a plain
-     * clear-then-reconcile â€” clearing [taskId]'s pending row and crediting the wallet base total
+     * clear-then-reconcile — clearing [taskId]'s pending row and crediting the wallet base total
      * used to be two separate calls, which left a window where the reward was in neither bucket.
      * Usually too brief to notice, but wide enough to show up as a visible drop right after a
      * credit when several accounts are settling tasks concurrently and contending for the same
@@ -486,10 +486,10 @@ class TaskRepository @Inject constructor(
 
     /**
      * Batch reconciliation for order-backed tasks, called from inside [settleOrderLocked] right
-     * after one successful report â€” that single report's [confirmedCoins] can represent several
+     * after one successful report — that single report's [confirmedCoins] can represent several
      * of this account's own units completed since the last report (`doneLocally` there is a
-     * running count), so every pending-earning row for this exact (orderId, accountId) pair â€”
-     * not just whichever task happened to trigger the call â€” is summed, reconciled against the
+     * running count), so every pending-earning row for this exact (orderId, accountId) pair —
+     * not just whichever task happened to trigger the call — is summed, reconciled against the
      * confirmed total by one delta, and cleared together.
      */
     private suspend fun reconcilePendingBatch(
@@ -545,13 +545,13 @@ class TaskRepository @Inject constructor(
 
     /**
      * Re-attempts server settlement for every locally-credited reward the backend hasn't
-     * confirmed yet (see [WalletRepository.pendingEarnings]) â€” the actual push-to-server for a
+     * confirmed yet (see [WalletRepository.pendingEarnings]) — the actual push-to-server for a
      * reward whose settle call failed the first time (offline, backend briefly down, app killed
      * mid-call). The local credit itself is never at risk either way, since [applyLocalReward]
      * already wrote it durably to Room the instant the action completed; without this, though, a
      * reward that failed to settle once had no other path back to the server, since nothing else
      * ever revisits an already-'Completed'/'Reported' local task row on its own. Meant to be
-     * called periodically (see TaskRunnerService's 10s sync loop) â€” a row that still fails here
+     * called periodically (see TaskRunnerService's 10s sync loop) — a row that still fails here
      * simply gets tried again on the next pass.
      */
     suspend fun flushPendingEarnings() {
@@ -561,7 +561,7 @@ class TaskRepository @Inject constructor(
         val (orderBacked, nonOrderBacked) = pending.partition { it.taskId.startsWith(BACKEND_TASK_PREFIX) }
         val (smmBacked, legacy) = nonOrderBacked.partition { it.taskId.startsWith(SMM_ORDER_PREFIX) }
 
-        // One retry per distinct (orderId, accountId) pair is enough â€” a successful report
+        // One retry per distinct (orderId, accountId) pair is enough — a successful report
         // reconciles every pending row for that pair at once (see reconcilePendingBatch), so
         // retrying per-row here would just resend the same already-resolved report redundantly.
         orderBacked.forEach { p ->
@@ -592,7 +592,7 @@ class TaskRepository @Inject constructor(
 
     /**
      * Applies this completion's dashboard-priced reward to the account card and wallet
-     * immediately, from this device's own cached RunnerSettings â€” before any network call, so
+     * immediately, from this device's own cached RunnerSettings — before any network call, so
      * the UI reflects it the instant Instagram confirms the action instead of waiting on (or
      * racing over) a shared server-side settle call. Persisted via [WalletRepository.addPendingEarning]
      * so the credit survives process death; [reconcileReward] corrects any drift against the
@@ -632,7 +632,7 @@ class TaskRepository @Inject constructor(
         // Tracks whether the legacy-queue credit below was already attempted, so a throw from
         // walletRepository.addCoins (Room write + disk backup, either of which can fail) doesn't
         // cause the catch block's fallback credit to double-apply accountDao.incrementCoinsEarned
-        // on top of an increment that already landed â€” this was silently inflating the local
+        // on top of an increment that already landed — this was silently inflating the local
         // coinsEarned cache above the true server value until the next refreshFromServer() call
         // yanked it back down, which is what showed up as the badge visibly dropping on screen.
         return try {
@@ -642,7 +642,7 @@ class TaskRepository @Inject constructor(
 
             // Set to the local dashboard-priced credit as soon as it's applied below, then
             // overwritten with the backend-confirmed amount once the settle call actually lands
-            // â€” see applyLocalReward/reconcileReward. Stays at the local figure (not 0) if the
+            // — see applyLocalReward/reconcileReward. Stays at the local figure (not 0) if the
             // settle call never resolves, since that is what the wallet/account card actually show.
             var finalReward = 0L
 
@@ -656,18 +656,18 @@ class TaskRepository @Inject constructor(
                 taskDao.updateStatus(taskId, STATUS_FAILED)
             }
 
-            // Credit the dashboard-priced reward locally right away â€” see applyLocalReward â€” so
+            // Credit the dashboard-priced reward locally right away — see applyLocalReward — so
             // the account card and wallet move the instant Instagram confirms the action, not
             // whenever the settle call below eventually lands. finalReward starts here instead of
             // at 0 so a settle call that never resolves (offline, backend down) still reports what
             // the user actually sees rather than silently 0.
             if (isLegacyQueueTask) {
-                // taskDao.updateStatus above already marked this row STATUS_COMPLETED â€” a legacy
+                // taskDao.updateStatus above already marked this row STATUS_COMPLETED — a legacy
                 // task has no "completed but not yet reported" state the way an order-backed task
                 // does (settleOrder leaves those un-flipped for a later retry, see its doc comment),
                 // so once this method returns, nobody will ever call submitTaskResult for this
                 // taskId again. A single failed attempt against a cold-starting host (the free-tier
-                // backend can take real time to wake up â€” see WalletRepository's refresh comments)
+                // backend can take real time to wake up — see WalletRepository's refresh comments)
                 // used to mean the Instagram action succeeded but the reward was silently and
                 // permanently lost, both locally and server-side, since the report never landed.
                 // Retry a few times with backoff before giving up, rather than only trying once.
@@ -692,7 +692,7 @@ class TaskRepository @Inject constructor(
                     }
                     // Reconciliation (wallet/account delta + clearing the matching pending-earning
                     // rows) happens inside settleOrderLocked itself via reconcilePendingBatch, not
-                    // here â€” this report's backendAwarded can cover several of this account's
+                    // here — this report's backendAwarded can cover several of this account's
                     // pending units at once, not just this one taskId.
                     val backendAwarded = settleOrder(taskObj, reporterAccountId, settlementError)
                     if (success && backendAwarded != null) {
@@ -727,7 +727,7 @@ class TaskRepository @Inject constructor(
                 // right after crediting (WalletService.CreditAsync -> CoinSyncHub -> WalletRepository
                 // .applyLiveUpdate), so polling refresh() here too, unconditionally, on every single
                 // completed action from every concurrently-running account, only produced a storm of
-                // overlapping GET /wallet requests with nothing to gain â€” and whose out-of-order
+                // overlapping GET /wallet requests with nothing to gain — and whose out-of-order
                 // responses were the actual source of the intermittent coin-drop bug. Only fall back
                 // to an HTTP refresh when the push channel is down, so the balance still catches up
                 // for a disconnected/offline session.
@@ -745,7 +745,7 @@ class TaskRepository @Inject constructor(
 
     /**
      * Reports a legacy-queue task's outcome, retrying a couple of times on failure before giving
-     * up â€” see the call site in [submitResult] for why a single attempt isn't enough here. Only
+     * up — see the call site in [submitResult] for why a single attempt isn't enough here. Only
      * retries on an actual failure to reach/parse a response; a request that lands but the server
      * rejects (4xx business error) is still just one attempt, since retrying that would only repeat
      * the same rejection.
@@ -774,26 +774,26 @@ class TaskRepository @Inject constructor(
     }
 
     /**
-     * Releases [orderId]'s claim if this device has nothing left pending for it locally â€”
+     * Releases [orderId]'s claim if this device has nothing left pending for it locally —
      * called after every single task against a backend order settles, success **or failure**.
      *
      * It used to run only on success (`if (success) reportBackendOrderProgress(...)`), which
      * quietly stuck the claim as Processing forever the moment anything failed: a batch of local
      * rows fanned out from one order all get consumed one way or another (Completed, Failed, or
      * Skipped) as the runner works through them, but only a Completed one ever told the backend
-     * "I'm done, hand this to someone else if it still needs work." A run of failures â€” a
-     * session going stale mid-run being the most common one â€” left the order's claim orphaned:
+     * "I'm done, hand this to someone else if it still needs work." A run of failures — a
+     * session going stale mid-run being the most common one — left the order's claim orphaned:
      * not progressing, not released, not even eligible for the stale-claim reclaim window because
      * this device still nominally "held" it. That order then vanished from the claimable queue
      * for everyone, which is what a device saw as getting stuck waiting after several actions
-     * instead of continuing â€” nothing was hung, the *order* just had nowhere to go.
+     * instead of continuing — nothing was hung, the *order* just had nowhere to go.
      *
-     * [accountId] is passed only when this call is reporting a genuinely new success â€” it credits
+     * [accountId] is passed only when this call is reporting a genuinely new success — it credits
      * that account's own CoinsEarned tally. A settle-on-failure call passes null: nothing new was
      * completed, so nothing new should be credited, only the release needs to happen.
      *
      * Returns the backend's authoritative `workerCoinsAwarded` for this report, or `null` if
-     * nothing was actually sent/confirmed (skipped, or the request itself failed) â€” callers must
+     * nothing was actually sent/confirmed (skipped, or the request itself failed) — callers must
      * treat `null` as "unknown," not as a confirmed zero-coin award, or a dropped network call
      * would be misread as the backend clawing back a reward that was never actually revoked.
      */
@@ -833,7 +833,7 @@ class TaskRepository @Inject constructor(
         // Account-scoped whenever this report will actually credit someone (accountId != null):
         // orders are shared across every account running on this device, so counting device-wide
         // here let whichever account's settle call won the per-order lock claim (and get credited
-        // for) a sibling account's own just-finished, not-yet-reported completions too â€” see
+        // for) a sibling account's own just-finished, not-yet-reported completions too — see
         // TaskDao.completedCountForOrderAndAccount. The release-only path (accountId == null,
         // nothing being credited) still counts device-wide, matching what it flushes.
         val doneLocally = runCatching {
@@ -854,11 +854,11 @@ class TaskRepository @Inject constructor(
 
         val stillOwed = quantity > total
         val pendingLocally = runCatching { taskDao.pendingCountForOrder(orderId) }.getOrDefault(0)
-        // Nothing changed and nothing local is exhausted yet â€” this device may still add to the
+        // Nothing changed and nothing local is exhausted yet — this device may still add to the
         // total shortly, so there is nothing worth telling the backend right now.
         if (!terminalTargetFailure && accountId == null && pendingLocally > 0) return null
 
-        // Temporary diagnostic for the zero-coin-reward reports under investigation â€” shows
+        // Temporary diagnostic for the zero-coin-reward reports under investigation — shows
         // exactly what baseline/doneLocally/total this device computed and sent, to compare
         // against the backend's own before/reportedCompleted/newlyDone log for the same call.
         // Remove once the root cause is confirmed and fixed.
@@ -888,7 +888,7 @@ class TaskRepository @Inject constructor(
         }
 
         // Mirror the backend's answer into local history straight away. order_history is
-        // exposed as a Flow, so the History screen redraws the moment this lands â€” no
+        // exposed as a Flow, so the History screen redraws the moment this lands — no
         // manual sync needed to see progress move or an order settle as Completed.
         return when (result) {
             is Resource.Success -> {
@@ -896,7 +896,7 @@ class TaskRepository @Inject constructor(
                 // The report just landed, so `total` (baseline + doneLocally) is now exactly
                 // what the backend has on record. Flip the rows that made up doneLocally so the
                 // *next* settleOrder call starts its local count from zero instead of re-adding
-                // them on top of the now-updated baseline â€” without this, baseline and doneLocally
+                // them on top of the now-updated baseline — without this, baseline and doneLocally
                 // both grew from the same completions and progress compounded (1, 3, 6, 10, ...
                 // instead of 1, 2, 3, 4) every time a device reported more than once per order.
                 Log.d(TAG, "settleOrder diag: orderId=$orderId result=SUCCESS workerCoinsAwarded=${result.data.workerCoinsAwarded} status=${result.data.status}")
@@ -908,7 +908,7 @@ class TaskRepository @Inject constructor(
                         // This one report can confirm several of this account's own units at
                         // once (doneLocally above is a running count, not one task's worth), so
                         // every pending-earning row it covers must be reconciled and cleared here
-                        // â€” not just whichever single task happened to trigger this settle call.
+                        // — not just whichever single task happened to trigger this settle call.
                         // Otherwise a sibling task's pending row that got folded into this same
                         // batch is left orphaned: still "outstanding" forever, and a later flush
                         // retry for it would re-settle an already-fully-confirmed order and read
@@ -942,10 +942,10 @@ class TaskRepository @Inject constructor(
                 // The report didn't land, so the backend's total (and therefore `baseline` on the
                 // next call) is unchanged. Deliberately NOT writing `total` into order_history
                 // here: that field doubles as next call's baseline, and since these rows stay
-                // 'Completed' (not flipped to Reported) they will be counted again next time â€”
+                // 'Completed' (not flipped to Reported) they will be counted again next time —
                 // writing `total` now would double-count them a second time on top of that. The
                 // History card just shows the last confirmed value until a report succeeds. Also
-                // returning null (not 0) â€” a dropped network call must not be reconciled as if
+                // returning null (not 0) — a dropped network call must not be reconciled as if
                 // the backend had confirmed a zero-coin award.
                 null
             }
@@ -958,7 +958,7 @@ class TaskRepository @Inject constructor(
      * (see OrderProcessingController.Progress / ObservedCompleted): followers for Follow orders,
      * likes from media info for Like/post/reel orders.
      *
-     * Deliberately does NOT require `task.startCount > 0` first â€” that field mirrors the
+     * Deliberately does NOT require `task.startCount > 0` first — that field mirrors the
      * order's own StartCount as it stood when this device claimed it, which for an
      * externally-sourced (panel) order is 0 until *something* reports an observed count for
      * it. Gating this fetch on startCount already being set meant it could never run a first
@@ -1069,4 +1069,3 @@ class TaskRepository @Inject constructor(
         !message.isNullOrBlank() &&
             message.contains("private account", ignoreCase = true)
 }
-

@@ -33,6 +33,7 @@ public interface IWalletService
     /// <summary>Atomically returns reserved coins from PendingCoins back to the spendable balance (rejected withdrawal).</summary>
     Task ReleaseWithdrawalReservationAsync(Guid walletId, long coins, string reference, CancellationToken ct = default);
 
+    /// <summary>Broadcasts wallet snapshots deferred while an explicit DB transaction was active.</summary>
     Task FlushPendingBroadcastsAsync(CancellationToken ct = default);
 }
 
@@ -40,9 +41,7 @@ public class WalletService : IWalletService
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<CoinSyncHub, ICoinSyncClient>? _hubContext;
-    private readonly Dictionary<Guid, PendingBroadcastMeta> _pendingBroadcasts = new();
-
-    private readonly record struct PendingBroadcastMeta(Guid UserId, string? Type, string? Reference);
+    private readonly Dictionary<Guid, (string? Type, string? Reference)> _pendingBroadcasts = new();
 
     public WalletService(AppDbContext db, IHubContext<CoinSyncHub, ICoinSyncClient>? hubContext = null)
     {
@@ -69,11 +68,11 @@ public class WalletService : IWalletService
         catch { }
     }
 
-    private async Task BroadcastOrDeferAsync(Guid userId, Wallet wallet, string? type = null, string? reference = null, CancellationToken ct = default)
+    private async Task BroadcastOrDeferAsync(Guid userId, Wallet wallet, string? type, string? reference, CancellationToken ct)
     {
         if (_db.Database.CurrentTransaction is not null)
         {
-            _pendingBroadcasts[wallet.Id] = new PendingBroadcastMeta(userId, type, reference);
+            _pendingBroadcasts[userId] = (type, reference);
             return;
         }
 
@@ -86,11 +85,12 @@ public class WalletService : IWalletService
 
         var pending = _pendingBroadcasts.ToArray();
         _pendingBroadcasts.Clear();
-        foreach (var item in pending)
+
+        foreach (var (userId, meta) in pending)
         {
-            var wallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == item.Key, ct);
+            var wallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.UserId == userId, ct);
             if (wallet is not null)
-                await BroadcastWalletUpdateAsync(item.Value.UserId, wallet, item.Value.Type, item.Value.Reference, ct);
+                await BroadcastWalletUpdateAsync(userId, wallet, meta.Type, meta.Reference, ct);
         }
     }
 
@@ -102,6 +102,62 @@ public class WalletService : IWalletService
     {
         var wallet = await EnsureWalletRowAsync(userId, ct);
         var now = DateTime.UtcNow;
+        var normalizedReference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim();
+        var ownsTransaction = _db.Database.CurrentTransaction is null;
+        await using var tx = ownsTransaction ? await _db.Database.BeginTransactionAsync(ct) : null;
+        Guid? reservedTransactionId = null;
+
+        if (normalizedReference is not null)
+        {
+            var existing = await _db.WalletTransactions.AsNoTracking()
+                .Where(t => t.WalletId == wallet.Id && t.Reference == normalizedReference)
+                .Select(t => new { t.Coins })
+                .FirstOrDefaultAsync(ct);
+            if (existing is not null)
+            {
+                var currentBalance = await _db.Wallets.AsNoTracking()
+                    .Where(w => w.Id == wallet.Id)
+                    .Select(w => w.Coins)
+                    .FirstAsync(ct);
+                return new WalletMutationResult(true, currentBalance, wallet.Id);
+            }
+
+            var reservedTransaction = new WalletTransaction
+            {
+                WalletId = wallet.Id,
+                Coins = coins,
+                Type = type,
+                Reference = normalizedReference
+            };
+            reservedTransactionId = reservedTransaction.Id;
+            _db.WalletTransactions.Add(reservedTransaction);
+            try
+            {
+                await _db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                if (ownsTransaction && tx is not null)
+                    await tx.RollbackAsync(ct);
+
+                foreach (var entry in _db.ChangeTracker.Entries<WalletTransaction>()
+                             .Where(e => e.Entity.WalletId == wallet.Id && e.Entity.Reference == normalizedReference)
+                             .ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+
+                var duplicateExists = await _db.WalletTransactions.AsNoTracking()
+                    .AnyAsync(t => t.WalletId == wallet.Id && t.Reference == normalizedReference, ct);
+                if (!duplicateExists) throw;
+
+                var currentBalance = await _db.Wallets.AsNoTracking()
+                    .Where(w => w.Id == wallet.Id)
+                    .Select(w => w.Coins)
+                    .FirstAsync(ct);
+                return new WalletMutationResult(true, currentBalance, wallet.Id);
+            }
+        }
 
         var rows = await _db.Wallets
             .Where(w => w.Id == wallet.Id && w.Coins + coins >= 0)
@@ -111,20 +167,36 @@ public class WalletService : IWalletService
                 .SetProperty(w => w.UpdatedAt, now), ct);
 
         if (rows == 0)
-            return new WalletMutationResult(false, wallet.Coins, wallet.Id);
-
-        _db.WalletTransactions.Add(new WalletTransaction
         {
-            WalletId = wallet.Id,
-            Coins = coins,
-            Type = type,
-            Reference = reference
-        });
-        await _db.SaveChangesAsync(ct);
+            if (reservedTransactionId is { } txId)
+            {
+                await _db.WalletTransactions
+                    .Where(t => t.Id == txId)
+                    .ExecuteDeleteAsync(ct);
+            }
+            if (ownsTransaction && tx is not null)
+                await tx.RollbackAsync(ct);
+            return new WalletMutationResult(false, wallet.Coins, wallet.Id);
+        }
+
+        if (normalizedReference is null)
+        {
+            _db.WalletTransactions.Add(new WalletTransaction
+            {
+                WalletId = wallet.Id,
+                Coins = coins,
+                Type = type,
+                Reference = null
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        if (ownsTransaction && tx is not null)
+            await tx.CommitAsync(ct);
 
         var updatedWallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == wallet.Id, ct);
         if (updatedWallet is not null)
-            await BroadcastOrDeferAsync(userId, updatedWallet, type.ToString(), reference, ct);
+            await BroadcastOrDeferAsync(userId, updatedWallet, type.ToString(), normalizedReference, ct);
 
         return new WalletMutationResult(true, updatedWallet?.Coins ?? wallet.Coins, wallet.Id);
     }

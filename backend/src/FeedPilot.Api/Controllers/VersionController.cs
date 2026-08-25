@@ -1,8 +1,12 @@
+using System.IO;
+using System.Net.Http;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FeedPilot.Api.Data;
+using FeedPilot.Api.Domain;
 using FeedPilot.Api.Dtos;
 
 namespace FeedPilot.Api.Controllers;
@@ -13,19 +17,34 @@ namespace FeedPilot.Api.Controllers;
 public class VersionController : ControllerBase
 {
     private readonly AppDbContext _db;
-    public VersionController(AppDbContext db) => _db = db;
+    private readonly IWebHostEnvironment _env;
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public VersionController(AppDbContext db, IWebHostEnvironment env, IHttpClientFactory httpClientFactory)
+    {
+        _db = db;
+        _env = env;
+        _httpClientFactory = httpClientFactory;
+    }
 
     /// <summary>Returns the latest release metadata used by the auto-update flow.</summary>
     [HttpGet("version")]
     public async Task<ActionResult<VersionDto>> Version(CancellationToken ct)
     {
-        var release = await _db.AppReleases
+        var releases = await _db.AppReleases
             .OrderByDescending(r => r.VersionCode)
-            .FirstOrDefaultAsync(ct);
-        if (release is null) return NoContent();
+            .ToListAsync(ct);
 
-        return Ok(new VersionDto(release.VersionCode, release.VersionName, release.ApkUrl,
-            release.Sha256, release.SizeBytes, release.ReleaseNotes, release.ForceUpdate));
+        foreach (var release in releases)
+        {
+            if (await IsApkAvailableAsync(release, ct))
+            {
+                return Ok(new VersionDto(release.VersionCode, release.VersionName, release.ApkUrl,
+                    release.Sha256, release.SizeBytes, release.ReleaseNotes, release.ForceUpdate));
+            }
+        }
+
+        return NoContent();
     }
 
     /// <summary>Returns all APK releases. Serves HTML cards view to browsers, JSON array if requested via JSON header/format.</summary>
@@ -45,7 +64,16 @@ public class VersionController : ControllerBase
             .OrderByDescending(r => r.VersionCode)
             .ToListAsync(ct);
 
-        var dtos = releases.Select(r => new AppReleaseItemDto(
+        var availableReleases = new List<AppRelease>();
+        foreach (var r in releases)
+        {
+            if (await IsApkAvailableAsync(r, ct))
+            {
+                availableReleases.Add(r);
+            }
+        }
+
+        var dtos = availableReleases.Select(r => new AppReleaseItemDto(
             r.VersionCode,
             r.VersionName,
             ExtractApkName(r.ApkUrl, r.VersionName),
@@ -65,13 +93,19 @@ public class VersionController : ControllerBase
     [HttpGet("apk/latest")]
     public async Task<IActionResult> LatestApk(CancellationToken ct)
     {
-        var release = await _db.AppReleases
+        var releases = await _db.AppReleases
             .OrderByDescending(r => r.VersionCode)
-            .FirstOrDefaultAsync(ct);
-        if (release is null || string.IsNullOrWhiteSpace(release.ApkUrl))
-            return NotFound(new ApiError("No release available.", "no_release"));
+            .ToListAsync(ct);
 
-        return Redirect(release.ApkUrl);
+        foreach (var release in releases)
+        {
+            if (await IsApkAvailableAsync(release, ct))
+            {
+                return Redirect(release.ApkUrl);
+            }
+        }
+
+        return NotFound(new ApiError("No release available on server.", "no_release"));
     }
 
     /// <summary>Redirects to the APK download URL for a specific version code.</summary>
@@ -82,8 +116,8 @@ public class VersionController : ControllerBase
         var release = await _db.AppReleases
             .FirstOrDefaultAsync(r => r.VersionCode == versionCode, ct);
 
-        if (release is null || string.IsNullOrWhiteSpace(release.ApkUrl))
-            return NotFound(new ApiError($"No release found for version code {versionCode}.", "version_not_found"));
+        if (release is null || !await IsApkAvailableAsync(release, ct))
+            return NotFound(new ApiError($"No release APK available on server for version code {versionCode}.", "version_not_found"));
 
         return Redirect(release.ApkUrl);
     }
@@ -101,7 +135,16 @@ public class VersionController : ControllerBase
             .OrderByDescending(r => r.VersionCode)
             .ToListAsync(ct);
 
-        var latestRelease = releases.FirstOrDefault();
+        var availableReleases = new List<AppRelease>();
+        foreach (var r in releases)
+        {
+            if (await IsApkAvailableAsync(r, ct))
+            {
+                availableReleases.Add(r);
+            }
+        }
+
+        var latestRelease = availableReleases.FirstOrDefault();
         var latestVersionCode = latestRelease?.VersionCode ?? 0;
 
         var sb = new StringBuilder();
@@ -110,7 +153,7 @@ public class VersionController : ControllerBase
         sb.AppendLine("<head>");
         sb.AppendLine("    <meta charset=\"UTF-8\">");
         sb.AppendLine("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine("    <title>FeedPilot - APK Release Center & Downloads</title>");
+        sb.AppendLine("    <title>NexaFollow - APK Release Center & Downloads</title>");
         sb.AppendLine("    <link rel=\"icon\" type=\"image/svg+xml\" href=\"/dashboard/favicon.svg\">");
         sb.AppendLine("    <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">");
         sb.AppendLine("    <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>");
@@ -181,7 +224,7 @@ public class VersionController : ControllerBase
         sb.AppendLine("        <header>");
         sb.AppendLine("            <div class=\"logo\">");
         sb.AppendLine("                <svg width=\"32\" height=\"32\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"url(#grad1)\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><defs><linearGradient id=\"grad1\" x1=\"0%\" y1=\"0%\" x2=\"100%\" y2=\"100%\"><stop offset=\"0%\" stop-color=\"#60A5FA\" /><stop offset=\"100%\" stop-color=\"#2563EB\" /></linearGradient></defs><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><polyline points=\"7 10 12 15 17 10\"></polyline><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"></line></svg>");
-        sb.AppendLine("                FeedPilot APK Release Center");
+        sb.AppendLine("                NexaFollow APK Release Center");
         sb.AppendLine("            </div>");
         sb.AppendLine("            <div class=\"subtitle\">Official Android Application Releases, Build Archives & Instant APK Downloads</div>");
         sb.AppendLine("        </header>");
@@ -203,13 +246,13 @@ public class VersionController : ControllerBase
             sb.AppendLine("        </div>");
         }
 
-        if (!releases.Any())
+        if (!availableReleases.Any())
         {
             sb.AppendLine("        <div class=\"empty-state\">No APK releases available at this time.</div>");
         }
         else
         {
-            foreach (var r in releases)
+            foreach (var r in availableReleases)
             {
                 var apkName = ExtractApkName(r.ApkUrl, r.VersionName);
                 var isLatest = r.VersionCode == latestVersionCode;
@@ -262,7 +305,7 @@ public class VersionController : ControllerBase
             }
         }
 
-        sb.AppendLine("        <footer>FeedPilot - High-Performance Automation Platform</footer>");
+        sb.AppendLine("        <footer>NexaFollow • High-Performance Automation Platform</footer>");
         sb.AppendLine("    </div>");
 
         sb.AppendLine("    <div id=\"toast\" class=\"toast\">Copied to clipboard!</div>");
@@ -282,6 +325,105 @@ public class VersionController : ControllerBase
         sb.AppendLine("</html>");
 
         return Content(sb.ToString(), "text/html");
+    }
+
+    private async Task<bool> IsApkAvailableAsync(AppRelease r, CancellationToken ct)
+    {
+        if (r is null || string.IsNullOrWhiteSpace(r.ApkUrl))
+            return false;
+
+        var url = r.ApkUrl.Trim();
+        string relativePath = url;
+        string fileName = "";
+
+        Uri? uri = null;
+        if (Uri.TryCreate(url, UriKind.Absolute, out uri))
+        {
+            if (uri.IsFile)
+            {
+                return System.IO.File.Exists(uri.LocalPath);
+            }
+            relativePath = uri.AbsolutePath;
+            fileName = System.IO.Path.GetFileName(uri.AbsolutePath);
+        }
+        else
+        {
+            fileName = System.IO.Path.GetFileName(url);
+        }
+
+        var cleanRelative = relativePath.TrimStart('/', '\\');
+
+        var candidatePaths = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_env.WebRootPath))
+        {
+            candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, cleanRelative));
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, "apk", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, "apks", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, "downloads", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.WebRootPath, "releases", fileName));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_env.ContentRootPath))
+        {
+            candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, cleanRelative));
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, "apk", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, "apks", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, "downloads", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, "releases", fileName));
+                candidatePaths.Add(System.IO.Path.Combine(_env.ContentRootPath, "outputs", "update", "release", fileName));
+            }
+        }
+
+        foreach (var path in candidatePaths)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(path) && System.IO.File.Exists(path))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore invalid path format
+            }
+        }
+
+        // Remote HTTP/HTTPS URL check if not found on local disk
+        if (uri != null && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            try
+            {
+                using var client = _httpClientFactory.CreateClient("ApkChecker");
+                client.Timeout = TimeSpan.FromSeconds(3);
+                using var request = new HttpRequestMessage(HttpMethod.Head, uri);
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                if (response.IsSuccessStatusCode)
+                {
+                    return true;
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
+                {
+                    using var getRequest = new HttpRequestMessage(HttpMethod.Get, uri);
+                    using var getResponse = await client.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+                    return getResponse.IsSuccessStatusCode;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static string ExtractApkName(string apkUrl, string versionName)

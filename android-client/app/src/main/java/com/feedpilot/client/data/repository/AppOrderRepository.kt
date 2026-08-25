@@ -25,7 +25,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * What happened the last time this device asked the backend for orders â€” distinct from a plain
+ * What happened the last time this device asked the backend for orders — distinct from a plain
  * empty list so callers (see [TaskRepository.lastClaimOutcome] / [TaskRunnerService.idleWait])
  * can tell "no orders exist right now" apart from "the request failed," which used to collapse
  * into the same silent `emptyList()` and made a rate-limited or network-broken device look
@@ -99,7 +99,7 @@ class AppOrderRepository @Inject constructor(
 
     /**
      * One page of orders imported from the smmorigin.com panel, newest first. Unlike every other
-     * call here this is not scoped to a signed-in account â€” it is the same anonymous endpoint the
+     * call here this is not scoped to a signed-in account — it is the same anonymous endpoint the
      * admin queue itself reads from, so browsing it doesn't require an Instagram account to be
      * linked yet.
      */
@@ -135,7 +135,7 @@ class AppOrderRepository @Inject constructor(
      * Claims up to [batchSize] pending orders from the backend queue for this device to execute.
      *
      * Reports [ClaimOutcome.Success] with an empty list rather than an error when there is
-     * simply nothing to do â€” a real failure (rate-limited, network, server error) comes back as
+     * simply nothing to do — a real failure (rate-limited, network, server error) comes back as
      * one of the other [ClaimOutcome] variants instead of being silently swallowed.
      */
     suspend fun claimOrders(
@@ -271,7 +271,7 @@ class AppOrderRepository @Inject constructor(
     }
 
     /**
-     * Drops a claim without reporting progress â€” used when a runner is stopped.
+     * Drops a claim without reporting progress — used when a runner is stopped.
      *
      * Ungated, like [reportProgress]: both settle work this device already claimed, and they have
      * to keep working if the account is unlinked mid-run or the orders stay stuck as Processing
@@ -285,7 +285,7 @@ class AppOrderRepository @Inject constructor(
     }
 
     /**
-     * Surfaces the backend's own refusal text â€” "Not enough coinsâ€¦", "Quantity must beâ€¦" â€”
+     * Surfaces the backend's own refusal text — "Not enough coins…", "Quantity must be…" —
      * instead of a bare "HTTP 400", which tells the user nothing actionable.
      */
     private fun readApiError(t: Throwable): String = t.apiErrorMessage("Order failed")

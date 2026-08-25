@@ -14,4 +14,13 @@ public static class ClaimsExtensions
             ? id
             : throw new UnauthorizedAccessException("Missing user identity in token.");
     }
+
+    /// <summary>
+    /// Resolves the optional `installation_id` claim (see TokenService.CreateAccessToken). Not yet
+    /// populated by any token-issuing call site in this foundational phase, so this is dormant
+    /// scaffolding for a future enforcement phase — callers must treat a null result as "no
+    /// installation proof available", never as an error, so old/current tokens keep working.
+    /// </summary>
+    public static string? GetInstallationId(this ClaimsPrincipal principal) =>
+        principal.FindFirstValue("installation_id");
 }

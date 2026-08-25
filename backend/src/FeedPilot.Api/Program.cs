@@ -30,6 +30,7 @@ builder.Services.Configure<OrderPricingSettings>(builder.Configuration.GetSectio
 builder.Services.Configure<AdminSettings>(builder.Configuration.GetSection("Admin"));
 builder.Services.Configure<RequestSigningSettings>(builder.Configuration.GetSection("RequestSigning"));
 builder.Services.Configure<PaymentSettings>(builder.Configuration.GetSection("Payments"));
+builder.Services.Configure<SmmPanelSettings>(builder.Configuration.GetSection("SmmPanel"));
 builder.Services.Configure<TelegramSettings>(builder.Configuration.GetSection("Telegram"));
 builder.Services.Configure<UpgradeAssetStorageSettings>(builder.Configuration.GetSection("AssetStorage"));
 builder.Services.Configure<DeviceRestoreSettings>(builder.Configuration.GetSection("DeviceRestore"));
@@ -79,6 +80,15 @@ builder.Services.AddScoped<IAppOrderService, AppOrderService>();
 builder.Services.AddScoped<IUpgradeAssetStorage, UpgradeAssetStorage>();
 builder.Services.AddScoped<IInstagramFeedService, InstagramFeedService>();
 builder.Services.AddSingleton<CommentFileService>();
+// Installation identity is additive: old clients still work, newer clients can register and verify keys.
+builder.Services.AddScoped<IInstallationService, InstallationService>();
+builder.Services.AddScoped<IInstallationChallengeService, InstallationChallengeService>();
+builder.Services.AddScoped<ISignatureService, SignatureService>();
+builder.Services.AddScoped<InstallationContext>();
+
+builder.Services.AddHttpClient("SmmPanel");
+builder.Services.AddSingleton<SmmPanelSyncService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SmmPanelSyncService>());
 
 // Proactively frees orders whose worker-device claim has gone stale, independent of any
 // device polling for work again — see StaleClaimSweepService for why that matters.
@@ -269,10 +279,16 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.Use(async (ctx, next) =>
 {
-    await next();
-    var wallets = ctx.RequestServices.GetService<IWalletService>();
-    if (wallets is not null)
-        await wallets.FlushPendingBroadcastsAsync(CancellationToken.None);
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        var wallets = ctx.RequestServices.GetService<IWalletService>();
+        if (wallets is not null)
+            await wallets.FlushPendingBroadcastsAsync(CancellationToken.None);
+    }
 });
 app.MapControllers().RequireRateLimiting("api");
 app.MapHub<FeedPilot.Api.Hubs.CoinSyncHub>("/hubs/coin-sync");

@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using FeedPilot.Api.Data;
 using FeedPilot.Api.Domain;
@@ -20,12 +19,17 @@ public class AdminOrdersController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IWalletService _wallets;
     private readonly IAppOrderService _orders;
+    private readonly IWebHostEnvironment _env;
+    private readonly SmmPanelSyncService? _smmSync;
 
-    public AdminOrdersController(AppDbContext db, IWalletService wallets, IAppOrderService orders)
+    public AdminOrdersController(AppDbContext db, IWalletService wallets, IAppOrderService orders,
+        IWebHostEnvironment env, SmmPanelSyncService? smmSync = null)
     {
         _db = db;
         _wallets = wallets;
         _orders = orders;
+        _env = env;
+        _smmSync = smmSync;
     }
 
     [Microsoft.AspNetCore.Authorization.AllowAnonymous]
@@ -46,15 +50,15 @@ public class AdminOrdersController : ControllerBase
 
         try
         {
-            var query = _db.AppOrders.Include(o => o.User).Where(o => !o.IsExternal).AsQueryable();
+            var query = _db.AppOrders.Include(o => o.User).AsQueryable();
 
             if (status.HasValue) query = query.Where(o => o.Status == status.Value);
             if (orderType.HasValue) query = query.Where(o => o.OrderType == orderType.Value);
             if (!string.IsNullOrWhiteSpace(appId)) query = query.Where(o => o.AppId == appId);
             if (!string.IsNullOrWhiteSpace(deviceId)) query = query.Where(o => o.DeviceId == deviceId);
 
-            if (source == "external")
-                return Ok(new PagedResult<AdminAppOrderDto>(new List<AdminAppOrderDto>(), 0, page, pageSize));
+            if (source == "app") query = query.Where(o => !o.IsExternal);
+            else if (source == "external") query = query.Where(o => o.IsExternal);
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -92,7 +96,6 @@ public class AdminOrdersController : ControllerBase
         try
         {
             var all = await _db.AppOrders
-                .Where(o => !o.IsExternal)
                 .Select(o => new { o.Status, o.CoinsSpent, o.Quantity, o.AppId })
                 .ToListAsync(ct);
 
@@ -124,67 +127,6 @@ public class AdminOrdersController : ControllerBase
     {
         var order = await _db.AppOrders.Include(o => o.User).FirstOrDefaultAsync(o => o.Id == id, ct);
         return order is null ? NotFound(new ApiError("Order not found.")) : Ok(ToAdminDto(order));
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<AdminAppOrderDto>> Place(AdminPlaceAppOrderRequest body, CancellationToken ct)
-    {
-        var target = body.TargetUrl.Trim();
-        if (string.IsNullOrWhiteSpace(target))
-            return BadRequest(new ApiError("A target is required.", "TARGET_REQUIRED"));
-
-        if (body.OrderType == TaskType.Comment && (body.Comments == null || body.Comments.All(string.IsNullOrWhiteSpace)))
-            return BadRequest(new ApiError("At least one comment is required for comment orders.", "COMMENT_REQUIRED"));
-
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == body.UserId, ct);
-        if (user is null) return NotFound(new ApiError("User not found.", "USER_NOT_FOUND"));
-
-        var comments = body.Comments != null
-            ? string.Join("\n", body.Comments.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()))
-            : null;
-
-        var coinsSpent = body.DebitWallet ? _orders.QuoteCoins(body.OrderType, body.Quantity) : 0;
-        var appId = string.IsNullOrWhiteSpace(body.AppId) ? ClientIdentityDefaults.Unknown : body.AppId.Trim();
-        var deviceId = string.IsNullOrWhiteSpace(body.DeviceId) ? ClientIdentityDefaults.Unknown : body.DeviceId.Trim();
-
-        var order = new AppOrder
-        {
-            UserId = body.UserId,
-            User = user,
-            AppId = appId,
-            DeviceId = deviceId,
-            OrderType = body.OrderType,
-            TargetUrl = target,
-            TargetUsername = string.IsNullOrWhiteSpace(body.TargetUsername) ? null : body.TargetUsername.Trim().TrimStart('@'),
-            Quantity = body.Quantity,
-            CompletedCount = 0,
-            CoinsSpent = coinsSpent,
-            Status = AppOrderStatus.Pending,
-            StartCount = body.StartCount.HasValue ? Math.Max(0, body.StartCount.Value) : -1,
-            CommentText = comments,
-            Priority = body.Priority,
-            IsExternal = false,
-            AdminNote = body.DebitWallet ? "Placed from backend panel with wallet debit." : "Placed from backend panel."
-        };
-
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
-        _db.AppOrders.Add(order);
-        await _db.SaveChangesAsync(ct);
-
-        if (body.DebitWallet && coinsSpent > 0)
-        {
-            var debit = await _wallets.CreditAsync(body.UserId, -coinsSpent, WalletTransactionType.Spend, $"order:{order.Id}", ct);
-            if (!debit.Success)
-            {
-                await tx.RollbackAsync(ct);
-                return BadRequest(new ApiError(
-                    $"Not enough coins. This order costs {coinsSpent}, wallet balance is {debit.Balance}.",
-                    "INSUFFICIENT_COINS"));
-            }
-        }
-
-        await tx.CommitAsync(ct);
-        return Ok(ToAdminDto(order));
     }
 
     /// <summary>
@@ -260,13 +202,206 @@ public class AdminOrdersController : ControllerBase
     /// explicitly so the dashboard's "Sync Now" button still means "do everything right now."
     /// </summary>
     [HttpPost("sync-external")]
-    public ActionResult<object> SyncExternal() =>
-        StatusCode(StatusCodes.Status410Gone, new ApiError("External SMM order sync is disabled. FeedPilot processes app-placed orders only.", "EXTERNAL_ORDERS_DISABLED"));
+    public async Task<ActionResult<object>> SyncExternal(CancellationToken ct)
+    {
+        if (_smmSync is null)
+            return BadRequest(new ApiError("SMM panel sync service is not configured."));
+
+        try
+        {
+            var (created, updated) = await _smmSync.SyncNowAsync(ct);
+            var pushed = await _smmSync.PushOrderStatusUpdatesAsync(ct);
+            var cancelled = await _smmSync.SyncCancelledOrdersAsync(ct);
+            return Ok(new { created, updated, pushed, cancelled, syncedAt = DateTime.UtcNow });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { created = 0, updated = 0, pushed = 0, cancelled = 0, error = ex.Message, syncedAt = DateTime.UtcNow });
+        }
+    }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpDelete("{id:guid}")]
+    public async Task<ActionResult> DeleteOrder(Guid id, CancellationToken ct)
+    {
+        var order = await _db.AppOrders.FirstOrDefaultAsync(o => o.Id == id, ct);
+        if (order is null)
+            return NotFound();
+
+        _db.AppOrders.Remove(order);
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpGet("is-dev")]
+    public ActionResult<bool> IsDev() => Ok(_env.IsDevelopment());
+
+    [Microsoft.AspNetCore.Authorization.AllowAnonymous]
+    [HttpPost("create-test")]
+    public async Task<ActionResult<AdminAppOrderDto>> CreateTestOrder([FromBody] CreateTestOrderRequest body, CancellationToken ct)
+    {
+        if (!_env.IsDevelopment())
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(body.TargetUrl))
+            return BadRequest(new ApiError("Target URL is required."));
+
+        var systemUser = await _db.Users.FirstOrDefaultAsync(u => u.Email == "dev@local.system", ct);
+        if (systemUser is null)
+        {
+            systemUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "dev@local.system",
+                Name = "Dev Admin",
+                PasswordHash = "DEV_SYSTEM",
+                CreatedAt = DateTime.UtcNow
+            };
+            _db.Users.Add(systemUser);
+            await _db.SaveChangesAsync(ct);
+        }
+
+        var rawTarget = body.TargetUrl.Trim();
+        var rawUsername = body.TargetUsername?.Trim();
+
+        var extractedUser = ExtractUsernameFromUrl(rawTarget);
+        var username = !string.IsNullOrWhiteSpace(rawUsername)
+            ? ExtractUsernameFromUrl(rawUsername)
+            : extractedUser;
+
+        if (string.IsNullOrWhiteSpace(username) || username == "dev_user")
+        {
+            username = !string.IsNullOrWhiteSpace(extractedUser) && extractedUser != "dev_user"
+                ? extractedUser
+                : "dev_user";
+        }
+
+        string targetUrl;
+        if (rawTarget.Contains("instagram.com/", StringComparison.OrdinalIgnoreCase))
+        {
+            targetUrl = rawTarget;
+            if (!targetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !targetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                targetUrl = "https://" + targetUrl;
+            }
+        }
+        else if (Uri.TryCreate(rawTarget.StartsWith("http://") || rawTarget.StartsWith("https://") ? rawTarget : "https://" + rawTarget, UriKind.Absolute, out var parsedUri) && parsedUri.Host.Contains('.'))
+        {
+            targetUrl = rawTarget.StartsWith("http://") || rawTarget.StartsWith("https://") ? rawTarget : "https://" + rawTarget;
+        }
+        else
+        {
+            var cleanHandle = username != "dev_user" ? username : rawTarget.TrimStart('@').Trim('/', '\\');
+            targetUrl = $"https://www.instagram.com/{cleanHandle}/";
+        }
+
+        if (!Enum.TryParse<TaskType>(body.OrderType, true, out var taskType))
+        {
+            taskType = TaskType.Follow;
+        }
+
+        var order = new AppOrder
+        {
+            UserId = systemUser.Id,
+            AppId = "dev.test.app",
+            DeviceId = "dev-admin-panel",
+            OrderType = taskType,
+            TargetUrl = targetUrl,
+            TargetUsername = username,
+            Quantity = Math.Max(1, body.Quantity),
+            CompletedCount = 0,
+            CoinsSpent = 0,
+            Status = AppOrderStatus.Pending,
+            CommentText = body.CommentText,
+            IsExternal = false,
+            ProviderName = "DevAdminPanel",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        _db.AppOrders.Add(order);
+        await _db.SaveChangesAsync(ct);
+
+        _smmSync?.TriggerImmediateSync();
+
+        return Ok(ToAdminDto(order));
+    }
+
+    private static string ExtractUsernameFromUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return "dev_user";
+        var trimmed = url.Trim();
+        if (trimmed.StartsWith('@')) return trimmed.TrimStart('@');
+
+        var domainAt = trimmed.IndexOf("instagram.com/", StringComparison.OrdinalIgnoreCase);
+        if (domainAt >= 0)
+        {
+            var afterDomain = trimmed[(domainAt + "instagram.com/".Length)..];
+            var path = afterDomain.Split('?', '#')[0].Trim('/');
+            if (path.Length == 0) return trimmed;
+
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length > 0)
+            {
+                var first = segments[0];
+                if (segments.Length > 1 && (
+                    first.Equals("p", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reel", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reels", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("tv", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return segments[1];
+                }
+                return first;
+            }
+        }
+
+        if (Uri.TryCreate(trimmed.StartsWith("http://") || trimmed.StartsWith("https://") ? trimmed : "https://" + trimmed, UriKind.Absolute, out var uri))
+        {
+            if (!uri.Host.Contains('.'))
+            {
+                return uri.Host;
+            }
+            var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length > 0)
+            {
+                var first = segments[0];
+                if (segments.Length > 1 && (
+                    first.Equals("p", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reel", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("reels", StringComparison.OrdinalIgnoreCase) ||
+                    first.Equals("tv", StringComparison.OrdinalIgnoreCase)))
+                {
+                    return segments[1];
+                }
+                return first;
+            }
+        }
+
+        var bare = trimmed.Split('/', '?', '#', '\\')[0].Trim();
+        return string.IsNullOrWhiteSpace(bare) ? "dev_user" : bare;
+    }
 
     [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     [HttpPost("ingest-json")]
-    public ActionResult<object> IngestJson() =>
-        StatusCode(StatusCodes.Status410Gone, new ApiError("External SMM order import is disabled. FeedPilot processes app-placed orders only.", "EXTERNAL_ORDERS_DISABLED"));
+    public async Task<ActionResult<object>> IngestJson([FromBody] System.Text.Json.JsonElement body, CancellationToken ct)
+    {
+        if (_smmSync is null)
+            return BadRequest(new ApiError("SMM panel sync service is not configured."));
+
+        try
+        {
+            var json = body.GetRawText();
+            var (created, updated) = await _smmSync.IngestOrdersJsonAsync(json, ct);
+            return Ok(new { created, updated, ingestedAt = DateTime.UtcNow });
+        }
+        catch (Exception ex)
+        {
+            return Ok(new { created = 0, updated = 0, error = ex.Message, ingestedAt = DateTime.UtcNow });
+        }
+    }
 
     [Microsoft.AspNetCore.Authorization.AllowAnonymous]
     [HttpGet("{id:guid}/completed-accounts")]
@@ -347,4 +482,13 @@ public class AdminOrdersController : ControllerBase
         o.CompletedAt,
         o.CommentText,
         o.Priority);
+}
+
+public class CreateTestOrderRequest
+{
+    public string OrderType { get; set; } = "Follow";
+    public string TargetUrl { get; set; } = string.Empty;
+    public string? TargetUsername { get; set; }
+    public int Quantity { get; set; } = 10;
+    public string? CommentText { get; set; }
 }

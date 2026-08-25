@@ -30,7 +30,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * What an add-account attempt settled on. A two-factor challenge is deliberately not an error â€”
+ * What an add-account attempt settled on. A two-factor challenge is deliberately not an error —
  * the credentials were accepted and the flow can continue once the user supplies a code.
  */
 sealed interface AddAccountOutcome {
@@ -38,7 +38,7 @@ sealed interface AddAccountOutcome {
     data class NeedsTwoFactor(val challenge: InstagramLoginResult.TwoFactorRequired) : AddAccountOutcome
     data class NeedsEmailCode(val challenge: InstagramLoginResult.EmailCodeRequired) : AddAccountOutcome
     data class Failed(val message: String) : AddAccountOutcome
-    /** This handle is already linked on this device â€” nothing was added or changed. */
+    /** This handle is already linked on this device — nothing was added or changed. */
     data class AlreadyExists(val username: String) : AddAccountOutcome
 }
 
@@ -53,17 +53,17 @@ class AccountRepository @Inject constructor(
     private val deviceIdentity: DeviceIdentity,
     @ApplicationContext private val context: Context
 ) {
-    /** Completes once [restoreAccountsFromBackup] has had its turn â€” see [accounts]. */
+    /** Completes once [restoreAccountsFromBackup] has had its turn — see [accounts]. */
     private val restored = CompletableDeferred<Unit>()
 
     /**
-     * Per-account server `coinsEarned` as of this process's last [refreshFromServer] â€” lets a
+     * Per-account server `coinsEarned` as of this process's last [refreshFromServer] — lets a
      * genuine server-side decrease be told apart from an optimistic local credit the backend
      * hasn't caught up to yet (same purpose as [WalletRepository]'s `lastServerCoins`). Without
      * this, merging local/server coinsEarned by [maxOf] alone is a one-way ratchet: any local
      * over-credit (e.g. a manual retry awarding coins the backend never confirmed) sticks in the
      * account card forever, which is what made 5 accounts' cards sum to well over the true wallet
-     * total. In-memory only â€” a fresh process has no unconfirmed credit to protect yet, so it's
+     * total. In-memory only — a fresh process has no unconfirmed credit to protect yet, so it's
      * safe to just trust the server on the first sync of a session.
      */
     private val lastServerCoinsEarned = java.util.concurrent.ConcurrentHashMap<String, Long>()
@@ -73,7 +73,7 @@ class AccountRepository @Inject constructor(
      *
      * Held back until the on-disk restore below has run. The table is empty for the first few
      * milliseconds after a cold start, and publishing that emptiness first told every observer
-     * "no account is linked" â€” which is what dropped an already signed-in user on the login
+     * "no account is linked" — which is what dropped an already signed-in user on the login
      * screen and left them there once the rows finally arrived.
      */
     val accounts: Flow<List<AccountEntity>> = flow {
@@ -82,7 +82,7 @@ class AccountRepository @Inject constructor(
     }
 
     /**
-     * The account the upgrade flow and device fingerprint treat as "active" â€” the one whose
+     * The account the upgrade flow and device fingerprint treat as "active" — the one whose
      * session has actually been confirmed against instagram.com (green dot), not merely one that
      * holds non-blank cookies. [verifySession] enforces that at most one account is ever flagged
      * this way, so there is nothing to disambiguate here. [AccountSessionGate] is the looser check
@@ -94,7 +94,7 @@ class AccountRepository @Inject constructor(
 
     /**
      * Confirms an account's stored session is still actually signed in on instagram.com and
-     * flips [AccountEntity.isLoggedIn] accordingly â€” what lights up the green dot on its card.
+     * flips [AccountEntity.isLoggedIn] accordingly — what lights up the green dot on its card.
      * No stored session at all fails fast without hitting the network.
      *
      * Only one account is ever active at a time: a successful check here deactivates every other
@@ -119,14 +119,14 @@ class AccountRepository @Inject constructor(
                 instagramRepository.getLoggedInUserProfile(account.sessionCookies)
             }
         } catch (e: java.io.IOException) {
-            // Couldn't even reach Instagram (timeout, no connectivity, DNS/TLS failure) â€” this
+            // Couldn't even reach Instagram (timeout, no connectivity, DNS/TLS failure) — this
             // says nothing about whether the session itself is still valid, so the account must
             // not be flipped to logged-out over what is really just a network blip. Doing so used
             // to report "session expired" for a perfectly good session every time connectivity
             // hiccuped, which is what made the message show up intermittently rather than only
             // when the session had actually died.
             android.util.Log.w("AccountRepository", "verifySession: could not reach Instagram for ${account.username}", e)
-            return Resource.Error("Couldn't verify â€” check your connection and try again.")
+            return Resource.Error("Couldn't verify — check your connection and try again.")
         } catch (e: Throwable) {
             android.util.Log.e("AccountRepository", "verifySession failed for ${account.username}", e)
             null
@@ -205,13 +205,13 @@ class AccountRepository @Inject constructor(
     /**
      * A bare, freshly-created-looking profile (no photo, zero posts) is exactly the kind of
      * account Instagram itself is quickest to flag once it starts following/liking at any volume
-     * â€” so order processing refuses to start for one instead of quietly running against it. Checked
+     * — so order processing refuses to start for one instead of quietly running against it. Checked
      * live rather than off whatever [AccountEntity.profilePictureUrl] happens to hold locally,
      * since that field can lag (it is only refreshed on login/[verifySession]/sync) and never
      * tracked a post count at all.
      *
      * Only blocks on a *confirmed* answer. Instagram's own browser endpoints can come back
-     * unreachable, rate-limited, checkpointed, or simply empty for a perfectly good session â€” the
+     * unreachable, rate-limited, checkpointed, or simply empty for a perfectly good session — the
      * same flakiness [verifySession] already treats as inconclusive rather than "logged out" (see
      * its comment). Treating that same inconclusive result as "confirmed missing photo/posts"
      * here would block starting orders on an account that is actually fine, which is worse than
@@ -220,7 +220,7 @@ class AccountRepository @Inject constructor(
     suspend fun meetsOrderStartRequirements(accountId: String): Resource<Unit> {
         val account = accountDao.getById(accountId)
             ?: return Resource.Error("Account not found")
-        // Session presence is this app's real per-account "logged in" signal â€” unlike
+        // Session presence is this app's real per-account "logged in" signal — unlike
         // AccountEntity.isLoggedIn, which is an exclusive single-account flag (verifySession()
         // clears every other account's copy on each check) and would block all but one account
         // from ever starting if gated on here. AccountSessionGate documents the same distinction.
@@ -285,7 +285,7 @@ class AccountRepository @Inject constructor(
                 restoreAccountsFromBackup()
                 // On clean reinstall, local DB and disk backup are empty. Wait for device auth to
                 // complete then pull accounts from server BEFORE releasing the accounts flow to UI
-                // observers â€” otherwise a signed-in user briefly sees the login screen while this
+                // observers — otherwise a signed-in user briefly sees the login screen while this
                 // is still in flight. The backend free-tier host can take upwards of 20-30s to wake
                 // from a cold start, so the wait has to outlast that, not just a quick retry.
                 var attempts = 0
@@ -323,7 +323,7 @@ class AccountRepository @Inject constructor(
      * attempt actually matters: TaskRunnerService's daily action-limit throttle
      * (getDailyCountForAccountAction) reads the account_logs rows that backfill writes, and a
      * restore that leaves it empty because of one transient network failure would under-count
-     * what an account already did today â€” letting the runner exceed the operator's configured
+     * what an account already did today — letting the runner exceed the operator's configured
      * daily cap before the next opportunistic [refresh] happens to succeed. Still best-effort:
      * if every attempt fails, this returns the last failure rather than blocking the restore on
      * it indefinitely.
@@ -340,16 +340,16 @@ class AccountRepository @Inject constructor(
     private suspend fun refreshFromServer(): Resource<Unit> = try {
         val remote = api.getAccounts().map { it.toEntity() }
 
-        // The backend does return SessionData (see AccountsController/AccountDto â€” it's what
+        // The backend does return SessionData (see AccountsController/AccountDto — it's what
         // lets a Backup Code restore recover a working session, not just the wallet), but a
         // blank value here just means this particular sync round-trip didn't refresh it, not
-        // that there's nothing to restore â€” so a genuinely good local value must never be
+        // that there's nothing to restore — so a genuinely good local value must never be
         // blanked out by one. The avatar gets the same treatment: it is resolved from Instagram
         // on this device, and a server row that does not know it must not blank a good local value.
         val localByUsername = accountDao.getAll().associateBy { it.username.lowercase() }
         val merged = remote.map { r ->
             val local = localByUsername[r.username.lowercase()]
-            // Captured before this call's value overwrites it below â€” this is what the server
+            // Captured before this call's value overwrites it below — this is what the server
             // said on the *previous* refresh, which is what tells a genuine drop apart from an
             // optimistic credit the server just hasn't caught up to yet.
             val previousServerCoinsEarned = lastServerCoinsEarned[r.id]
@@ -362,7 +362,7 @@ class AccountRepository @Inject constructor(
             r.copy(
                 sessionCookies = finalCookies,
                 profilePictureUrl = r.profilePictureUrl?.ifBlank { null } ?: local?.profilePictureUrl,
-                // Local-only, never returned by the backend â€” a plain dto.toEntity() would
+                // Local-only, never returned by the backend — a plain dto.toEntity() would
                 // otherwise null these out on every refresh (see AccountEntity's doc comment).
                 profileTaskCompletedAtMs = local?.profileTaskCompletedAtMs,
                 bioTaskCompletedAtMs = local?.bioTaskCompletedAtMs,
@@ -370,13 +370,13 @@ class AccountRepository @Inject constructor(
                 // See lastServerCoinsEarned: mirrors WalletRepository's server-decrease-wins /
                 // optimistic-credit-preserved merge, instead of a maxOf that can only ratchet up.
                 // previousServerCoinsEarned is null on this process's very first sync for this
-                // account â€” lastServerCoinsEarned is in-memory only, so it doesn't know what the
+                // account — lastServerCoinsEarned is in-memory only, so it doesn't know what the
                 // server said last time, but local.coinsEarned is real, persisted Room data that
                 // can legitimately already be ahead of the server (an unconfirmed retry credit
                 // made in an earlier app session, still waiting to reconcile). Trusting the server
                 // outright here snapped that back down the moment the app was reopened. Falling
                 // back to maxOf on this one sync only defers genuine-decrease detection to the
-                // *next* sync (once a same-session baseline exists) rather than losing it â€” same
+                // *next* sync (once a same-session baseline exists) rather than losing it — same
                 // trade the old plain-maxOf code made for every sync, just narrowed to just this one.
                 coinsEarned = when {
                     previousServerCoinsEarned == null -> maxOf(local?.coinsEarned ?: 0L, r.coinsEarned)
@@ -384,7 +384,7 @@ class AccountRepository @Inject constructor(
                     (local?.coinsEarned ?: 0L) > r.coinsEarned -> local?.coinsEarned ?: 0L
                     else -> r.coinsEarned
                 },
-                // The green dot is a local, on-device signal (verified against instagram.com) â€”
+                // The green dot is a local, on-device signal (verified against instagram.com) —
                 // the backend has no opinion on it, so a sync must never reset it to false.
                 isLoggedIn = local?.isLoggedIn ?: false
             )
@@ -395,7 +395,7 @@ class AccountRepository @Inject constructor(
         runCatching {
             val completedTasks = api.getCompletedTasks()
             for (task in completedTasks) {
-                // Kept in sync with TaskRunnerService.canonicalTargetKey â€” media shortcodes are
+                // Kept in sync with TaskRunnerService.canonicalTargetKey — media shortcodes are
                 // case-sensitive, so they must NOT be lowercased the way usernames are (see that
                 // function's comment for why this previously broke the Action Log's "View" button).
                 val targetKey = when (EngagementTaskType.from(task.taskType)) {
@@ -408,7 +408,7 @@ class AccountRepository @Inject constructor(
 
                 // The real-time log written at completion time (TaskRunnerService) uses a random
                 // UUID as its id, not this "restored_" scheme, so REPLACE-on-conflict-by-id never
-                // catches the overlap â€” without this check, every completion that already has a
+                // catches the overlap — without this check, every completion that already has a
                 // real-time row gets a second row here on every single refresh, double-counting
                 // it in the on-screen Follow/Like/etc. tallies.
                 val alreadyLogged = accountLogDao.existsForAccountActionTarget(task.accountId, task.taskType, targetKey)
@@ -564,7 +564,7 @@ class AccountRepository @Inject constructor(
             is InstagramLoginResult.Success ->
                 storeAccount(challenge.username.trim().removePrefix("@"), result.sessionData ?: "", requirePicked = requirePicked)
             is InstagramLoginResult.Failure -> AddAccountOutcome.Failed(result.message)
-            // Instagram re-challenged (a code can expire mid-flow) â€” carry the newer challenge.
+            // Instagram re-challenged (a code can expire mid-flow) — carry the newer challenge.
             is InstagramLoginResult.TwoFactorRequired -> AddAccountOutcome.NeedsTwoFactor(result)
             is InstagramLoginResult.EmailCodeRequired -> AddAccountOutcome.NeedsEmailCode(result)
         }
@@ -604,14 +604,14 @@ class AccountRepository @Inject constructor(
             is AddAccountOutcome.NeedsEmailCode ->
                 Resource.Error("Instagram needs an email verification code for @${outcome.challenge.username}")
             is AddAccountOutcome.AlreadyExists ->
-                Resource.Error("Account already exists â€” @${outcome.username} is already linked on this device.")
+                Resource.Error("Account already exists — @${outcome.username} is already linked on this device.")
         }
 
     /**
      * Whether the secret the user supplied is an existing session rather than a password.
      *
-     * Matched on the cookie names a session must carry. The old test â€” any `=`, or longer than 30
-     * characters â€” classified plenty of ordinary passwords as sessions, which stored the password
+     * Matched on the cookie names a session must carry. The old test — any `=`, or longer than 30
+     * characters — classified plenty of ordinary passwords as sessions, which stored the password
      * as a cookie header instead of logging in, so the account never worked and a two-factor
      * prompt was never reached.
      */
@@ -621,8 +621,8 @@ class AccountRepository @Inject constructor(
 
     /**
      * Retries a profile lookup a few times with a short backoff. Instagram's endpoints
-     * occasionally 429/5xx or time out on the very first call right after a fresh login â€”
-     * before the session's cookies have fully propagated server-side â€” and a single transient
+     * occasionally 429/5xx or time out on the very first call right after a fresh login —
+     * before the session's cookies have fully propagated server-side — and a single transient
      * miss should not permanently park the account under a numeric placeholder handle.
      */
     private suspend fun <T> retryProfileLookup(attempts: Int = 3, block: suspend () -> T?): T? {
@@ -668,7 +668,7 @@ class AccountRepository @Inject constructor(
 //                )
 //            }
 
-            // Reject a repeat link outright rather than silently upserting it â€” the backend's
+            // Reject a repeat link outright rather than silently upserting it — the backend's
             // own upsert would otherwise treat "add" and "refresh an existing session" the same
             // way, which is what let the same handle keep getting re-added with no feedback.
             // Checked post-resolution so a re-add that resolves to the same real handle as an
@@ -714,7 +714,7 @@ class AccountRepository @Inject constructor(
                 )
                 // The row above used a locally generated id so the account survives an
                 // offline add. The backend assigns its own id, so keeping both would leave
-                // two rows for one account â€” drop the placeholder once the real id arrives.
+                // two rows for one account — drop the placeholder once the real id arrives.
                 if (dto.id != id) accountDao.deleteById(id)
                 accountDao.upsertAll(
                     listOf(
@@ -743,7 +743,7 @@ class AccountRepository @Inject constructor(
      * a meaningless number with no avatar, because every profile lookup downstream was keyed on
      * a "username" that was really an id.
      *
-     * @param pageUsername handle the login page reported, when it exposed one â€” trusted ahead of
+     * @param pageUsername handle the login page reported, when it exposed one — trusted ahead of
      *   a network round-trip, and ignored if it is blank or is itself just the id.
      */
     suspend fun addAccountFromWebSession(
@@ -873,7 +873,7 @@ class AccountRepository @Inject constructor(
     /**
      * Authenticates Instagram credentials and registers the session.
      *
-     * Delegates so there is a single login implementation â€” a second copy here would be the one
+     * Delegates so there is a single login implementation — a second copy here would be the one
      * that cannot handle a two-factor challenge. Callers that want to prompt for a code should use
      * [addAccountWithCredentials] and [submitTwoFactorCode] directly.
      */
@@ -946,7 +946,7 @@ class AccountRepository @Inject constructor(
     }
 
     private companion object {
-        /** A cookie header naming one of these â€” at the start or after a `;` â€” is a real session. */
+        /** A cookie header naming one of these — at the start or after a `;` — is a real session. */
         val SESSION_COOKIE = Regex("(^|;\\s*)(sessionid|ds_user_id)=", RegexOption.IGNORE_CASE)
     }
 
@@ -1040,7 +1040,7 @@ class AccountRepository @Inject constructor(
                                 accountDao.upsertAll(listOf(updated))
                                 backupAccountsToDisk()
                                 try {
-                                    // Pass the existing id so the backend updates this row â€”
+                                    // Pass the existing id so the backend updates this row —
                                     // matching by the new username alone would find nothing and
                                     // fork a second account with coins/history reset to zero.
                                     api.createAccount(

@@ -65,9 +65,9 @@ class UpgradeDataProvider @Inject constructor(
     // Prefs file names
     private val QUEUE_PREFS = "upgrade_asset_queues"
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Public API
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Clears the cached remote counts, forcing a fresh server scan on the next request.
@@ -78,18 +78,18 @@ class UpgradeDataProvider @Inject constructor(
         assignedFolderCache.clear()
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Queue-based unique index picking (the core of uniqueness)
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Returns the next index for [username]+[gender]+[type] ensuring full uniqueness before
      * rotation.
      *
      * Internally maintains a per-(username,gender,type) JSON queue in SharedPreferences:
-     *   • If the queue is empty (or its size no longer matches [totalCount] due to server
+     *   � If the queue is empty (or its size no longer matches [totalCount] due to server
      *     changes), a new Fischer-Yates shuffle of [1..totalCount] is generated.
-     *   • The first element is popped and returned; the remaining queue is saved back.
+     *   � The first element is popped and returned; the remaining queue is saved back.
      *
      * This means every index from 1 to N is used exactly once in a random order before
      * any index repeats. Keying by gender too means switching an account's gender starts a
@@ -130,9 +130,9 @@ class UpgradeDataProvider @Inject constructor(
         return next
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Asset count resolution
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Resolves the remote server assets URL if specified via system property or environment variable.
@@ -271,9 +271,9 @@ class UpgradeDataProvider @Inject constructor(
         return defaultCount
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // File reading
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Helper to read a file's raw bytes either from the remote server, local directories, or Android assets.
@@ -317,9 +317,9 @@ class UpgradeDataProvider @Inject constructor(
         return String(bytes, Charsets.UTF_8).trim()
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Dummy image generator
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Generates a solid random-colour JPEG image as a fallback when no asset file is found.
@@ -328,7 +328,7 @@ class UpgradeDataProvider @Inject constructor(
         return try {
             generateBitmapImage()
         } catch (t: Throwable) {
-            // Tiny 1×1 grey pixel JPEG fallback for headless JVM / server compilation
+            // Tiny 1�1 grey pixel JPEG fallback for headless JVM / server compilation
             byteArrayOf(
                 0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(), 0x00.toByte(), 0x10.toByte(), 0x4A.toByte(), 0x46.toByte(),
                 0x49.toByte(), 0x46.toByte(), 0x00.toByte(), 0x01.toByte(), 0x01.toByte(), 0x01.toByte(), 0x00.toByte(), 0x48.toByte(),
@@ -362,9 +362,9 @@ class UpgradeDataProvider @Inject constructor(
         return stream.toByteArray()
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Profile Folders & User Pointer Tracking (New Upgrade Structure)
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     data class RemoteFolderInfo(
         val name: String,
@@ -487,9 +487,9 @@ class UpgradeDataProvider @Inject constructor(
         return count
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
     // Public asset accessors
-    // ──────────────────────────────────────────────────────────────────────────
+    // --------------------------------------------------------------------------
 
     /**
      * Returns the next unique timeline post (image + caption) for [username], drawn from the

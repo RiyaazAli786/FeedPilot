@@ -190,6 +190,10 @@ public class AuthController : ControllerBase
         if (user is null || user.RefreshTokenExpiresAt < DateTime.UtcNow)
             return Unauthorized(new ApiError("Invalid or expired refresh token.", "invalid_refresh"));
 
+        var identity = this.ClientIdentity();
+        if (!await CurrentIdentityHasDeviceBindingAsync(user.Id, identity, ct))
+            return Unauthorized(new ApiError("This refresh token belongs to another app install.", "device_session_mismatch"));
+
         return Ok(await IssueTokens(user, ct));
     }
 
@@ -272,12 +276,273 @@ public class AuthController : ControllerBase
 
     private async Task<AuthResponse> IssueTokens(User user, CancellationToken ct)
     {
-        var (accessToken, expiresAt) = _tokens.CreateAccessToken(user);
+        var identity = this.ClientIdentity();
+        await UpsertDeviceBindingAsync(user.Id, identity, ct);
+        if (IsBackupAccount(user))
+            await MoveRestoredAccountToCurrentDeviceAsync(user.Id, identity, ct);
+
+        var (accessToken, expiresAt) = _tokens.CreateAccessToken(user, identity);
         user.RefreshToken = _tokens.CreateRefreshToken();
         user.RefreshTokenExpiresAt = DateTime.UtcNow.AddDays(_jwt.RefreshTokenDays);
         await _db.SaveChangesAsync(ct);
         return new AuthResponse(user.Id, user.Name, user.Email, accessToken, user.RefreshToken!, expiresAt);
     }
+
+    private async Task<bool> CurrentIdentityHasDeviceBindingAsync(Guid userId, ClientIdentity identity, CancellationToken ct)
+    {
+        if (identity.AppId == ClientIdentity.Unknown || identity.DeviceId == ClientIdentity.Unknown)
+            return true;
+
+        return await _db.Devices.AnyAsync(d =>
+            d.UserId == userId &&
+            d.AppId == identity.AppId &&
+            d.DeviceId == identity.DeviceId &&
+            (identity.AppInstanceId == ClientIdentity.Unknown ||
+             d.AppInstanceId == null ||
+             d.AppInstanceId == identity.AppInstanceId), ct);
+    }
+
+    private async Task UpsertDeviceBindingAsync(Guid userId, ClientIdentity identity, CancellationToken ct)
+    {
+        if (identity.AppId == ClientIdentity.Unknown || identity.DeviceId == ClientIdentity.Unknown)
+            return;
+
+        var device = await _db.Devices.FirstOrDefaultAsync(d =>
+            d.AppId == identity.AppId &&
+            d.DeviceId == identity.DeviceId &&
+            (identity.AppInstanceId == ClientIdentity.Unknown ||
+             d.AppInstanceId == identity.AppInstanceId), ct);
+
+        if (device is null)
+        {
+            device = new Device
+            {
+                AppId = identity.AppId,
+                DeviceId = identity.DeviceId,
+                InstallationId = identity.InstallationId == ClientIdentity.Unknown
+                    ? identity.DeviceId
+                    : identity.InstallationId,
+                AppInstanceId = identity.AppInstanceId == ClientIdentity.Unknown
+                    ? null
+                    : identity.AppInstanceId
+            };
+            _db.Devices.Add(device);
+        }
+
+        device.UserId = userId;
+        device.LastSeenAt = DateTime.UtcNow;
+    }
+
+    private async Task MoveRestoredAccountToCurrentDeviceAsync(Guid userId, ClientIdentity identity, CancellationToken ct)
+    {
+        if (identity.AppId == ClientIdentity.Unknown || identity.DeviceId == ClientIdentity.Unknown)
+            return;
+
+        var targetPickedDeviceId = CurrentPickedUsernameDeviceId(identity);
+        if (targetPickedDeviceId == ClientIdentity.Unknown)
+            return;
+
+        var userDevices = await _db.Devices.AsNoTracking()
+            .Where(d => d.UserId == userId)
+            .Select(d => new DevicePickReference(d.AppId, d.DeviceId, d.InstallationId))
+            .ToListAsync(ct);
+
+        var knownDeviceIds = userDevices
+            .SelectMany(d => new[] { d.DeviceId, d.InstallationId })
+            .Append(identity.DeviceId)
+            .Append(identity.InstallationId)
+            .Append(identity.HardwareId)
+            .Where(IsKnownIdentityValue)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        await MoveDeviceScopedRowsToCurrentDeviceAsync(userId, identity.AppId, identity.DeviceId, userDevices, knownDeviceIds, ct);
+        await MovePickedUsernamesToCurrentDeviceAsync(userId, identity.AppId, targetPickedDeviceId, userDevices, knownDeviceIds, ct);
+        await RemoveOldRestoredDeviceRowsAsync(userId, identity, ct);
+    }
+
+    private async Task MoveDeviceScopedRowsToCurrentDeviceAsync(
+        Guid userId,
+        string targetAppId,
+        string targetDeviceId,
+        List<DevicePickReference> userDevices,
+        List<string> knownDeviceIds,
+        CancellationToken ct)
+    {
+        var accounts = await _db.Accounts
+            .Where(a => a.UserId == userId && a.DeviceId != null && knownDeviceIds.Contains(a.DeviceId))
+            .ToListAsync(ct);
+        foreach (var account in accounts)
+        {
+            account.AppId = targetAppId;
+            account.DeviceId = targetDeviceId;
+        }
+
+        var orders = await _db.AppOrders
+            .Where(o => o.UserId == userId && knownDeviceIds.Contains(o.DeviceId))
+            .ToListAsync(ct);
+        foreach (var order in orders)
+        {
+            order.AppId = targetAppId;
+            order.DeviceId = targetDeviceId;
+            order.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var withdrawals = await _db.Withdrawals
+            .Where(w => w.Wallet != null &&
+                        w.Wallet.UserId == userId &&
+                        knownDeviceIds.Contains(w.DeviceId))
+            .ToListAsync(ct);
+        foreach (var withdrawal in withdrawals)
+        {
+            withdrawal.AppId = targetAppId;
+            withdrawal.DeviceId = targetDeviceId;
+        }
+
+        var subscriptionRequests = await _db.SubscriptionRequests
+            .Where(s => s.UserId == userId && knownDeviceIds.Contains(s.DeviceId))
+            .ToListAsync(ct);
+        foreach (var request in subscriptionRequests)
+        {
+            request.AppId = targetAppId;
+            request.DeviceId = targetDeviceId;
+        }
+
+        var knownDeviceRefs = userDevices
+            .Where(d => IsKnownIdentityValue(d.DeviceId))
+            .ToList();
+
+        var passwordResetRequests = await _db.PasswordResetRequests
+            .Where(r => r.UserId == userId || knownDeviceIds.Contains(r.DeviceId))
+            .ToListAsync(ct);
+        foreach (var request in passwordResetRequests.Where(r =>
+                     r.UserId == userId || knownDeviceRefs.Any(d => MatchesDeviceReference(r.AppId, r.DeviceId, d))))
+        {
+            request.AppId = targetAppId;
+            request.DeviceId = targetDeviceId;
+        }
+
+        var staleClaimDeviceIds = knownDeviceRefs
+            .Where(d => d.DeviceId != targetDeviceId || d.AppId != targetAppId)
+            .SelectMany(d => ClaimDeviceIds(d.AppId, d.DeviceId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (staleClaimDeviceIds.Count == 0)
+            return;
+
+        var staleClaims = await _db.AppOrders
+            .Where(o => o.ProcessingDeviceId != null && staleClaimDeviceIds.Contains(o.ProcessingDeviceId))
+            .ToListAsync(ct);
+        foreach (var order in staleClaims)
+        {
+            order.Status = order.CompletedCount >= order.Quantity
+                ? AppOrderStatus.Completed
+                : AppOrderStatus.Pending;
+            order.ProcessingDeviceId = null;
+            order.ProcessingStartedAt = null;
+            order.ReservedCount = 0;
+            order.ReservedAt = null;
+            order.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    private async Task MovePickedUsernamesToCurrentDeviceAsync(
+        Guid userId,
+        string targetAppId,
+        string targetDeviceId,
+        List<DevicePickReference> userDevices,
+        List<string> knownDeviceIds,
+        CancellationToken ct)
+    {
+        var pickedRows = await _db.PickedUsernames
+            .Where(p => p.UserId == userId || knownDeviceIds.Contains(p.DeviceId))
+            .ToListAsync(ct);
+
+        var targetRowsByUsername = pickedRows
+            .Where(p => IsCurrentPickedUsernameTarget(p, targetAppId, targetDeviceId))
+            .GroupBy(p => p.Username, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var picked in pickedRows)
+        {
+            if (!BelongsToRestoredAccount(picked, userId, userDevices))
+                continue;
+
+            if (IsCurrentPickedUsernameTarget(picked, targetAppId, targetDeviceId))
+            {
+                picked.UserId ??= userId;
+                continue;
+            }
+
+            if (targetRowsByUsername.TryGetValue(picked.Username, out var currentRow))
+            {
+                currentRow.UserId ??= userId;
+                _db.PickedUsernames.Remove(picked);
+                continue;
+            }
+
+            picked.UserId = userId;
+            picked.DeviceId = targetDeviceId;
+            picked.AppId = targetAppId;
+            targetRowsByUsername[picked.Username] = picked;
+        }
+    }
+
+    private async Task RemoveOldRestoredDeviceRowsAsync(Guid userId, ClientIdentity identity, CancellationToken ct)
+    {
+        var currentInstance = identity.AppInstanceId == ClientIdentity.Unknown ? null : identity.AppInstanceId;
+        var oldDevices = await _db.Devices
+            .Where(d => d.UserId == userId &&
+                        (d.AppId != identity.AppId ||
+                         d.DeviceId != identity.DeviceId ||
+                         (currentInstance != null && d.AppInstanceId != currentInstance)))
+            .ToListAsync(ct);
+
+        if (oldDevices.Count > 0)
+            _db.Devices.RemoveRange(oldDevices);
+    }
+
+    private static bool BelongsToRestoredAccount(
+        PickedUsername picked,
+        Guid userId,
+        IEnumerable<DevicePickReference> userDevices)
+    {
+        if (picked.UserId == userId)
+            return true;
+
+        if (picked.UserId.HasValue)
+            return false;
+
+        return userDevices.Any(d =>
+            MatchesDeviceReference(picked.AppId, picked.DeviceId, d) ||
+            picked.DeviceId == d.InstallationId);
+    }
+
+    private sealed record DevicePickReference(string AppId, string DeviceId, string InstallationId);
+
+    private static bool MatchesDeviceReference(string appId, string deviceId, DevicePickReference reference) =>
+        deviceId == reference.DeviceId &&
+        (appId == reference.AppId ||
+         appId == ClientIdentityDefaults.Unknown ||
+         reference.AppId == ClientIdentityDefaults.Unknown);
+
+    private static string CurrentPickedUsernameDeviceId(ClientIdentity identity)
+    {
+        if (IsKnownIdentityValue(identity.HardwareId)) return identity.HardwareId;
+        if (IsKnownIdentityValue(identity.InstallationId)) return identity.InstallationId;
+        return IsKnownIdentityValue(identity.DeviceId) ? identity.DeviceId : ClientIdentity.Unknown;
+    }
+
+    private static bool IsBackupAccount(User user) =>
+        user.Email.StartsWith("backup-", StringComparison.OrdinalIgnoreCase) &&
+        user.Email.EndsWith("@backup.feedpilot", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCurrentPickedUsernameTarget(PickedUsername picked, string appId, string deviceId) =>
+        picked.AppId == appId && picked.DeviceId == deviceId;
+
+    private static bool IsKnownIdentityValue(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        !string.Equals(value, ClientIdentity.Unknown, StringComparison.OrdinalIgnoreCase);
 
     private static string StableAppDeviceId(string appId, string deviceId) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(

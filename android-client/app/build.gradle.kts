@@ -2,8 +2,8 @@ import java.security.MessageDigest
 import java.util.Properties
 import java.util.UUID
 
-// Whether the login/session WebViews log each network response they see â€” see
-// WebViewNetworkLogging â€” decoded (post-gzip, as text) exactly as the page itself received it.
+// Whether the login/session WebViews log each network response they see — see
+// WebViewNetworkLogging — decoded (post-gzip, as text) exactly as the page itself received it.
 // Read from an env var at build time rather than hardcoded per build type, so a field issue can
 // be reproduced on a release-signed build by setting LOG_HTTP_RESPONSES for that one build,
 // without shipping an actual debug build (which also turns off minification/obfuscation). Unset
@@ -71,19 +71,19 @@ android {
         versionName = computedVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Launcher label â€” each build type overrides this so variants are distinguishable
+        // Launcher label — each build type overrides this so variants are distinguishable
         // when installed side by side (see buildTypes below).
         manifestPlaceholders["appLabel"] = "FeedPilot"
 
-        // Backend base URL â€” override per build type below.
+        // Backend base URL — override per build type below.
         buildConfigField("String", "API_BASE_URL", "\"https://feedpilot-api-ount.onrender.com/\"")
 
         // Note: the X-App-Id that identifies a clone is no longer a build constant. It is read
         // at runtime from the package name (see DeviceIdentity.appId), so a cloner tool that
-        // rewrites the package produces a unique id automatically â€” no per-clone build edit.
+        // rewrites the package produces a unique id automatically — no per-clone build edit.
 
         // Instagram OAuth (official Basic Display / Graph API). The user authenticates on
-        // Instagram's own page â€” the app never handles the password. Fill these from your Meta app.
+        // Instagram's own page — the app never handles the password. Fill these from your Meta app.
         buildConfigField("String", "INSTAGRAM_CLIENT_ID", "\"YOUR_INSTAGRAM_APP_ID\"")
         buildConfigField(
             "String",
@@ -93,11 +93,11 @@ android {
         buildConfigField("String", "INSTAGRAM_SCOPES", "\"user_profile,user_media\"")
 
         // Shared with the backend's RequestSigning:Secret (see RequestSigningMiddleware). Signs
-        // every API call so the backend can reject traffic that didn't come from this app â€” a
+        // every API call so the backend can reject traffic that didn't come from this app — a
         // curl/Postman call with a stolen JWT still fails without this. Not a secret in the
         // "never leaves the binary" sense (anyone who decompiles the APK can read it), only in
         // the sense that a request forged from outside the app doesn't have it; treat it the
-        // same as the release keystore password already committed here â€” replace both with your
+        // same as the release keystore password already committed here — replace both with your
         // own values for a real deployment, this pair is only for getting the app running.
         buildConfigField("String", "REQUEST_SIGNING_SECRET", "\"1705ed0eea571f7a850efb27d0334772e99f82d7cbc45abb873f858e9d8c79bc\"")
     }

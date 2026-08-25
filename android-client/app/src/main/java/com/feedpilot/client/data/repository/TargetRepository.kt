@@ -55,7 +55,7 @@ class TargetRepository @Inject constructor(
     }
 
     suspend fun fetchUserFeed(userIdOrUsername: String, maxId: String? = null): Resource<InstagramUserFeedResult> = try {
-        // The feed endpoint is /feed/user/<username>/username/ â€” it expects the USERNAME, and
+        // The feed endpoint is /feed/user/<username>/username/ — it expects the USERNAME, and
         // returns 0 items when given a numeric id. So pass the handle straight through; do NOT
         // resolve it to a numeric id first (that was silently emptying the posts + like counts).
         val feedResult = instagramRepository.getUserFeed(userIdOrUsername.trim().removePrefix("@"), maxId)

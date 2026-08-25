@@ -39,8 +39,18 @@ public class PickedUsernameController : ControllerBase
         // Store every picked username for the (device, clone) pair without deleting previous
         // ones. AppId is part of the key so two clones on the same physical device (same
         // DeviceId/hardware id) each get their own pick, not a shared one.
-        var existing = await _db.PickedUsernames.FirstOrDefaultAsync(
-            p => p.Username == cleanUsername && p.DeviceId == deviceId && p.AppId == appId, ct);
+        var existingPicks = await _db.PickedUsernames
+            .Where(p => p.Username == cleanUsername)
+            .ToListAsync(ct);
+        var existing = existingPicks.FirstOrDefault(
+            p => p.DeviceId == deviceId && p.AppId == appId);
+
+        if (existing is null && existingPicks.Count > 0)
+        {
+            return Conflict(new ApiError(
+                $"Username '@{cleanUsername}' is already picked by another device or clone.",
+                "USERNAME_ALREADY_PICKED"));
+        }
 
         if (existing is null)
         {
@@ -79,8 +89,23 @@ public class PickedUsernameController : ControllerBase
         if (string.IsNullOrWhiteSpace(cleanAppId))
             cleanAppId = ClientIdentityDefaults.Unknown;
 
+        var matchingDeviceIds = new List<string> { cleanDeviceId };
+        var matchedDevices = await _db.Devices.AsNoTracking()
+            .Where(d => d.DeviceId == cleanDeviceId || d.InstallationId == cleanDeviceId)
+            .Select(d => new { d.DeviceId, d.InstallationId })
+            .ToListAsync(ct);
+        foreach (var d in matchedDevices)
+        {
+            if (!string.IsNullOrWhiteSpace(d.DeviceId) && !matchingDeviceIds.Contains(d.DeviceId))
+                matchingDeviceIds.Add(d.DeviceId);
+            if (!string.IsNullOrWhiteSpace(d.InstallationId) && !matchingDeviceIds.Contains(d.InstallationId))
+                matchingDeviceIds.Add(d.InstallationId);
+        }
+
         var isPicked = await _db.PickedUsernames.AnyAsync(
-            p => p.Username == cleanUsername && p.DeviceId == cleanDeviceId && p.AppId == cleanAppId, ct);
+            p => p.Username == cleanUsername &&
+                 matchingDeviceIds.Contains(p.DeviceId) &&
+                 (p.AppId == cleanAppId || p.AppId == "unknown" || cleanAppId == "unknown"), ct);
 
         return Ok(new CheckPickedUsernameResponse(isPicked));
     }
@@ -93,9 +118,24 @@ public class PickedUsernameController : ControllerBase
         if (string.IsNullOrWhiteSpace(deviceId))
             return BadRequest(new ApiError("Device ID is required.", "MISSING_DEVICE_ID"));
 
+        var cleanDeviceId = deviceId.Trim();
+        var matchingDeviceIds = new List<string> { cleanDeviceId };
+        var matchedDevices = await _db.Devices.AsNoTracking()
+            .Where(d => d.DeviceId == cleanDeviceId || d.InstallationId == cleanDeviceId)
+            .Select(d => new { d.DeviceId, d.InstallationId })
+            .ToListAsync(ct);
+        foreach (var d in matchedDevices)
+        {
+            if (!string.IsNullOrWhiteSpace(d.DeviceId) && !matchingDeviceIds.Contains(d.DeviceId))
+                matchingDeviceIds.Add(d.DeviceId);
+            if (!string.IsNullOrWhiteSpace(d.InstallationId) && !matchingDeviceIds.Contains(d.InstallationId))
+                matchingDeviceIds.Add(d.InstallationId);
+        }
+
         var cleanAppId = string.IsNullOrWhiteSpace(appId) ? "unknown" : appId.Trim();
         var query = _db.PickedUsernames
-            .Where(p => p.DeviceId == deviceId && p.AppId == cleanAppId)
+            .Where(p => matchingDeviceIds.Contains(p.DeviceId) &&
+                        (p.AppId == cleanAppId || p.AppId == "unknown" || cleanAppId == "unknown"))
             .OrderByDescending(p => p.PickedAt);
 
         var totalCount = await query.CountAsync(ct);
@@ -115,10 +155,26 @@ public class PickedUsernameController : ControllerBase
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(deviceId))
             return BadRequest(new ApiError("Username and Device ID are required.", "INVALID_INPUT"));
 
+        var cleanDeviceId = deviceId.Trim();
+        var matchingDeviceIds = new List<string> { cleanDeviceId };
+        var matchedDevices = await _db.Devices.AsNoTracking()
+            .Where(d => d.DeviceId == cleanDeviceId || d.InstallationId == cleanDeviceId)
+            .Select(d => new { d.DeviceId, d.InstallationId })
+            .ToListAsync(ct);
+        foreach (var d in matchedDevices)
+        {
+            if (!string.IsNullOrWhiteSpace(d.DeviceId) && !matchingDeviceIds.Contains(d.DeviceId))
+                matchingDeviceIds.Add(d.DeviceId);
+            if (!string.IsNullOrWhiteSpace(d.InstallationId) && !matchingDeviceIds.Contains(d.InstallationId))
+                matchingDeviceIds.Add(d.InstallationId);
+        }
+
         var cleanUsername = username.Trim().TrimStart('@').ToLowerInvariant();
         var cleanAppId = string.IsNullOrWhiteSpace(appId) ? "unknown" : appId.Trim();
         var existing = await _db.PickedUsernames.FirstOrDefaultAsync(
-            p => p.Username == cleanUsername && p.DeviceId == deviceId && p.AppId == cleanAppId, ct);
+            p => p.Username == cleanUsername &&
+                 matchingDeviceIds.Contains(p.DeviceId) &&
+                 (p.AppId == cleanAppId || p.AppId == "unknown" || cleanAppId == "unknown"), ct);
 
         if (existing != null)
         {

@@ -11,11 +11,13 @@ namespace FeedPilot.Api.Services;
 /// stays identical across every clone on the same physical device (see DeviceIdentity.kt's
 /// hardwareDeviceId) — use it, not DeviceId, whenever a check needs to reach across clones.
 /// </summary>
-public record ClientIdentity(string AppId, string DeviceId, string HardwareId)
+public record ClientIdentity(string AppId, string DeviceId, string HardwareId, string InstallationId, string AppInstanceId)
 {
     public const string AppIdHeader = "X-App-Id";
     public const string DeviceIdHeader = "X-Device-Id";
     public const string HardwareIdHeader = "X-Hardware-Id";
+    public const string InstallationIdHeader = "X-Installation-Id";
+    public const string AppInstanceIdHeader = "X-App-Instance-Id";
 
     /// <summary>Used when a client predates these headers, so old builds keep working.</summary>
     public const string Unknown = "unknown";
@@ -25,7 +27,9 @@ public record ClientIdentity(string AppId, string DeviceId, string HardwareId)
         var appId = Clean(request.Headers[AppIdHeader].ToString());
         var deviceId = Clean(request.Headers[DeviceIdHeader].ToString());
         var hardwareId = Clean(request.Headers[HardwareIdHeader].ToString());
-        return new ClientIdentity(appId, deviceId, hardwareId);
+        var installationId = Clean(request.Headers[InstallationIdHeader].ToString());
+        var appInstanceId = Clean(request.Headers[AppInstanceIdHeader].ToString());
+        return new ClientIdentity(appId, deviceId, hardwareId, installationId, appInstanceId);
     }
 
     private static string Clean(string? raw)

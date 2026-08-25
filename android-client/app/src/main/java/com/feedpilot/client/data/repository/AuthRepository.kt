@@ -51,7 +51,7 @@ class AuthRepository @Inject constructor(
 
     /**
      * Turns the current passwordless device account into one the user can log back into after a
-     * reinstall â€” see AuthController.Claim. Keeps the same account/wallet; only sets a real
+     * reinstall — see AuthController.Claim. Keeps the same account/wallet; only sets a real
      * email + password on it, so [login] can recover it later even if device auth lands on a
      * different account next time (a different device, or the same device with a hardware
      * fingerprint that didn't survive the reinstall).
@@ -75,10 +75,10 @@ class AuthRepository @Inject constructor(
     /**
      * Single-tap data-recovery setup: mints a random code and uses it as opaque credentials
      * against the existing email+password [claimAccount]/[AuthController.Claim] endpoint,
-     * without ever surfacing "email" or "password" to the user â€” the code IS the credential.
+     * without ever surfacing "email" or "password" to the user — the code IS the credential.
      *
      * Also saves a plain-text copy to the device's public Downloads folder via
-     * [BackupCodeFileStore] â€” a fallback for an operator who never copies the code shown on
+     * [BackupCodeFileStore] — a fallback for an operator who never copies the code shown on
      * screen. See that class's doc for why this is safe (write-only, never auto-read) despite
      * living in storage a same-package clone could otherwise reach.
      */
@@ -98,7 +98,7 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    /** Restores the account tied to a previously generated Backup Code â€” see [generateBackupCode]. */
+    /** Restores the account tied to a previously generated Backup Code — see [generateBackupCode]. */
     suspend fun restoreWithBackupCode(code: String): Resource<Unit> {
         if (!deviceIdentity.isOriginalApp) {
             return Resource.Error("Restore is only available in the original FeedPilot app.")
@@ -152,17 +152,17 @@ class AuthRepository @Inject constructor(
 
     /**
      * Silently mints and saves a Backup Code the first time this install authenticates, so every
-     * install always has a recoverable code â€” and its Downloads-folder safety-net copy via
-     * [BackupCodeFileStore] â€” without the operator needing to know the feature exists or
+     * install always has a recoverable code — and its Downloads-folder safety-net copy via
+     * [BackupCodeFileStore] — without the operator needing to know the feature exists or
      * remember to tap "Backup My Coins" themselves.
      *
      * Called from both branches of [ensureDeviceSession] (not just the fresh-auth one) so a
-     * failed first attempt â€” a network hiccup right after device auth succeeded â€” gets retried on
+     * failed first attempt — a network hiccup right after device auth succeeded — gets retried on
      * a later launch instead of never running again, since the "already have a token" fast path
      * would otherwise skip it forever. The [SecureStorage.KEY_BACKUP_CODE] check keeps this a
      * cheap local read once a code exists, and [isDeviceAccountSession] skips the (harmless but
-     * wasted) network round trip once this account has already been claimed â€” by this path or by
-     * a manual Settings tap â€” since [AuthController.Claim] rejects a second claim outright.
+     * wasted) network round trip once this account has already been claimed — by this path or by
+     * a manual Settings tap — since [AuthController.Claim] rejects a second claim outright.
      */
     private suspend fun ensureBackupCode() {
         if (!deviceIdentity.isOriginalApp) return
@@ -170,7 +170,7 @@ class AuthRepository @Inject constructor(
         if (!isDeviceAccountSession()) return
         when (val res = generateBackupCode()) {
             is Resource.Success -> secureStorage.put(SecureStorage.KEY_BACKUP_CODE, res.data)
-            else -> Unit // best-effort â€” a manual "Backup My Coins" tap in Settings still covers this if it keeps failing
+            else -> Unit // best-effort — a manual "Backup My Coins" tap in Settings still covers this if it keeps failing
         }
     }
 
@@ -256,7 +256,7 @@ class AuthRepository @Inject constructor(
         return try {
             val res = api.deviceAuth(
                 DeviceAuthRequest(
-                    // Must match ensureDeviceSession's DeviceAuthRequest â€” same account lookup.
+                    // Must match ensureDeviceSession's DeviceAuthRequest — same account lookup.
                     installationId = deviceIdentity.accountBindingInstallationId,
                     deviceId = deviceIdentity.stableAppInstallationId,
                     appInstanceId = deviceIdentity.appInstanceId,

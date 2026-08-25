@@ -86,14 +86,14 @@ fun SettingsScreen(
     }
 
     // Every setting below writes straight to DataStore the moment it's changed (see
-    // SettingsRepository) â€” nothing here batches into a separate "apply" step, so a change is
+    // SettingsRepository) — nothing here batches into a separate "apply" step, so a change is
     // already live everywhere that reads it (the theme via RootViewModel, the batch size via
     // TaskRepository's next claim, providers via their own Flow) as soon as it's saved. This
     // toast is purely confirmation that the write actually happened.
     fun confirm(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
     // Support/Telegram links are dashboard-configurable (RunnerSettings.SupportContactUrl /
-    // TelegramChannelUrl) and synced into `settings` â€” a no-op if the admin hasn't set one yet.
+    // TelegramChannelUrl) and synced into `settings` — a no-op if the admin hasn't set one yet.
     fun openUrl(url: String?) {
         if (url.isNullOrBlank()) return
         runCatching {
@@ -146,7 +146,7 @@ fun SettingsScreen(
         ) {
             // Read-only account identity. Sign-in is automatic and passwordless (each install
             // and clone gets its own account via device auth), so there is no sign-in or
-            // sign-out here â€” a device account is bound to the install for support/dashboard.
+            // sign-out here — a device account is bound to the install for support/dashboard.
             if (isLoggedIn) {
                 val isDeviceAccount = userEmail?.endsWith("@device.feedpilot") != false
                 Surface(
@@ -266,7 +266,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Device ID Row â€” the same hardware-based id support uses to look up this
+                    // Device ID Row — the same hardware-based id support uses to look up this
                     // device/clone, so it's worth having on hand when reporting an issue.
                     val deviceId = remember {
                         com.feedpilot.client.common.DeviceIdentity(context).hardwareDeviceId
@@ -305,7 +305,7 @@ fun SettingsScreen(
 
             // ----- Backup & Restore -----
             // The account this install auto-signs into is otherwise tied only to this device's
-            // hardware/clone fingerprint, which a data clear or reinstall can start fresh from â€”
+            // hardware/clone fingerprint, which a data clear or reinstall can start fresh from —
             // this is the one-tap way to protect against that without ever asking for an email
             // or password: a single generated code stands in for both.
             if (isOriginalApp) {
@@ -370,7 +370,7 @@ fun SettingsScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // Once an account is backed up, the backend's Claim endpoint won't
-                        // re-claim it (it only converts a still device-bound account) â€” so there
+                        // re-claim it (it only converts a still device-bound account) — so there
                         // is no "generate a new code" for an already-secured account, only the
                         // existing code shown above.
                         if (backupCode == null) {
@@ -389,7 +389,7 @@ fun SettingsScreen(
                                 enabled = !isBackingUp,
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Text(if (isBackingUp) "Generatingâ€¦" else "Backup My Coins")
+                                Text(if (isBackingUp) "Generating…" else "Backup My Coins")
                             }
                         }
                         OutlinedButton(
@@ -413,7 +413,7 @@ fun SettingsScreen(
             )
             SettingsRow(
                 label = if (updatesState.checking) "Checking for updates..." else "Check for Updates",
-                subtitle = "Current version v${BuildConfig.VERSION_NAME} â€¢ ${if (isOnline) "Online ðŸŸ¢" else "Offline ðŸ”´"}",
+                subtitle = "Current version v${BuildConfig.VERSION_NAME} • ${if (isOnline) "Online ??" else "Offline ??"}",
                 icon = Icons.Filled.SystemUpdate,
                 onClick = {
                     userTriggeredCheck = true

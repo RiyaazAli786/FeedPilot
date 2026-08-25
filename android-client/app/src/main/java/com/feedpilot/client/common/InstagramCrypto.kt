@@ -35,16 +35,16 @@ object InstagramCrypto {
     )
 
     /**
-     * Cache of the fingerprint built from the device's *real* WebView user agent â€” populated the
+     * Cache of the fingerprint built from the device's *real* WebView user agent — populated the
      * first time [getDeviceFingerprint] is called on the main thread (see [FeedPilotApp] pre-warm)
      * and reused for the rest of the process. `WebSettings.getDefaultUserAgent()` is main-thread
      * only; calling it from the IO-dispatcher coroutines that run authenticated Instagram calls
-     * (current_user, users/{id}/info, â€¦) throws there and used to silently fall back to a
-     * hardcoded Chrome UA on every one of those calls â€” a different string than whatever real UA
+     * (current_user, users/{id}/info, …) throws there and used to silently fall back to a
+     * hardcoded Chrome UA on every one of those calls — a different string than whatever real UA
      * the login WebView used when Instagram bound the session's cookies to it, which is exactly
      * what Instagram's "useragent mismatch" (400) response is complaining about. Caching only the
      * real-UA fingerprint (never the fallback) means every call after the first main-thread one
-     * â€” regardless of which thread it runs on â€” sees the same UA the session was created with.
+     * — regardless of which thread it runs on — sees the same UA the session was created with.
      */
     @Volatile
     private var cachedFingerprint: DeviceFingerprint? = null
@@ -91,9 +91,9 @@ object InstagramCrypto {
      * Strips the tokens that mark a string as an Android WebView user agent.
      *
      * `WebSettings.getDefaultUserAgent()` returns something like
-     * `â€¦; SM-S918B Build/UP1Aâ€¦; wv) AppleWebKit/537.36 â€¦ Version/4.0 Chrome/131â€¦ Mobile Safariâ€¦`.
+     * `…; SM-S918B Build/UP1A…; wv) AppleWebKit/537.36 … Version/4.0 Chrome/131… Mobile Safari…`.
      * The `; wv)` and `Version/4.0` tokens tell Instagram (and Google) the page is running inside
-     * an embedded browser, which they refuse to serve the login form to â€” the WebView then shows
+     * an embedded browser, which they refuse to serve the login form to — the WebView then shows
      * "this browser may not be secure" or just a blank page. Removing those tokens leaves a plain
      * mobile-Chrome UA that renders the real login page. Returns null for null/blank input so the
      * caller can fall back to its hard-coded Chrome string.
@@ -101,7 +101,7 @@ object InstagramCrypto {
     fun sanitizeWebViewUserAgent(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         return raw
-            // "â€¦Build/XXX; wv)" and "â€¦; wv)" -> "â€¦)"
+            // "…Build/XXX; wv)" and "…; wv)" -> "…)"
             .replace(Regex("\\s*Build/[^;)]+;?\\s*wv\\)"), ")")
             .replace("; wv)", ")")
             .replace(" wv)", ")")
@@ -268,7 +268,7 @@ object InstagramCrypto {
      */
     private fun sealAesKey(rawKey: ByteArray, publicKey: ByteArray): ByteArray {
         // Clamp the ephemeral secret per RFC 7748 so base-point and shared use the identical
-        // scalar â€” the box then opens correctly regardless of Tink's internal clamping.
+        // scalar — the box then opens correctly regardless of Tink's internal clamping.
         val ephemeralSecret = ByteArray(32).also { SecureRandom().nextBytes(it) }
         ephemeralSecret[0] = (ephemeralSecret[0].toInt() and 248).toByte()
         ephemeralSecret[31] = (ephemeralSecret[31].toInt() and 127).toByte()

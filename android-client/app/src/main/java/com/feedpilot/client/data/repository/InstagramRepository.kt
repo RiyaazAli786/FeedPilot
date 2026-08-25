@@ -12,7 +12,7 @@ import javax.inject.Singleton
  * Every call here runs as a signed-in account. Without one they return "nothing" instead of asking
  * Instagram anyway: a logged-out request is not just useless, it is an anonymous hit on Instagram's
  * endpoints from this device. The exceptions are [login], [submitTwoFactorCode] and
- * [getPreLoginData] â€” those are how an account gets signed in â€” and any caller that supplies
+ * [getPreLoginData] — those are how an account gets signed in — and any caller that supplies
  * `customCookies`, which is the session it just captured and not yet stored.
  */
 @Singleton

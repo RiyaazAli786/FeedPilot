@@ -66,7 +66,7 @@ data class AddAccountUiState(
     val saved: Boolean = false,
     /** Non-null while Instagram is waiting for a one-time code for this login attempt. */
     val twoFactor: TwoFactorUiState? = null,
-    /** Set once, for the screen to show as a toast and then consume â€” see [consumeDuplicateToast]. */
+    /** Set once, for the screen to show as a toast and then consume — see [consumeDuplicateToast]. */
     val duplicateToast: String? = null
 )
 
@@ -195,7 +195,7 @@ class AddAccountViewModel @Inject constructor(
 
     /**
      * @param retryOf the prompt this outcome answers, when it came from submitting a code. A
-     *   failure then belongs on the prompt â€” reporting it on the form behind a dismissed dialog is
+     *   failure then belongs on the prompt — reporting it on the form behind a dismissed dialog is
      *   what made a wrong code look like the login silently doing nothing.
      */
     private fun applyOutcome(outcome: AddAccountOutcome, retryOf: TwoFactorUiState? = null) {
@@ -224,10 +224,10 @@ class AddAccountViewModel @Inject constructor(
 
                 is AddAccountOutcome.AlreadyExists -> {
                     // Web login opens this screen's ViewModel scoped to its own nav entry, so a
-                    // toast requested from there would never reach a Context to show it against â€”
+                    // toast requested from there would never reach a Context to show it against —
                     // the error banner/overlay both entry points already render is the one path
                     // guaranteed to reach the user regardless of which flow they came in through.
-                    val msg = "Account already exists â€” @${outcome.username} is already linked"
+                    val msg = "Account already exists — @${outcome.username} is already linked"
                     s.copy(isSaving = false, twoFactor = null, error = msg, duplicateToast = msg)
                 }
             }
@@ -282,7 +282,7 @@ class AddAccountViewModel @Inject constructor(
 
 /**
  * Asks for the Instagram one-time code. Stays up across a rejected code so the user can simply
- * retype it â€” the challenge is still valid â€” and blocks dismissal only while a code is in flight.
+ * retype it — the challenge is still valid — and blocks dismissal only while a code is in flight.
  */
 @Composable
 private fun TwoFactorDialog(
@@ -728,7 +728,7 @@ fun AddAccountScreen(
                                         trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
                                     )
                                     Text(
-                                        "${import.processed}/${import.total} processed â€¢ ${import.added} added â€¢ ${import.failed} failed",
+                                        "${import.processed}/${import.total} processed • ${import.added} added • ${import.failed} failed",
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.Medium
@@ -949,7 +949,7 @@ fun AddAccountScreen(
             }
         }
 
-        // Instagram accepted the password and wants a one-time code â€” ask for it here rather than
+        // Instagram accepted the password and wants a one-time code — ask for it here rather than
         // ending the login with a message the user can do nothing about.
         state.twoFactor?.let { prompt ->
             TwoFactorDialog(

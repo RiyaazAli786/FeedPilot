@@ -15,7 +15,7 @@ import kotlin.random.Random
  * to real Instagram Web APIs using [InstagramRepository].
  *
  * There is deliberately no simulated fallback here. This engine previously answered a failed
- * like or follow â€” and an account with no session at all â€” by delegating to
+ * like or follow — and an account with no session at all — by delegating to
  * [SimulatedEngagementEngine], which always succeeds. Every such attempt was then reported to
  * the backend as completed work and paid a coin, so the runner could never fail. An action
  * that did not happen is now a [EngagementResult.Failure] carrying the reason.
@@ -110,8 +110,8 @@ class InstagramEngagementEngine @Inject constructor(
         )
         persistRotatedCookies(accountId, result.updatedCookies)
 
-        // A cached id can go stale â€” the target account was deleted or renamed after it was
-        // resolved â€” and Instagram reports that as "user not found" rather than rejecting the
+        // A cached id can go stale — the target account was deleted or renamed after it was
+        // resolved — and Instagram reports that as "user not found" rather than rejecting the
         // follow itself. The backend cache has no expiry/invalidation, so without this every
         // device would keep being served the same dead id forever. Re-resolve fresh and retry
         // once instead of just failing.
@@ -229,12 +229,12 @@ class InstagramEngagementEngine @Inject constructor(
 
     private fun noSession(accountId: String, action: String): EngagementResult {
         Log.w(TAG, "Account $accountId has no live Instagram session cookies; cannot $action")
-        return EngagementResult.Failure("No Instagram session for this account â€” sign in again")
+        return EngagementResult.Failure("No Instagram session for this account — sign in again")
     }
 
     /**
-     * Saves a cookie Instagram rotated on this action's response, so the next call â€” and the
-     * next app launch â€” uses it instead of the value the session started with. Without this a
+     * Saves a cookie Instagram rotated on this action's response, so the next call — and the
+     * next app launch — uses it instead of the value the session started with. Without this a
      * perfectly live session slowly drifted out of date purely because nothing ever picked up
      * what a real browser's cookie jar absorbs automatically, eventually getting rejected as
      * "logged out" after a run of otherwise-successful actions.
@@ -257,4 +257,3 @@ class InstagramEngagementEngine @Inject constructor(
         const val TAG = "InstagramEngagementEngine"
     }
 }
-

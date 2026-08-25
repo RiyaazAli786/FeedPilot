@@ -9,7 +9,7 @@ import javax.inject.Singleton
  * from fetching anything until one is.
  *
  * An account row without session cookies does not count. It cannot act on Instagram, and the
- * backend work â€” tasks, orders, wallet â€” only exists in relation to an account that can, so the
+ * backend work — tasks, orders, wallet — only exists in relation to an account that can, so the
  * rule matches the one [AccountRepository.getActiveAccount] and [InstagramRepository] use when they
  * pick which session to act as.
  *

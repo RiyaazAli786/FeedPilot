@@ -181,7 +181,7 @@ fun TasksScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Battery optimization warning â€” shown only while the runner is active and the
+            // Battery optimization warning — shown only while the runner is active and the
             // app is not yet excluded from Doze mode, which cuts network access during long
             // screen-lock periods and causes all account loops to stall in waitForNetwork().
             val pm = context.getSystemService(PowerManager::class.java)
@@ -645,7 +645,7 @@ private fun ModeSelector(
                 Modifier
                     .then(
                         if (!locked) Modifier.clickableSurface { expanded = true }
-                        else Modifier  // no-op â€” can't change mode while running
+                        else Modifier  // no-op — can't change mode while running
                     )
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1189,8 +1189,8 @@ private fun AccountTaskCard(
                             }
                         }
                         val actionStatus = when {
-                            isValidating -> "Checking profile picture & postsâ€¦"
-                            runnerWaitUntilMs != null && remainingSeconds > 0 -> "${runnerMessage ?: "Waitingâ€¦"} (${remainingSeconds}s)"
+                            isValidating -> "Checking profile picture & posts…"
+                            runnerWaitUntilMs != null && remainingSeconds > 0 -> "${runnerMessage ?: "Waiting…"} (${remainingSeconds}s)"
                             else -> runnerMessage ?: "${taskMode.label} account"
                         }
                         Text(
@@ -1238,7 +1238,7 @@ private fun AccountTaskCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Challenge Required â€” Tap browser (ðŸŒ) to resolve",
+                            text = "Challenge Required — Tap browser (??) to resolve",
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1268,7 +1268,7 @@ private fun AccountTaskCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Session Logged Out â€” Log in via globe (ðŸŒ) icon",
+                            text = "Session Logged Out — Log in via globe (??) icon",
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1383,7 +1383,7 @@ private fun AccountLogDialog(
                     Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "@$username â€” Action Log",
+                        "@$username — Action Log",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -1538,7 +1538,7 @@ private fun AccountLogDialog(
                                              if (log.success) {
                                                  log.target
                                              } else if (cleanMessage.isNotBlank()) {
-                                                 "${log.target} Â· $cleanMessage"
+                                                 "${log.target} · $cleanMessage"
                                              } else {
                                                  log.target
                                              }
@@ -1615,7 +1615,7 @@ private fun AccountLogDialog(
                                                             )
                                                             Spacer(Modifier.width(2.dp))
                                                             Text(
-                                                                "Retryingâ€¦",
+                                                                "Retrying…",
                                                                 fontSize = 9.sp,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = MaterialTheme.colorScheme.error
@@ -1741,9 +1741,9 @@ private fun resolveActionLogTargetUrl(action: String, target: String, message: S
         action.replace(Regex("""\s*\(Service #\d+\)"""), "").trim()
     )
 
-    // A Follow's `target` is always the followed account's own username â€” authoritative and
+    // A Follow's `target` is always the followed account's own username — authoritative and
     // unambiguous, unlike `message`, which is free text that can (and, per a real report, did)
-    // end up mentioning some other @handle â€” e.g. the device's own account name via a stale
+    // end up mentioning some other @handle — e.g. the device's own account name via a stale
     // profile-fetch mismatch when building the success string. Scanning `message` for the first
     // @handle in that case opened the wrong profile entirely (the performer's, not the target's).
     // Trusting `target` directly for Follow sidesteps that regardless of what `message` contains.
@@ -1769,7 +1769,7 @@ private fun resolveActionLogTargetUrl(action: String, target: String, message: S
         return null
     }
 
-    // No URL/handle pattern found in either field, so `target` is a bare stored value â€” its
+    // No URL/handle pattern found in either field, so `target` is a bare stored value — its
     // shape differs by action type (a username for Follow, a case-sensitive media shortcode for
     // everything else), so which path segment it belongs under can't be guessed from the string
     // alone. Getting this wrong for a media action (treating the shortcode as a profile handle,
@@ -1779,7 +1779,7 @@ private fun resolveActionLogTargetUrl(action: String, target: String, message: S
         com.feedpilot.client.task.EngagementTaskType.FOLLOW, null ->
             "https://www.instagram.com/$cleanTarget/"
         // A story's canonical URL needs the poster's username, not just the story/media id this
-        // target holds â€” nothing to build a correct link from here, so don't guess one.
+        // target holds — nothing to build a correct link from here, so don't guess one.
         com.feedpilot.client.task.EngagementTaskType.STORY_VIEW -> null
         else ->
             "https://www.instagram.com/p/$cleanTarget/"

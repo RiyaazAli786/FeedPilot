@@ -76,8 +76,8 @@ class SessionViewerViewModel @Inject constructor(
 /**
  * Opens a real WebView on instagram.com signed in as one linked account, by seeding its captured
  * session cookies into the WebView's own cookie jar before the first load. Lets the operator
- * eyeball an account the same way they'd check any other browser session â€” is it actually still
- * logged in, checkpointed, logged out â€” without needing the credentials again.
+ * eyeball an account the same way they'd check any other browser session — is it actually still
+ * logged in, checkpointed, logged out — without needing the credentials again.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -108,7 +108,7 @@ fun SessionViewerScreen(
         when {
             notFound -> Box(Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
                 Text(
-                    "No saved session for this account â€” re-add it to open a browser view.",
+                    "No saved session for this account — re-add it to open a browser view.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

@@ -22,18 +22,18 @@ enum class DateRangeFilter(val label: String) {
     LAST_30_DAYS("Last 30 Days")
 }
 
-/** Page sizes offered in the pager control â€” the backend clamps to [1, 200] regardless. */
+/** Page sizes offered in the pager control — the backend clamps to [1, 200] regardless. */
 val PAGE_SIZE_OPTIONS = listOf(20, 50, 100, 200)
 
 data class HistoryUiState(
     /**
      * The current page's rows. Display-only filter: this screen shows orders this app's user
-     * placed themselves, never orders pulled in from the external SMM admin queue â€” those still
+     * placed themselves, never orders pulled in from the external SMM admin queue — those still
      * exist and still get processed/fulfilled exactly as before (see TaskRepository), they just
      * never show up in this list.
      */
     val logs: List<OrderHistoryEntity> = emptyList(),
-    /** [logs] after the local search/date filter â€” pagination is server-side, search is not. */
+    /** [logs] after the local search/date filter — pagination is server-side, search is not. */
     val filteredLogs: List<OrderHistoryEntity> = emptyList(),
     val searchQuery: String = "",
     val dateRange: DateRangeFilter = DateRangeFilter.ALL_TIME,
@@ -150,13 +150,13 @@ class HistoryViewModel @Inject constructor(
         loadPage()
     }
 
-    /** Re-fetches the current page â€” the pull-to-refresh / toolbar refresh action. */
+    /** Re-fetches the current page — the pull-to-refresh / toolbar refresh action. */
     fun refreshStatuses() = loadPage()
 
     /**
      * Fetches [page]/[pageSize] from the backend. Display-only: orders pulled in from the
      * external SMM admin queue are deliberately never fetched here, so they never appear in this
-     * screen â€” they're still claimed, processed and settled exactly as before (TaskRepository),
+     * screen — they're still claimed, processed and settled exactly as before (TaskRepository),
      * this just isn't where that work is shown.
      */
     private fun loadPage() {
@@ -219,7 +219,7 @@ class HistoryViewModel @Inject constructor(
                 pageLogs.value = pageLogs.value.map {
                     if (it.smmOrderId == log.smmOrderId) it.copy(status = res.data.status) else it
                 }
-                message.value = "Order canceled â€” ${res.data.coinsSpent} coins refunded"
+                message.value = "Order canceled — ${res.data.coinsSpent} coins refunded"
             }
             is Resource.Error -> {
                 message.value = res.message ?: "Could not cancel the order"

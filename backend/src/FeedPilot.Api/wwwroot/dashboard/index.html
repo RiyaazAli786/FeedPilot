@@ -4,16 +4,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FeedPilot — Orders</title>
+  <title>TopEngage — Orders</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <style>
     :root {
-      --bg: #f3f7fa;
-      --surface: #ffffff;
-      --border: #d9e3ea;
-      --text: #101820;
-      --muted: #58626d;
-      --brand: #25d9d0;
+      --bg: #f4f4f7;
+      --surface: #fff;
+      --border: #e5e5ea;
+      --text: #17171c;
+      --muted: #6a6a73;
+      --brand: #f5a524;
       --danger: #d92d20;
       --ok: #12b76a;
       --info: #2e90fa;
@@ -21,11 +21,11 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #060b10;
-        --surface: #0d151c;
-        --border: #243541;
-        --text: #f2f7f8;
-        --muted: #9fb1bd;
+        --bg: #0f0f12;
+        --surface: #1a1a1f;
+        --border: #2a2a31;
+        --text: #f2f2f5;
+        --muted: #9a9aa4;
       }
     }
 
@@ -187,7 +187,7 @@
 
     .a-brand {
       --accent: var(--brand);
-      --accent-bg: #25d9d015;
+      --accent-bg: #f5a52415;
     }
 
     .a-info {
@@ -284,7 +284,7 @@
     button.primary {
       background: var(--brand);
       border-color: var(--brand);
-      color: #031013;
+      color: #17171c;
       font-weight: 600;
     }
 
@@ -298,87 +298,6 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-    }
-
-    .ig-session-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 12px;
-      padding: 12px;
-    }
-
-    .ig-session-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-      display: grid;
-      gap: 10px;
-    }
-
-    .ig-session-head {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .ig-session-avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      object-fit: cover;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      flex: 0 0 auto;
-    }
-
-    .ig-session-name {
-      min-width: 0;
-      flex: 1 1 auto;
-    }
-
-    .ig-session-name b,
-    .ig-session-name span {
-      display: block;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .ig-session-metrics {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-    }
-
-    .ig-session-metric {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 7px;
-      background: var(--bg);
-    }
-
-    .ig-session-metric b {
-      display: block;
-      font-size: 14px;
-      line-height: 1.1;
-    }
-
-    .ig-session-metric span {
-      display: block;
-      color: var(--muted);
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .03em;
-      margin-top: 2px;
-    }
-
-    .ig-session-actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
     }
 
     table {
@@ -420,8 +339,8 @@
     }
 
     .Pending {
-      background: #25d9d022;
-      color: #0b8f9c
+      background: #f5a52422;
+      color: #b26b00
     }
 
     .Approved,
@@ -987,6 +906,7 @@
     <a href="backup.html" style="text-decoration:none">
       <button type="button">Backup / Restore</button>
     </a>
+    <button id="create-dev-order-btn" type="button" style="display:inline-block;background:#12b76a;border-color:#12b76a;color:#fff;font-weight:600">➕ Add Dev Order</button>
     <button id="refresh" class="primary">Refresh</button>
   </header>
 
@@ -997,16 +917,14 @@
     <div class="tab-bar">
       <button id="tab-orders" class="primary">Orders</button>
       <button id="tab-accounts">Accounts</button>
-      <button id="tab-ig-sessions">IG Sessions</button>
       <button id="tab-devices">Devices</button>
-      <button id="tab-handles">Handles</button>
       <button id="tab-withdrawals">Withdrawals</button>
       <!-- Subscriptions and password resets are hidden for now. The tabs, tables and their
          loaders are all still wired up — drop the `hidden` attribute to bring them back. -->
       <button id="tab-subscriptions" hidden>Subscriptions</button>
       <button id="tab-resets" hidden>Password resets</button>
       <button id="tab-runner-settings">Runner Settings</button>
-      <button id="tab-smm-provider" hidden>SMM Provider</button>
+      <button id="tab-smm-provider">SMM Provider</button>
       <button id="tab-coin-transfer">Coin Transfer</button>
       <button id="tab-referrals">Referrals</button>
       <button id="tab-device-restore" hidden>Device Restore</button>
@@ -1016,7 +934,6 @@
           <option value="">All apps</option>
         </select>
         <input id="f-device" placeholder="Device ID" style="width:180px">
-        <input id="f-ig-search" placeholder="Search handle" style="width:220px;display:none">
       </div>
     </div>
 
@@ -1045,11 +962,11 @@
       <select id="f-source">
         <option value="">All sources</option>
         <option value="app">App Placed</option>
+        <option value="external">External (SMM Panel)</option>
       </select>
       <input id="f-search" placeholder="Search target, user or provider id" style="min-width:240px">
-      <button id="place-order" class="primary" style="margin-left:auto">Place Order</button>
-      <button id="sync-panel" class="primary" style="margin-left:auto;display:none" hidden>Sync Panel</button>
-      <button id="btn-upload-json" style="margin-left:8px;display:none" hidden>Upload JSON</button>
+      <button id="sync-panel" class="primary" style="margin-left:auto">Sync Panel</button>
+      <button id="btn-upload-json" style="margin-left:8px">Upload JSON</button>
     </div>
    </div>
 
@@ -1090,7 +1007,6 @@
         </thead>
         <tbody id="a-rows"></tbody>
       </table>
-      <section id="ig-sessions-panel" class="ig-session-grid" style="display:none"></section>
       <table id="devices-table" style="display:none">
         <thead>
           <tr>
@@ -1107,18 +1023,6 @@
           </tr>
         </thead>
         <tbody id="d-rows"></tbody>
-      </table>
-      <table id="handles-table" style="display:none">
-        <thead>
-          <tr>
-            <th>App / Device</th>
-            <th>Handles</th>
-            <th>Monitoring</th>
-            <th>Last Fetch</th>
-            <th>Device Last Seen</th>
-          </tr>
-        </thead>
-        <tbody id="h-rows"></tbody>
       </table>
       <div id="withdrawal-settings-panel"
         style="display:none; margin-bottom:16px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px">
@@ -1249,27 +1153,57 @@
           </label>
           <details style="margin-top:12px; border:1px solid var(--border,#e2e8f0); border-radius:8px; padding:0; overflow:hidden">
             <summary style="cursor:pointer; padding:10px 14px; font-weight:600; background:var(--surface,#f8fafc); list-style:none; display:flex; align-items:center; justify-content:space-between; user-select:none">
-              <span>Order Claiming</span>
+              <span>📦 Order Claiming</span>
               <span class="expander-chevron" style="font-size:12px; color:#64748b; transition:transform .2s">▼</span>
             </summary>
             <div style="padding:12px 14px">
               <p class="field-hint" style="margin:0 0 10px">
-                When a device claims a batch, those orders become invisible to other devices until
-                the device finishes them, releases them, or the claim times out.
+                When a device claims a batch, those orders flip to Processing and become invisible
+                to every other device until this device finishes them, releases them, or its claim
+                times out. These two settings control how big that reservation is and how long it's
+                held — get the balance wrong and devices either sit starved waiting on orders locked
+                by someone else, or lose their own claim mid-work and earn 0 coins for an action they
+                genuinely completed.
               </p>
               <label>Claim batch size
                 <input id="rs-claim-batch-size" type="number" min="1" max="50" step="1" placeholder="10">
                 <span class="field-hint">
-                  How many pending orders a device locks to itself in one claim call. Smaller
-                  values improve fairness when many cloned accounts share one phone.
+                  <b>What it does:</b> how many Pending orders a device locks to itself in one claim
+                  call (<code>POST /api/orders/processing/claim</code>), atomically flipped to
+                  Processing so no other device can grab the same rows.
+                  <br><br>
+                  <b>Why it exists:</b> claiming one order at a time would mean a network round-trip
+                  per single action — batching amortizes that into one call buying several minutes of
+                  work. It's also the main lever for fair distribution: a device running few accounts
+                  can hold a bigger batch productively; a device running many cloned accounts off one
+                  phone should get a <i>smaller</i> batch so it doesn't hoard orders other devices are
+                  sitting idle waiting for.
                 </span>
               </label>
               <label style="margin-top:10px; display:block">Claim timeout (minutes)
                 <input id="rs-claim-timeout-mins" type="number" min="1" max="60" step="1" placeholder="10">
                 <span class="field-hint">
-                  How long a claimed batch survives with no progress report before the background
-                  sweep releases it back to Pending. Keep this comfortably above the realistic
-                  time needed to work through a full batch.
+                  <b>What it does:</b> how long a device's claimed batch survives with no progress
+                  report before a background sweep (every 15s) releases it back to Pending for
+                  someone else to take. Reporting progress on <i>any</i> order in the batch resets the
+                  clock for the <i>whole</i> batch — so a device actively, honestly working through it
+                  never goes stale, no matter how long the full pass takes. The risk is only the first
+                  action after a fresh claim, before any report has landed yet to reset that clock.
+                  <br><br>
+                  <b>Why it exists:</b> if a device crashes, is force-closed, or loses network
+                  mid-batch, its claimed orders would otherwise stay locked forever with nobody able
+                  to fulfil them — this is what frees them back to the pool.
+                  <br><br>
+                  <b>Why the value matters:</b> too long, and a genuinely dead device's orders sit
+                  unreachable by anyone else for that whole window. Too short relative to how long a
+                  batch realistically takes to work through, and a device still honestly processing
+                  its batch gets its claim yanked mid-way — the Instagram action still happens for
+                  real, but the report lands after someone else's claim already took over, so the
+                  backend pays 0 coins for it. Rule of thumb: keep this comfortably above
+                  <code>Claim batch size × (Cooldown after a streak + Action delay — maximum)</code>
+                  above — e.g. batch 10 with a 30s cooldown and 4s max action delay is ~6 minutes of
+                  real worst-case work, so 10 minutes leaves headroom without stranding a crashed
+                  device's claims too long.
                 </span>
               </label>
             </div>
@@ -1343,6 +1277,15 @@
               </label>
             </div>
           </details>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:10px">
+            <input id="rs-auto-partial-cancelled" type="checkbox" style="width:auto; margin:0">
+            <span>Auto Partial Cancelled Tasks</span>
+          </label>
+          <span class="field-hint" style="margin-top:2px">
+            When enabled, running devices continuously fetch cancelled tasks from SMM Admin API
+            (smmorigin.com/adminapi/v2/cancel/pull) and update their status to Partial with remaining count.
+          </span>
+
           <hr style="margin:20px 0; border:0; border-top:1px solid var(--border)">
           <h4 style="margin:0 0 10px 0; font-size:15px; color:var(--text)">Action Coin Pricing & Referral Schema</h4>
           <p class="muted" style="margin-top:0; font-size:12px">
@@ -1466,7 +1409,7 @@
           <span class="muted" id="rs-status"></span>
         </div>
       </div>
-      <div id="smm-provider-panel" hidden style="display:none; padding:20px; max-width:520px">
+      <div id="smm-provider-panel" style="display:none; padding:20px; max-width:520px">
         <p class="muted" style="margin-top:0">
           The external SMM panel (smmorigin.com) integration used to sync orders for worker devices
           to fulfil. This used to be a redeploy-only setting; changes here apply to the very next
@@ -1827,45 +1770,6 @@
     </div>
   </dialog>
 
-  <dialog id="place-dlg">
-    <form method="dialog" class="dlg-body" id="place-form">
-      <strong>Place backend order</strong>
-      <label>User ID <input name="userId" required placeholder="User GUID"></label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <label>App ID <input name="appId" placeholder="com.feedpilot.client"></label>
-        <label>Device ID <input name="deviceId" placeholder="optional"></label>
-      </div>
-      <label>Activity type
-        <select name="orderType">
-          <option value="Follow">Follow</option>
-          <option value="Like">Like</option>
-          <option value="Comment">Comment</option>
-          <option value="Repost">Repost</option>
-          <option value="SavePost">Save Post</option>
-          <option value="StoryView">Story View</option>
-        </select>
-      </label>
-      <label>Target URL / handle <input name="targetUrl" required placeholder="https://www.instagram.com/p/... or @username"></label>
-      <label>Target username <input name="targetUsername" placeholder="optional, without @"></label>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-        <label>Quantity <input name="quantity" type="number" min="1" value="10" required></label>
-        <label>Start count <input name="startCount" type="number" min="0" placeholder="optional"></label>
-        <label>Priority <input name="priority" type="number" min="-100" max="100" value="0"></label>
-      </div>
-      <label>Comments
-        <textarea name="comments" rows="4" placeholder="One comment per line, required for Comment orders"></textarea>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input name="debitWallet" type="checkbox" style="width:auto"> Debit user's wallet using current pricing
-      </label>
-      <p class="muted" style="margin:0">Creates a non-external Pending app order. Running clients will claim it by activity type.</p>
-    </form>
-    <div class="dlg-foot">
-      <button id="place-cancel">Close</button>
-      <button id="place-save" class="primary">Place</button>
-    </div>
-  </dialog>
-
   <dialog id="a-dlg">
     <form method="dialog" class="dlg-body" id="a-form">
       <strong id="a-title">Manage account</strong>
@@ -1912,7 +1816,7 @@
   <dialog id="completed-accounts-dlg" style="max-width:820px; width:92vw; border-radius:8px;">
     <div class="dlg-body" style="padding-bottom:12px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <strong id="ca-dlg-title" style="font-size:1.15rem; color:var(--fg, #ffffff)">Completed Accounts</strong>
+        <strong id="ca-dlg-title" style="font-size:1.15rem; color:var(--fg, #fff)">Completed Accounts</strong>
         <button id="ca-dlg-close-x" style="background:none; border:none; color:var(--muted, #888); font-size:1.5rem; cursor:pointer; padding:0 4px;">&times;</button>
       </div>
       <div id="ca-subtitle" class="muted" style="margin-bottom:14px; font-size:0.85rem; word-break:break-all;"></div>
@@ -1938,46 +1842,9 @@
       <span class="muted" id="ca-count" style="font-size:0.85rem"></span>
       <div style="display:flex; gap:8px; align-items:center;">
         <button id="ca-prev" class="btn-secondary" style="padding:4px 10px; font-size:0.85rem; cursor:pointer;">Prev</button>
-        <span id="ca-page-indicator" style="font-size:0.85rem; padding:0 6px; color:var(--fg, #ffffff)">Page 1</span>
+        <span id="ca-page-indicator" style="font-size:0.85rem; padding:0 6px; color:var(--fg, #fff)">Page 1</span>
         <button id="ca-next" class="btn-secondary" style="padding:4px 10px; font-size:0.85rem; cursor:pointer;">Next</button>
         <button id="ca-close" class="primary" style="margin-left:8px; padding:4px 14px; font-size:0.85rem; cursor:pointer;">Close</button>
-      </div>
-    </div>
-  </dialog>
-
-  <dialog id="watched-handles-dlg" style="max-width:820px; width:92vw; border-radius:8px;">
-    <div class="dlg-body" style="padding-bottom:12px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <div>
-          <strong id="wh-title" style="font-size:1.15rem; color:var(--fg, #ffffff)">Watched Handles</strong>
-          <div id="wh-subtitle" class="muted" style="margin-top:3px; font-size:0.85rem; word-break:break-all;"></div>
-        </div>
-        <button id="wh-close-x" style="background:none; border:none; color:var(--muted, #888); font-size:1.5rem; cursor:pointer; padding:0 4px;">&times;</button>
-      </div>
-
-      <div style="overflow-x:auto; max-height:380px; border:1px solid var(--border, #333); border-radius:6px;">
-        <table style="width:100%; border-collapse:collapse; text-align:left; font-size:0.9rem;" id="wh-table">
-          <thead>
-            <tr style="background:var(--bg-table-header, #1e222b); border-bottom:1px solid var(--border, #333); color:var(--muted, #aaa);">
-              <th style="padding:10px 12px;">Handle</th>
-              <th style="padding:10px 12px;">Saved</th>
-              <th style="padding:10px 12px;">Watcher</th>
-              <th style="padding:10px 12px;">Last Fetch</th>
-              <th style="padding:10px 12px;">Status</th>
-            </tr>
-          </thead>
-          <tbody id="wh-rows"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="dlg-foot" style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid var(--border, #333);">
-      <span class="muted" id="wh-count" style="font-size:0.85rem"></span>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button id="wh-prev" class="btn-secondary" style="padding:4px 10px; font-size:0.85rem; cursor:pointer;">Prev</button>
-        <span id="wh-page" style="font-size:0.85rem; padding:0 6px; color:var(--fg, #ffffff)">Page 1</span>
-        <button id="wh-next" class="btn-secondary" style="padding:4px 10px; font-size:0.85rem; cursor:pointer;">Next</button>
-        <button id="wh-close" class="primary" style="margin-left:8px; padding:4px 14px; font-size:0.85rem; cursor:pointer;">Close</button>
       </div>
     </div>
   </dialog>
@@ -2078,6 +1945,49 @@
     </div>
   </dialog>
 
+  <dialog id="dev-order-dlg">
+    <form id="dev-order-form">
+      <div class="dlg-body">
+        <h3 style="margin:0 0 4px 0; color:var(--brand)">➕ Add Dev Order (Local Testing)</h3>
+        <p class="muted" style="margin-top:0">Create a test order in local backend DB for worker devices / clones to fetch and execute.</p>
+        
+        <label>Order Type
+          <select id="do-type">
+            <option value="Follow" selected>Follow</option>
+            <option value="Like">Like</option>
+            <option value="Comment">Comment</option>
+            <option value="Repost">Repost</option>
+            <option value="SavePost">Save Post</option>
+            <option value="StoryView">Story View</option>
+          </select>
+        </label>
+        
+        <label>Target URL
+          <input id="do-target-url" type="text" placeholder="https://www.instagram.com/instagram/" required>
+          <span class="field-hint">Instagram profile, post, or reel link</span>
+        </label>
+        
+        <label>Target Username (Optional)
+          <input id="do-target-user" type="text" placeholder="e.g. instagram">
+        </label>
+
+        <label>Quantity
+          <input id="do-quantity" type="number" min="1" max="1000" value="10" required>
+        </label>
+
+        <label>Comment Text (For Comment orders, 1 per line)
+          <textarea id="do-comments" rows="3" placeholder="Great post!&#10;Awesome content!"></textarea>
+        </label>
+
+        <div id="do-status" class="lock-error" style="text-align:left"></div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" id="do-cancel">Cancel</button>
+        <button type="submit" class="primary" id="do-submit">Submit Order</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const $ = s => document.querySelector(s);
     let page = 1, pageSize = 25, total = 0, editingId = null;
@@ -2142,11 +2052,13 @@
         headers: { 'Content-Type': 'application/json', 'X-Admin-Session': sessionToken(), ...(options.headers || {}) }
       });
       if (!res.ok) {
-        let detail = res.statusText, code = null;
-        try { const body = await res.json(); detail = body.message || detail; code = body.code || null; } catch { }
-        throw Object.assign(new Error(detail), { code, status: res.status });
+        let detail = res.statusText, code = null, body = null;
+        try { body = await res.json(); detail = body.message || detail; code = body.code || null; } catch { }
+        throw Object.assign(new Error(detail), { code, status: res.status, body });
       }
-      return res.status === 204 ? null : res.json();
+      if (res.status === 204) return null;
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
     }
 
     /**
@@ -2243,9 +2155,10 @@
     }
 
     /**
-     * Formats user emails nicely. Synthetic emails (e.g. device.<hash>.<pkg>@device.feedpilot)
-     * are rendered as a subtle pill badge (e.g. "device · 701dee2b") with a tooltip containing
-     * the full string so they don't visually clutter the table or cause extreme wrapping.
+     * Formats user emails nicely. Synthetic emails (e.g. device.<hash>.<pkg>@device.feedpilot,
+     * backup-<uuid>@backup.feedpilot) are rendered as a subtle pill badge (e.g. "device · 701dee2b",
+     * "backup · 5ded2516") with a tooltip containing the full string so they don't visually clutter
+     * the table or cause extreme wrapping.
      */
     function formatEmailHtml(email) {
       if (!email) return '<span class="muted">—</span>';
@@ -2279,33 +2192,57 @@
     }
 
     /** Extracts the post ID / shortcode from URL if username is just a dummy path indicator (like 'p' or 'reel'). */
-    function displayTarget(targetUsername, targetUrl) {
-      let val = (targetUsername || '').trim();
-      const lower = val.toLowerCase();
-      if (lower === 'p' || lower === 'reel' || lower === 'reels' || lower === 'tv') {
+    function extractPlaneHandle(input) {
+      if (!input) return '';
+      let str = input.trim();
+      if (str.startsWith('@')) str = str.slice(1).trim();
+      if (!str) return '';
+
+      const domainIndex = str.toLowerCase().indexOf('instagram.com/');
+      if (domainIndex >= 0) {
+        const after = str.substring(domainIndex + 'instagram.com/'.length);
+        const path = after.split(/[?#]/)[0].replace(/^\/+|\/+$/g, '');
+        const segs = path.split('/').filter(Boolean);
+        if (segs.length > 0) {
+          if (segs.length > 1 && ['p', 'reel', 'reels', 'tv'].includes(segs[0].toLowerCase())) {
+            return segs[1];
+          }
+          return segs[0];
+        }
+      }
+
+      if (str.startsWith('http://') || str.startsWith('https://')) {
         try {
-          let trimmed = (targetUrl || '').trim();
-          if (trimmed) {
-            if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-              trimmed = 'https://' + trimmed;
+          const u = new URL(str);
+          if (u.hostname && !u.hostname.includes('.')) {
+            return u.hostname;
+          }
+          const segs = u.pathname.split('/').filter(Boolean);
+          if (segs.length > 0) {
+            if (segs.length > 1 && ['p', 'reel', 'reels', 'tv'].includes(segs[0].toLowerCase())) {
+              return segs[1];
             }
-            const url = new URL(trimmed);
-            const segments = url.pathname.split('/').filter(Boolean);
-            if (segments.length > 1) {
-              return segments[1];
-            }
+            return segs[0];
           }
         } catch { }
       }
-      // A blank targetUsername with a non-blank targetUrl means the panel sent a bare handle with
-      // no "instagram.com/" domain at all (see SmmPanelSyncService.ExtractUsername) — targetUrl IS
-      // the handle in that case. Already-imported rows self-heal the next time the panel is synced;
-      // this is just the immediate display fallback so they don't read as "—" until then.
-      if (!val) {
-        const raw = (targetUrl || '').trim();
-        if (raw) return raw;
+
+      const bare = str.split(/[/?#]/)[0].trim();
+      return bare;
+    }
+
+    /** Extracts the post ID / shortcode or clean username for target display. */
+    function displayTarget(targetUsername, targetUrl) {
+      let val = (targetUsername || '').trim();
+      let plane = extractPlaneHandle(val);
+      if (plane && plane.toLowerCase() !== 'dev_user') {
+        return plane;
       }
-      return val || '—';
+      let urlPlane = extractPlaneHandle(targetUrl);
+      if (urlPlane && urlPlane.toLowerCase() !== 'dev_user') {
+        return urlPlane;
+      }
+      return plane || val || urlPlane || '—';
     }
 
     /** A single-letter placeholder circle, used both when there's no URL and when one fails to load. */
@@ -2408,7 +2345,7 @@
     <tr>
       <td class="muted">${fmt(o.createdAt)}${o.providerCreatedAt ? `<div class="muted">Panel: ${fmt(o.providerCreatedAt)}</div>` : ''}</td>
       ${identityCell(o.appId, o.deviceId)}
-      <td class="user-cell">${formatEmailHtml(o.userEmail)}<div class="muted">${esc(o.userName)}</div><div class="muted" title="${esc(o.userId)}">User: ${esc(shortId(o.userId))}</div></td>
+      <td class="user-cell">${formatEmailHtml(o.userEmail)}<div class="muted">${esc(o.userName)}</div></td>
       <td>${o.orderType}</td>
       <td class="target">${esc(displayTarget(o.targetUsername, o.targetUrl))}<div class="muted">${esc(o.targetUrl)}</div>${o.commentText ? `<div class="comment-scrollbox"><div class="comment-scrollbox-header">💬 Custom Comments (${o.commentText.split(/\r?\n/).filter(Boolean).length}):</div><div class="comment-scrollbox-content" title="${esc(o.commentText)}">${esc(o.commentText)}</div></div>` : ''}</td>
       <td>${o.quantity}</td>
@@ -2420,13 +2357,12 @@
             👁️ Accounts
           </button>
         </div>
-        ${d.appInstanceId ? `<div class="id-line muted"><span title="${esc(d.appInstanceId)}">clone ${esc(shortId(d.appInstanceId))}</span><button type="button" class="copy-btn copy-id" data-copy="${esc(d.appInstanceId)}" title="Copy clone instance id">â§‰</button></div>` : ''}
       </td>
       <td>${o.coinsSpent}</td>
       <td>${statusPill(o.status)}${o.status === 'Processing' && o.processingStartedAt ? `<div class="muted">Claimed by ${esc(shortId(o.processingDeviceId))} at ${fmt(o.processingStartedAt)}</div>` : ''}${o.errorMessage ? `<div class="muted">${esc(o.errorMessage)}</div>` : ''}</td>
       <td>${esc(o.providerOrderId || o.externalOrderId) || '<span class="muted">—</span>'}<div class="muted">${esc(o.providerName || (o.isExternal ? 'smmorigin' : ''))}${o.providerServiceId ? ` | Svc: ${esc(o.providerServiceId)}` : ''}${o.providerServiceName ? ` (${esc(o.providerServiceName)})` : ''}</div>${o.providerUsername || o.providerChargeAmount ? `<div class="muted">${o.providerUsername ? `Panel user: ${esc(o.providerUsername)}` : ''}${o.providerChargeAmount ? ` | Charge: ${esc(o.providerChargeCurrency || '')} ${o.providerChargeAmount}` : ''}</div>` : ''}</td>
       <td>${o.isExternal ? '<span class="pill Approved">External</span>' : '<span class="pill Completed">App</span>'}</td>
-      <td><button data-id="${o.id}" class="manage">Manage</button></td>
+      <td style="white-space:nowrap;"><button data-id="${o.id}" class="manage">Manage</button><button data-id="${o.id}" class="delete-order-btn" style="margin-left:6px; background:var(--danger, #ef4444); color:#fff; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px;" title="Delete Order">Delete</button></td>
     </tr>`).join('')
         : `<tr><td colspan="12" class="empty">No orders match these filters.</td></tr>`;
 
@@ -2441,6 +2377,18 @@
         b.onclick = () => openDialog(data.items.find(x => x.id === b.dataset.id)));
       document.querySelectorAll('.view-completed-btn').forEach(b =>
         b.onclick = () => openCompletedAccountsModal(b.dataset.id, b.dataset.type, b.dataset.target));
+      document.querySelectorAll('.delete-order-btn').forEach(b =>
+        b.onclick = async () => {
+          const id = b.dataset.id;
+          const ok = await showConfirm('Are you sure you want to delete this order? This action cannot be undone.', 'Delete Order', true);
+          if (!ok) return;
+          try {
+            await api('/api/admin/orders/' + id, { method: 'DELETE' });
+            refresh();
+          } catch (err) {
+            showAlert('Delete failed: ' + err.message, 'Error');
+          }
+        });
     }
 
     async function loadAccountStats() {
@@ -2465,7 +2413,7 @@
     <tr>
       <td class="muted">${fmt(a.createdAt)}</td>
       ${identityCell(a.appId, a.deviceId)}
-      <td class="email-cell">${formatEmailHtml(a.userEmail)}<div class="muted" title="${esc(a.userId)}">User: ${esc(shortId(a.userId))}</div></td>
+      <td class="email-cell">${formatEmailHtml(a.userEmail)}</td>
       <td>${avatarHtml(a.profilePictureUrl, a.username)}<b>@${esc(a.username)}</b></td>
       <td>${statusPill(a.status)}</td>
       <td>${a.hasSession ? '<span class="pill Completed">linked</span>' : '<span class="pill Rejected">none</span>'}</td>
@@ -2490,93 +2438,6 @@
 
       document.querySelectorAll('.a-transfer').forEach(b =>
         b.onclick = () => jumpToTransfer(b.dataset.username));
-    }
-
-    async function loadInstagramSessionStats() {
-      const s = await api('/api/admin/accounts/stats');
-      renderStats(
-        [['Logged-in sessions', num(s.withSession)], ['Active accounts', num(s.active)], ['Total accounts', num(s.total)]],
-        []
-      );
-      setAppOptions(s.apps);
-    }
-
-    function openInstagramWithSavedSession(accountId, profileUrl) {
-      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      let settled = false;
-
-      const onMessage = event => {
-        const data = event.data || {};
-        if (event.source !== window || data.source !== 'feedpilot-instagram-extension' || data.requestId !== requestId)
-          return;
-
-        settled = true;
-        window.removeEventListener('message', onMessage);
-        if (!data.ok) showAlert(data.error || 'Chrome extension could not open this Instagram session.', 'Extension error');
-      };
-
-      window.addEventListener('message', onMessage);
-      window.postMessage({
-        source: 'feedpilot-dashboard',
-        type: 'OPEN_INSTAGRAM_SESSION',
-        requestId,
-        accountId,
-        profileUrl
-      }, window.location.origin);
-
-      setTimeout(() => {
-        if (settled) return;
-        window.removeEventListener('message', onMessage);
-        showAlert('Install and enable the FeedPilot Instagram Session Opener Chrome extension, then click View again.', 'Extension required');
-      }, 8000);
-    }
-
-    async function loadInstagramSessions() {
-      const params = new URLSearchParams({ page, pageSize });
-      if ($('#f-app').value) params.set('appId', $('#f-app').value);
-      if ($('#f-device').value.trim()) params.set('deviceId', $('#f-device').value.trim());
-      if ($('#f-ig-search').value.trim()) params.set('search', $('#f-ig-search').value.trim());
-
-      const data = await api('/api/admin/instagram-sessions?' + params);
-      total = data.total;
-
-      $('#ig-sessions-panel').innerHTML = data.items.length ? data.items.map(a => {
-        const profileUrl = `https://www.instagram.com/${encodeURIComponent(a.username)}/`;
-        const avatar = a.profilePictureUrl
-          ? `<img class="ig-session-avatar" src="${esc(a.profilePictureUrl)}" alt="">`
-          : `<div class="ig-session-avatar"></div>`;
-        return `<article class="ig-session-card">
-          <div class="ig-session-head">
-            ${avatar}
-            <div class="ig-session-name">
-              <b>@${esc(a.username)} ${a.isVerified ? '<span class="pill Completed">verified</span>' : ''}</b>
-              <span class="muted">${esc(a.fullName || a.userEmail || '')}</span>
-            </div>
-          </div>
-          <div class="ig-session-metrics">
-            <div class="ig-session-metric"><b>${num(a.followerCount)}</b><span>Followers</span></div>
-            <div class="ig-session-metric"><b>${num(a.followingCount)}</b><span>Following</span></div>
-            <div class="ig-session-metric"><b>${num(a.mediaCount)}</b><span>Posts</span></div>
-          </div>
-          <div class="muted" title="${esc(a.deviceId || '')}">${esc(a.appId || '')} · ${esc(shortId(a.deviceId))}</div>
-          <div class="ig-session-actions">
-            ${a.profileSynced ? '<span class="pill Completed">synced</span>' : '<span class="pill Failed">sync failed</span>'}
-            <button type="button" class="ig-open" data-id="${esc(a.id)}" data-url="${esc(profileUrl)}" title="Open Instagram profile with saved session">View</button>
-          </div>
-        </article>`;
-      }).join('')
-        : `<div class="empty" style="grid-column:1/-1">No logged-in Instagram sessions match these filters.</div>`;
-
-      const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-      $('#count').textContent = `${from}–${Math.min(page * pageSize, total)} of ${total}`;
-      $('#prev').disabled = page <= 1;
-      $('#next').disabled = page * pageSize >= total;
-
-      document.querySelectorAll('.ig-open').forEach(b => {
-        b.onclick = () => {
-          openInstagramWithSavedSession(b.dataset.id, b.dataset.url);
-        };
-      });
     }
 
     function openAccountDialog(a) {
@@ -2633,7 +2494,12 @@
     }
 
     function deviceGroupKey(d) {
-      return (d.installationId || d.deviceId || d.id || '').toString();
+      const appId = (d.appId || 'unknown').toString();
+      const deviceId = (d.deviceId || '').toString();
+      const appInstanceId = (d.appInstanceId || '').toString();
+      if (appInstanceId) return `${appId}|${deviceId}|${appInstanceId}`;
+      if (deviceId) return `${appId}|${deviceId}`;
+      return (d.id || '').toString();
     }
 
     function deviceLoggedAccountsButton(d) {
@@ -2752,23 +2618,7 @@
       }).join('');
     }
 
-    async function loadDevices() {
-      const params = new URLSearchParams({ page, pageSize });
-      if ($('#f-search').value.trim()) params.set('search', $('#f-search').value.trim());
-
-      const data = await api('/api/admin/devices?' + params);
-      total = data.total;
-
-      $('#d-rows').innerHTML = data.items.length ? renderGroupedDeviceRows(data.items)
-        : `<tr><td colspan="10" class="empty">No devices registered.</td></tr>`;
-
-      const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-      $('#count').textContent = `${from}–${Math.min(page * pageSize, total)} of ${total}`;
-      $('#prev').disabled = page <= 1;
-      $('#next').disabled = page * pageSize >= total;
-
-      applyResponsiveLabels($('#devices-table'));
-
+    function bindDeviceRowActions() {
       document.querySelectorAll('.d-delete').forEach(b => b.onclick = async () => {
         const ok = await showConfirm(
           'Delete this device? Every Instagram account logged in on it is deleted too, and — if no ' +
@@ -2798,14 +2648,6 @@
         };
       });
 
-      document.querySelectorAll('.clone-badge').forEach(btn => {
-        btn.onclick = () => {
-          $('#f-search').value = btn.dataset.installation;
-          page = 1;
-          loadDevices();
-        };
-      });
-
       document.querySelectorAll('.device-group-toggle').forEach(btn => {
         btn.onclick = () => {
           const key = btn.dataset.group || '';
@@ -2829,86 +2671,24 @@
       });
     }
 
-    async function loadHandleDevices() {
-      const params = new URLSearchParams();
-      if ($('#f-app').value) params.set('appId', $('#f-app').value);
-      if ($('#f-device').value.trim()) params.set('deviceId', $('#f-device').value.trim());
+    async function loadDevices() {
+      const params = new URLSearchParams({ page, pageSize });
       if ($('#f-search').value.trim()) params.set('search', $('#f-search').value.trim());
 
-      const data = await api('/api/admin/watched-handles/devices?' + params);
-      const totalHandles = data.reduce((sum, d) => sum + d.handleCount, 0);
-      const monitoring = data.reduce((sum, d) => sum + d.monitoringCount, 0);
+      const data = await api('/api/admin/devices?' + params);
+      total = data.total;
 
-      renderStats(
-        [
-          ['Devices with handles', num(data.length)],
-          ['Total handles', num(totalHandles)],
-          ['Currently monitoring', num(monitoring)]
-        ],
-        []
-      );
+      $('#d-rows').innerHTML = data.items.length ? renderGroupedDeviceRows(data.items)
+        : `<tr><td colspan="10" class="empty">No devices registered.</td></tr>`;
 
-      handleDeviceRows = data;
+      const groupedFrom = total === 0 ? 0 : (page - 1) * pageSize + 1;
+      $('#count').textContent = `${groupedFrom}–${Math.min(page * pageSize, total)} of ${total}`;
+      $('#prev').disabled = page <= 1;
+      $('#next').disabled = page * pageSize >= total;
 
-      $('#h-rows').innerHTML = data.length ? data.map((d, index) => `
-    <tr>
-      ${identityCell(d.appId, d.deviceId)}
-      <td><button type="button" class="view-handles-btn pill Approved" data-index="${index}" style="cursor:pointer;border:1px solid rgba(46,144,250,0.4);background:rgba(46,144,250,0.12);color:#175cd3;padding:4px 10px;font-weight:700">${num(d.handleCount)} handle${d.handleCount === 1 ? '' : 's'}</button></td>
-      <td>${d.monitoringCount > 0 ? `<span class="pill Approved">${num(d.monitoringCount)} active</span>` : '<span class="pill Pending">paused</span>'}</td>
-      <td class="muted">${fmt(d.lastFetchedAt)}</td>
-      <td class="muted">${fmt(d.lastSeenAt)}</td>
-    </tr>`).join('')
-        : `<tr><td colspan="5" class="empty">No watched handles found.</td></tr>`;
-
-      total = data.length;
-      $('#count').textContent = `${total} device${total === 1 ? '' : 's'}`;
-      $('#prev').disabled = true;
-      $('#next').disabled = true;
-      applyResponsiveLabels($('#handles-table'));
-
-      document.querySelectorAll('.view-handles-btn').forEach(btn => {
-        btn.onclick = () => openWatchedHandlesDialog(Number(btn.dataset.index));
-      });
-    }
-
-    let handleDeviceRows = [];
-    let whHandles = [];
-    let whPage = 1;
-    const whPageSize = 10;
-
-    function openWatchedHandlesDialog(index) {
-      const device = handleDeviceRows[index];
-      if (!device) return;
-      whHandles = device.handles || [];
-      whPage = 1;
-      $('#wh-title').textContent = `${num(device.handleCount)} watched handle${device.handleCount === 1 ? '' : 's'}`;
-      $('#wh-subtitle').textContent = `${device.appId || 'unknown'} / ${device.deviceId || 'unknown'} - ${num(device.monitoringCount)} monitoring`;
-      renderWatchedHandlesPage();
-      $('#watched-handles-dlg').showModal();
-    }
-
-    function renderWatchedHandlesPage() {
-      const totalRows = whHandles.length;
-      const totalPages = Math.max(1, Math.ceil(totalRows / whPageSize));
-      whPage = Math.min(Math.max(1, whPage), totalPages);
-      const start = (whPage - 1) * whPageSize;
-      const items = whHandles.slice(start, start + whPageSize);
-
-      $('#wh-rows').innerHTML = items.length ? items.map(h => `
-        <tr style="border-bottom:1px solid var(--border, #333);">
-          <td style="padding:10px 12px;"><b>@${esc(h.username)}</b>${h.fullName ? `<div class="muted">${esc(h.fullName)}</div>` : ''}</td>
-          <td style="padding:10px 12px;">${num(h.savedPostCount)}</td>
-          <td style="padding:10px 12px;">${num(h.pollIntervalMinutes)} min</td>
-          <td style="padding:10px 12px;" class="muted">${fmt(h.lastFetchedAt)}</td>
-          <td style="padding:10px 12px;">${h.watchEnabled ? '<span class="pill Approved">monitoring</span>' : '<span class="pill Pending">off</span>'}</td>
-        </tr>`).join('')
-        : `<tr><td colspan="5" class="empty">No handles found for this device.</td></tr>`;
-
-      const from = totalRows === 0 ? 0 : start + 1;
-      $('#wh-count').textContent = `${from}-${Math.min(start + whPageSize, totalRows)} of ${totalRows}`;
-      $('#wh-page').textContent = `Page ${whPage} of ${totalPages}`;
-      $('#wh-prev').disabled = whPage <= 1;
-      $('#wh-next').disabled = whPage >= totalPages;
+      applyResponsiveLabels($('#devices-table'));
+      bindDeviceRowActions();
+      return;
     }
 
     let coinAdjustEmail = '';
@@ -3301,9 +3081,7 @@
       page = 1;
       $('#tab-orders').className = next === 'orders' ? 'primary' : '';
       $('#tab-accounts').className = next === 'accounts' ? 'primary' : '';
-      $('#tab-ig-sessions').className = next === 'ig-sessions' ? 'primary' : '';
       $('#tab-devices').className = next === 'devices' ? 'primary' : '';
-      $('#tab-handles').className = next === 'handles' ? 'primary' : '';
       $('#tab-withdrawals').className = next === 'withdrawals' ? 'primary' : '';
       $('#tab-subscriptions').className = next === 'subscriptions' ? 'primary' : '';
       $('#tab-resets').className = next === 'resets' ? 'primary' : '';
@@ -3314,12 +3092,9 @@
       $('#tab-device-restore').className = next === 'device-restore' ? 'primary' : '';
       $('#tab-picked-usernames').className = next === 'picked-usernames' ? 'primary' : '';
       $('#order-filters').style.display = next === 'orders' ? '' : 'none';
-      $('#f-ig-search').style.display = next === 'ig-sessions' ? '' : 'none';
       $('#orders-table').style.display = next === 'orders' ? '' : 'none';
       $('#accounts-table').style.display = next === 'accounts' ? '' : 'none';
-      $('#ig-sessions-panel').style.display = next === 'ig-sessions' ? '' : 'none';
       $('#devices-table').style.display = next === 'devices' ? '' : 'none';
-      $('#handles-table').style.display = next === 'handles' ? '' : 'none';
       $('#withdrawals-table').style.display = next === 'withdrawals' ? '' : 'none';
       $('#withdrawal-settings-panel').style.display = next === 'withdrawals' ? '' : 'none';
       $('#subscriptions-table').style.display = next === 'subscriptions' ? '' : 'none';
@@ -3334,16 +3109,13 @@
       // Neither the top stat tiles nor Prev/Next mean anything for these single-row/form panels.
       const isFormPanel = next === 'runner-settings' || next === 'smm-provider' ||
         next === 'coin-transfer' || next === 'referrals' || next === 'device-restore';
-      const noPagingPanel = isFormPanel || next === 'handles';
       $('#stats').style.display = isFormPanel ? 'none' : '';
-      $('.pager').style.display = noPagingPanel ? 'none' : '';
+      $('.pager').style.display = isFormPanel ? 'none' : '';
       refresh();
     }
     $('#tab-orders').onclick = () => setTab('orders');
     $('#tab-accounts').onclick = () => setTab('accounts');
-    $('#tab-ig-sessions').onclick = () => setTab('ig-sessions');
     $('#tab-devices').onclick = () => setTab('devices');
-    $('#tab-handles').onclick = () => setTab('handles');
     $('#tab-withdrawals').onclick = () => setTab('withdrawals');
     $('#tab-subscriptions').onclick = () => setTab('subscriptions');
     $('#tab-resets').onclick = () => setTab('resets');
@@ -3369,8 +3141,6 @@
     $('#f-type').onchange = () => { page = 1; refresh(); };
     $('#f-device').addEventListener('input', debouncedFilterRefresh);
     $('#f-device').addEventListener('keydown', e => { if (e.key === 'Enter') { page = 1; refresh(); } });
-    $('#f-ig-search').addEventListener('input', debouncedFilterRefresh);
-    $('#f-ig-search').addEventListener('keydown', e => { if (e.key === 'Enter') { page = 1; refresh(); } });
 
     // Click an app-id or device-id in any row to filter to it. Selecting a device isolates a
     // single physical device even when several devices share the same package name — the app-id
@@ -3401,6 +3171,7 @@
       $('#rs-cooldown').value = s.cooldownSeconds || 30;
       $('#rs-claim-batch-size').value = s.claimBatchSize ?? 10;
       $('#rs-claim-timeout-mins').value = s.claimTimeoutMinutes ?? 10;
+      $('#rs-auto-partial-cancelled').checked = s.autoPartialCancelledTasks ?? true;
       $('#rs-follow-normal').value = s.followCoinsNormal || 1;
       $('#rs-follow-upgraded').value = s.followCoinsUpgraded || 2;
       $('#rs-like-normal').value = s.likeCoinsNormal || 1;
@@ -3460,6 +3231,7 @@
           actionDelayMaxMs: actionDelayMaxMs,
           fetchDelayMs: Number($('#rs-fetch-delay').value || 15000),
           cooldownSeconds: Number($('#rs-cooldown').value || 30),
+          autoPartialCancelledTasks: $('#rs-auto-partial-cancelled').checked,
           claimBatchSize: Number($('#rs-claim-batch-size').value || 10),
           claimTimeoutMinutes: Number($('#rs-claim-timeout-mins').value || 10),
           followCoinsNormal: Number($('#rs-follow-normal').value || 1),
@@ -3728,21 +3500,53 @@
       const body = {
         username: $('#pu-username').value.trim(),
         deviceId: $('#pu-device-id').value.trim(),
-        appId: $('#pu-app-id').value.trim() || null
+        appId: $('#pu-app-id').value.trim() || null,
+        forceReassign: false
       };
       if (!body.username || !body.deviceId) {
         return showAlert('Username and Device ID are required.', 'Error');
       }
+
+      async function assignPickedUsername(forceReassign) {
+        return api('/api/admin/picked-usernames/assign', {
+          method: 'POST',
+          body: JSON.stringify({ ...body, forceReassign })
+        });
+      }
+
       $('#pu-assign').disabled = true;
       $('#pu-status').textContent = 'Assigning...';
       try {
-        const r = await api('/api/admin/picked-usernames/assign', { method: 'POST', body: JSON.stringify(body) });
+        const r = await assignPickedUsername(false);
         $('#pu-status').textContent = r.message;
         $('#pu-username').value = '';
         loadPickedUsernames();
       } catch (e) {
         $('#pu-status').textContent = '';
-        showAlert('Assign failed: ' + e.message, 'Error');
+        if (e.code === 'USERNAME_ALREADY_ASSIGNED') {
+          const assigned = e.body || {};
+          const ok = await showConfirm(
+            `@${assigned.username || body.username} is already assigned to another device/clone.\n\n` +
+            `Current device: ${assigned.assignedDeviceId || 'unknown'}\n` +
+            `Current app: ${assigned.assignedAppId || 'unknown'}\n\n` +
+            'Do you want to revoke access from the assigned device and assign it to the current device?',
+            'Reassign picked username',
+            true
+          );
+          if (!ok) return;
+          try {
+            $('#pu-status').textContent = 'Reassigning...';
+            const r = await assignPickedUsername(true);
+            $('#pu-status').textContent = r.message;
+            $('#pu-username').value = '';
+            loadPickedUsernames();
+          } catch (retryErr) {
+            $('#pu-status').textContent = '';
+            showAlert('Reassign failed: ' + retryErr.message, 'Error');
+          }
+        } else {
+          showAlert('Assign failed: ' + e.message, 'Error');
+        }
       } finally {
         $('#pu-assign').disabled = false;
       }
@@ -4109,9 +3913,7 @@
           return;
         }
         if (tab === 'accounts') await Promise.all([loadAccountStats(), loadAccounts()]);
-        else if (tab === 'ig-sessions') await Promise.all([loadInstagramSessionStats(), loadInstagramSessions()]);
         else if (tab === 'devices') await Promise.all([loadDeviceStats(), loadDevices()]);
-        else if (tab === 'handles') await loadHandleDevices();
         else if (tab === 'withdrawals') await Promise.all([loadWithdrawalStats(), loadWithdrawals(), loadWithdrawalSettings()]);
         else if (tab === 'subscriptions') await Promise.all([loadSubscriptionStats(), loadSubscriptions()]);
         else if (tab === 'resets') await Promise.all([loadResetStats(), loadResets()]);
@@ -4139,8 +3941,21 @@
       $('#sign-out').style.display = hasKey ? '' : 'none';
     }
 
-    /** Reuses an existing admin session when present; otherwise the admin key field stays visible. */
+    /**
+     * Connects with no manual step where possible: reuses a stored session, otherwise asks the backend
+     * for the dev key (Development only) and runs it through the same login flow a human would use —
+     * no separate, unaudited path to a valid session. Only if neither exists does the key box appear.
+     */
     async function autoConnect() {
+      if (!sessionToken()) {
+        try {
+          const res = await fetch('/dashboard/dev-key');
+          if (res.ok) {
+            const { apiKey } = await res.json();
+            if (apiKey) await adminLogin(apiKey);
+          }
+        } catch { }
+      }
       updateKeyUi();
       refresh();
     }
@@ -4211,10 +4026,6 @@
     $('#ca-next').onclick = () => { if (caPage * caPageSize < caTotal) { caPage++; loadCompletedAccountsPage(); } };
     $('#ca-close').onclick = () => $('#completed-accounts-dlg').close();
     $('#ca-dlg-close-x').onclick = () => $('#completed-accounts-dlg').close();
-    $('#wh-prev').onclick = () => { if (whPage > 1) { whPage--; renderWatchedHandlesPage(); } };
-    $('#wh-next').onclick = () => { if (whPage * whPageSize < whHandles.length) { whPage++; renderWatchedHandlesPage(); } };
-    $('#wh-close').onclick = () => $('#watched-handles-dlg').close();
-    $('#wh-close-x').onclick = () => $('#watched-handles-dlg').close();
 
     $('#dlg-cancel').onclick = e => { e.preventDefault(); $('#dlg').close(); };
     $('#dlg-save').onclick = async e => {
@@ -4235,53 +4046,6 @@
         $('#dlg').close();
         refresh();
       } catch (err) { showAlert('Save failed: ' + err.message, 'Error'); }
-    };
-
-    $('#place-order').onclick = e => {
-      e.preventDefault();
-      const f = $('#place-form');
-      f.reset();
-      f.orderType.value = $('#f-type').value || 'Follow';
-      f.appId.value = $('#f-app').value || '';
-      f.deviceId.value = $('#f-device').value.trim();
-      $('#place-dlg').showModal();
-    };
-
-    $('#place-cancel').onclick = e => { e.preventDefault(); $('#place-dlg').close(); };
-    $('#place-save').onclick = async e => {
-      e.preventDefault();
-      const f = $('#place-form');
-      const comments = f.comments.value
-        .split(/\r?\n/)
-        .map(x => x.trim())
-        .filter(Boolean);
-      const body = {
-        userId: f.userId.value.trim(),
-        orderType: f.orderType.value,
-        targetUrl: f.targetUrl.value.trim(),
-        targetUsername: f.targetUsername.value.trim() || null,
-        quantity: Number(f.quantity.value || 0),
-        startCount: f.startCount.value === '' ? null : Number(f.startCount.value),
-        comments,
-        appId: f.appId.value.trim() || null,
-        deviceId: f.deviceId.value.trim() || null,
-        priority: Number(f.priority.value || 0),
-        debitWallet: f.debitWallet.checked
-      };
-      if (!body.userId || !body.targetUrl || body.quantity < 1) {
-        showAlert('User ID, target and quantity are required.', 'Missing fields');
-        return;
-      }
-      if (body.orderType === 'Comment' && comments.length === 0) {
-        showAlert('Comment orders need at least one comment line.', 'Missing comments');
-        return;
-      }
-      try {
-        await api('/api/admin/orders', { method: 'POST', body: JSON.stringify(body) });
-        $('#place-dlg').close();
-        page = 1;
-        refresh();
-      } catch (err) { showAlert('Place order failed: ' + err.message, 'Error'); }
     };
 
     $('#save-key').onclick = async () => {
@@ -4306,10 +4070,6 @@
     $('#refresh').onclick = refresh;
     $('#prev').onclick = () => { if (page > 1) { page--; refresh(); } };
     $('#next').onclick = () => { if (page * pageSize < total) { page++; refresh(); } };
-
-    setInterval(() => {
-      if (tab === 'ig-sessions' && document.visibilityState === 'visible' && sessionToken()) refresh();
-    }, 15000);
 
     // Wire up every filter so any dropdown or input change updates results immediately
     ['#f-app', '#f-device', '#f-status', '#f-type', '#f-source'].forEach(id => {
@@ -4349,6 +4109,7 @@
     function touchActivity() {
       if (!isLocked()) {
         lockLastActivity = Date.now();
+        sessionStorage.setItem('tf_dashboard_unlocked_at', Date.now().toString());
       }
     }
 
@@ -4375,7 +4136,13 @@
       } catch { lockEnabled = false; }
 
       if (lockEnabled) {
-        showLock();
+        const lastUnlocked = parseInt(sessionStorage.getItem('tf_dashboard_unlocked_at') || '0', 10);
+        const elapsed = Date.now() - lastUnlocked;
+        if (lastUnlocked > 0 && elapsed < LOCK_IDLE_MS) {
+          lockLastActivity = lastUnlocked;
+        } else {
+          showLock();
+        }
       }
     }
 
@@ -4442,13 +4209,15 @@
     });
 
     // =========================================================================
-    // External order import is disabled. FeedPilot now processes app-placed orders only.
+    // FEATURE FLAG: Show/Hide JSON Order Import / Upload Feature
+    // Fetches from environment variable SHOW_JSON_UPLOAD_FEATURE via backend API.
+    // Default is false.
     // =========================================================================
     let SHOW_JSON_UPLOAD_FEATURE = false;
 
     function applyJsonUploadVisibility() {
       const btn = $('#btn-upload-json');
-      if (btn) btn.style.display = 'none';
+      if (btn) btn.style.display = SHOW_JSON_UPLOAD_FEATURE ? 'inline-block' : 'none';
     }
 
     async function loadFeatureFlags() {
@@ -4456,7 +4225,7 @@
         const res = await fetch('/api/admin/dashboard/feature-flags');
         if (res.ok) {
           const data = await res.json();
-          SHOW_JSON_UPLOAD_FEATURE = false;
+          SHOW_JSON_UPLOAD_FEATURE = !!data.showJsonUploadFeature;
         }
       } catch (e) {
         SHOW_JSON_UPLOAD_FEATURE = false;
@@ -4548,7 +4317,131 @@
     // than racing it.
     autoConnect().then(checkLockEnabled);
 
+    // Auto sync dashboard & SMM orders silently every 5 minutes (5 * 60 * 1000)
+    setInterval(() => {
+      if (sessionToken()) {
+        syncExternalOrders(true);
+      }
+    }, 5 * 60 * 1000);
+
+    // Dev Order Creation Handler
+    const createDevOrderBtn = document.getElementById('create-dev-order-btn');
+    if (createDevOrderBtn) {
+      const checkDevStatus = async () => {
+        try {
+          const res = await fetch('/api/admin/orders/is-dev');
+          const isDev = res.ok && (await res.json() === true);
+          if (!isDev) {
+            createDevOrderBtn.style.display = 'none';
+          }
+        } catch (_) {
+          const isLocalHost = ['localhost', '127.0.0.1', '10.0.2.2', '::1', ''].includes(window.location.hostname) || window.location.hostname.endsWith('.local');
+          if (!isLocalHost) {
+            createDevOrderBtn.style.display = 'none';
+          }
+        }
+      };
+      checkDevStatus();
+
+      const openDevDlg = () => {
+        const dlg = document.getElementById('dev-order-dlg');
+        if (dlg) {
+          const statusEl = document.getElementById('do-status');
+          if (statusEl) statusEl.textContent = '';
+          dlg.showModal();
+        }
+      };
+
+      createDevOrderBtn.onclick = openDevDlg;
+
+      const cancelBtn = document.getElementById('do-cancel');
+      if (cancelBtn) {
+        cancelBtn.onclick = () => {
+          const dlg = document.getElementById('dev-order-dlg');
+          if (dlg) dlg.close();
+        };
+      }
+
+      const submitDevOrder = async (e) => {
+        if (e) e.preventDefault();
+        const dlg = document.getElementById('dev-order-dlg');
+        const statusEl = document.getElementById('do-status');
+        if (statusEl) {
+          statusEl.style.color = 'var(--text)';
+          statusEl.textContent = 'Submitting order...';
+        }
+
+        const type = document.getElementById('do-type')?.value || 'Follow';
+        const targetUrl = (document.getElementById('do-target-url')?.value || '').trim();
+        const targetUsername = (document.getElementById('do-target-user')?.value || '').trim();
+        const quantity = parseInt(document.getElementById('do-quantity')?.value, 10) || 10;
+        const commentText = (document.getElementById('do-comments')?.value || '').trim();
+
+        if (!targetUrl) {
+          if (statusEl) {
+            statusEl.style.color = 'var(--danger)';
+            statusEl.textContent = 'Target URL is required.';
+          }
+          return;
+        }
+
+        try {
+          const headers = { 'Content-Type': 'application/json' };
+          const token = sessionToken();
+          if (token) headers['X-Admin-Session'] = token;
+
+          const res = await fetch('/api/admin/orders/create-test', {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({
+              orderType: type,
+              targetUrl: targetUrl,
+              targetUsername: targetUsername || null,
+              quantity: quantity,
+              commentText: commentText || null
+            })
+          });
+
+          if (res.ok) {
+            if (statusEl) {
+              statusEl.style.color = 'var(--ok)';
+              statusEl.textContent = 'Order created successfully!';
+            }
+            setTimeout(() => {
+              if (dlg) dlg.close();
+              const form = document.getElementById('dev-order-form');
+              if (form) form.reset();
+              page = 1;
+              refresh();
+            }, 600);
+          } else {
+            let msg = 'Failed to create order';
+            try {
+              const err = await res.json();
+              msg = err.message || err.detail || msg;
+            } catch (_) {}
+            if (statusEl) {
+              statusEl.style.color = 'var(--danger)';
+              statusEl.textContent = msg;
+            }
+          }
+        } catch (err) {
+          if (statusEl) {
+            statusEl.style.color = 'var(--danger)';
+            statusEl.textContent = 'Network error: ' + (err.message || err);
+          }
+        }
+      };
+
+      const form = document.getElementById('dev-order-form');
+      if (form) {
+        form.onsubmit = submitDevOrder;
+      }
+      const submitBtn = document.getElementById('do-submit');
+      if (submitBtn) {
+        submitBtn.onclick = submitDevOrder;
+      }
+    }
   </script>
 </body>
-
 </html>
