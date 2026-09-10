@@ -47,7 +47,7 @@ Set `API_BASE_URL` in `android-client/app/build.gradle.kts` for debug, staging, 
 Current placeholder:
 
 ```text
-https://feedpilot-api-ount.onrender.com/
+https://feedpilot-api-ount-kooq.onrender.com/
 ```
 
 ## Auto Update

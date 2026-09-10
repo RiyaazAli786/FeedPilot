@@ -1,5 +1,5 @@
 param(
-    [string]$BackendUrl = "https://feedpilot-api-ount.onrender.com",
+    [string]$BackendUrl = "https://feedpilot-api-ount-kooq.onrender.com",
     [string]$AdminKey = "",
     [string]$ReleaseNotes = "",
     [string]$ForceUpdate = ""

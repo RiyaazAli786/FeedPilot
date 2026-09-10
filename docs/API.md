@@ -3,7 +3,7 @@
 Base URL for production should be your Render service URL, for example:
 
 ```text
-https://feedpilot-api-ount.onrender.com/
+https://feedpilot-api-ount-kooq.onrender.com/
 ```
 
 All normal app endpoints use bearer JWT auth after device/login auth.

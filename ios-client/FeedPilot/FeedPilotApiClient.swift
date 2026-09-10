@@ -4,7 +4,7 @@ final class FeedPilotApiClient {
     static let shared = FeedPilotApiClient()
 
     var accessToken: String?
-    var baseURL = URL(string: "https://feedpilot-api-ount.onrender.com/")!
+    var baseURL = URL(string: "https://feedpilot-api-ount-kooq.onrender.com/")!
 
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
