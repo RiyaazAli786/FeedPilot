@@ -355,6 +355,79 @@ public class InstagramUserIdCache
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
+public class FeedBridgeDeviceState
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? UserId { get; set; }
+    public string AppId { get; set; } = ClientIdentityDefaults.Unknown;
+    public string DeviceId { get; set; } = string.Empty;
+    public string InstallationId { get; set; } = string.Empty;
+    public string? AppInstanceId { get; set; }
+    public string? DeviceModel { get; set; }
+    public string? AndroidVersion { get; set; }
+    public string? AppVersion { get; set; }
+    public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;
+    public bool BridgeEnabled { get; set; } = true;
+    public int? BatteryLevel { get; set; }
+    public string? NetworkType { get; set; }
+    public string? ActiveAccountUsername { get; set; }
+    public string? LoggedInAccountsJson { get; set; }
+    public string? CapabilitiesJson { get; set; }
+    public int FailureCount { get; set; }
+    public DateTime? CooldownUntil { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class FeedBridgeAccountState
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? AccountId { get; set; }
+    public Guid? UserId { get; set; }
+    public string AppId { get; set; } = ClientIdentityDefaults.Unknown;
+    public string DeviceId { get; set; } = string.Empty;
+    public string InstallationId { get; set; } = string.Empty;
+    public string InstagramUsername { get; set; } = string.Empty;
+    public string? InstagramUserId { get; set; }
+    public AccountStatus Status { get; set; } = AccountStatus.Active;
+    public DateTime? LastValidatedAt { get; set; }
+    public DateTime? LastUsedAt { get; set; }
+    public bool IsBusy { get; set; }
+    public int FailureCount { get; set; }
+    public DateTime? CooldownUntil { get; set; }
+    public string? LastErrorCode { get; set; }
+    public string? LastErrorMessage { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
+public class FeedBridgeJob
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string? ExternalRequestId { get; set; }
+    public string ClientName { get; set; } = "GetIGFeed";
+    public string? TargetUsername { get; set; }
+    public string? TargetUserId { get; set; }
+    public int Limit { get; set; } = 12;
+    public string? MaxId { get; set; }
+    public bool IncludeStories { get; set; }
+    public FeedBridgeJobStatus Status { get; set; } = FeedBridgeJobStatus.Pending;
+    public Guid? AssignedAccountId { get; set; }
+    public Guid? AssignedAccountStateId { get; set; }
+    public string? AssignedDeviceId { get; set; }
+    public string? AssignedInstallationId { get; set; }
+    public string? RequestJson { get; set; }
+    public string? ResponseJson { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public int Attempt { get; set; } = 1;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? AssignedAt { get; set; }
+    public DateTime ExpiresAt { get; set; } = DateTime.UtcNow.AddSeconds(40);
+    public DateTime? CompletedAt { get; set; }
+    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+}
+
 /// <summary>
 /// A profile the user wants to watch. This is intentionally separate from the logged-in
 /// Instagram accounts that perform work; users can track public/profile handles without making

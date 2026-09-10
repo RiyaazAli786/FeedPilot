@@ -433,9 +433,131 @@ public static class DatabaseSchemaMigrator
                 }
             }
 
+            try { EnsureFeedBridgeSchema(db, isPostgres, isSqlite); } catch { }
             try { BackfillAppInstallationsFromDevices(db); } catch { }
         }
         catch { }
+    }
+
+    private static void EnsureFeedBridgeSchema(AppDbContext db, bool isPostgres, bool isSqlite)
+    {
+        if (isPostgres)
+        {
+            var sqls = new[]
+            {
+                "CREATE TABLE IF NOT EXISTS \"FeedBridgeDeviceStates\" (" +
+                "    \"Id\" uuid NOT NULL CONSTRAINT \"PK_FeedBridgeDeviceStates\" PRIMARY KEY," +
+                "    \"UserId\" uuid NULL," +
+                "    \"AppId\" character varying(128) NOT NULL DEFAULT 'unknown'," +
+                "    \"DeviceId\" character varying(128) NOT NULL," +
+                "    \"InstallationId\" character varying(128) NOT NULL," +
+                "    \"AppInstanceId\" text," +
+                "    \"DeviceModel\" text," +
+                "    \"AndroidVersion\" text," +
+                "    \"AppVersion\" text," +
+                "    \"LastSeenAt\" timestamp with time zone NOT NULL," +
+                "    \"BridgeEnabled\" boolean NOT NULL DEFAULT true," +
+                "    \"BatteryLevel\" integer," +
+                "    \"NetworkType\" character varying(64)," +
+                "    \"ActiveAccountUsername\" character varying(128)," +
+                "    \"LoggedInAccountsJson\" text," +
+                "    \"CapabilitiesJson\" text," +
+                "    \"FailureCount\" integer NOT NULL DEFAULT 0," +
+                "    \"CooldownUntil\" timestamp with time zone," +
+                "    \"CreatedAt\" timestamp with time zone NOT NULL," +
+                "    \"UpdatedAt\" timestamp with time zone NOT NULL" +
+                ");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_AppId_DeviceId\" ON \"FeedBridgeDeviceStates\" (\"AppId\", \"DeviceId\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_InstallationId\" ON \"FeedBridgeDeviceStates\" (\"InstallationId\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_LastSeenAt\" ON \"FeedBridgeDeviceStates\" (\"LastSeenAt\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_BridgeEnabled_LastSeenAt\" ON \"FeedBridgeDeviceStates\" (\"BridgeEnabled\", \"LastSeenAt\");",
+
+                "CREATE TABLE IF NOT EXISTS \"FeedBridgeAccountStates\" (" +
+                "    \"Id\" uuid NOT NULL CONSTRAINT \"PK_FeedBridgeAccountStates\" PRIMARY KEY," +
+                "    \"AccountId\" uuid NULL," +
+                "    \"UserId\" uuid NULL," +
+                "    \"AppId\" character varying(128) NOT NULL DEFAULT 'unknown'," +
+                "    \"DeviceId\" character varying(128) NOT NULL," +
+                "    \"InstallationId\" character varying(128) NOT NULL," +
+                "    \"InstagramUsername\" character varying(128) NOT NULL," +
+                "    \"InstagramUserId\" character varying(64)," +
+                "    \"Status\" integer NOT NULL DEFAULT 0," +
+                "    \"LastValidatedAt\" timestamp with time zone," +
+                "    \"LastUsedAt\" timestamp with time zone," +
+                "    \"IsBusy\" boolean NOT NULL DEFAULT false," +
+                "    \"FailureCount\" integer NOT NULL DEFAULT 0," +
+                "    \"CooldownUntil\" timestamp with time zone," +
+                "    \"LastErrorCode\" character varying(64)," +
+                "    \"LastErrorMessage\" character varying(512)," +
+                "    \"CreatedAt\" timestamp with time zone NOT NULL," +
+                "    \"UpdatedAt\" timestamp with time zone NOT NULL" +
+                ");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_Status_IsBusy_CooldownUntil\" ON \"FeedBridgeAccountStates\" (\"Status\", \"IsBusy\", \"CooldownUntil\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_AppId_DeviceId\" ON \"FeedBridgeAccountStates\" (\"AppId\", \"DeviceId\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_AccountId\" ON \"FeedBridgeAccountStates\" (\"AccountId\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_InstagramUsername\" ON \"FeedBridgeAccountStates\" (\"InstagramUsername\");",
+
+                "CREATE TABLE IF NOT EXISTS \"FeedBridgeJobs\" (" +
+                "    \"Id\" uuid NOT NULL CONSTRAINT \"PK_FeedBridgeJobs\" PRIMARY KEY," +
+                "    \"ExternalRequestId\" character varying(128)," +
+                "    \"ClientName\" character varying(64) NOT NULL DEFAULT 'GetIGFeed'," +
+                "    \"TargetUsername\" character varying(128)," +
+                "    \"TargetUserId\" character varying(64)," +
+                "    \"Limit\" integer NOT NULL DEFAULT 12," +
+                "    \"MaxId\" text," +
+                "    \"IncludeStories\" boolean NOT NULL DEFAULT false," +
+                "    \"Status\" integer NOT NULL DEFAULT 0," +
+                "    \"AssignedAccountId\" uuid NULL," +
+                "    \"AssignedAccountStateId\" uuid NULL," +
+                "    \"AssignedDeviceId\" character varying(128)," +
+                "    \"AssignedInstallationId\" character varying(128)," +
+                "    \"RequestJson\" text," +
+                "    \"ResponseJson\" text," +
+                "    \"ErrorCode\" character varying(64)," +
+                "    \"ErrorMessage\" character varying(512)," +
+                "    \"Attempt\" integer NOT NULL DEFAULT 1," +
+                "    \"CreatedAt\" timestamp with time zone NOT NULL," +
+                "    \"AssignedAt\" timestamp with time zone," +
+                "    \"ExpiresAt\" timestamp with time zone NOT NULL," +
+                "    \"CompletedAt\" timestamp with time zone," +
+                "    \"UpdatedAt\" timestamp with time zone NOT NULL" +
+                ");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeJobs_Status_ExpiresAt\" ON \"FeedBridgeJobs\" (\"Status\", \"ExpiresAt\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeJobs_AssignedDeviceId_Status\" ON \"FeedBridgeJobs\" (\"AssignedDeviceId\", \"Status\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeJobs_ExternalRequestId\" ON \"FeedBridgeJobs\" (\"ExternalRequestId\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeJobs_CreatedAt\" ON \"FeedBridgeJobs\" (\"CreatedAt\");"
+            };
+
+            foreach (var sql in sqls)
+            {
+                try { db.Database.ExecuteSqlRaw(sql); } catch { }
+            }
+        }
+        else if (isSqlite)
+        {
+            var sqls = new[]
+            {
+                "CREATE TABLE IF NOT EXISTS FeedBridgeDeviceStates (Id TEXT NOT NULL CONSTRAINT PK_FeedBridgeDeviceStates PRIMARY KEY, UserId TEXT, AppId TEXT NOT NULL DEFAULT 'unknown', DeviceId TEXT NOT NULL, InstallationId TEXT NOT NULL, AppInstanceId TEXT, DeviceModel TEXT, AndroidVersion TEXT, AppVersion TEXT, LastSeenAt TEXT NOT NULL, BridgeEnabled INTEGER NOT NULL DEFAULT 1, BatteryLevel INTEGER, NetworkType TEXT, ActiveAccountUsername TEXT, LoggedInAccountsJson TEXT, CapabilitiesJson TEXT, FailureCount INTEGER NOT NULL DEFAULT 0, CooldownUntil TEXT, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_AppId_DeviceId ON FeedBridgeDeviceStates (AppId, DeviceId);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_InstallationId ON FeedBridgeDeviceStates (InstallationId);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_LastSeenAt ON FeedBridgeDeviceStates (LastSeenAt);",
+                "CREATE TABLE IF NOT EXISTS FeedBridgeAccountStates (Id TEXT NOT NULL CONSTRAINT PK_FeedBridgeAccountStates PRIMARY KEY, AccountId TEXT, UserId TEXT, AppId TEXT NOT NULL DEFAULT 'unknown', DeviceId TEXT NOT NULL, InstallationId TEXT NOT NULL, InstagramUsername TEXT NOT NULL, InstagramUserId TEXT, Status INTEGER NOT NULL DEFAULT 0, LastValidatedAt TEXT, LastUsedAt TEXT, IsBusy INTEGER NOT NULL DEFAULT 0, FailureCount INTEGER NOT NULL DEFAULT 0, CooldownUntil TEXT, LastErrorCode TEXT, LastErrorMessage TEXT, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeAccountStates_Status_IsBusy_CooldownUntil ON FeedBridgeAccountStates (Status, IsBusy, CooldownUntil);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeAccountStates_AppId_DeviceId ON FeedBridgeAccountStates (AppId, DeviceId);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeAccountStates_AccountId ON FeedBridgeAccountStates (AccountId);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeAccountStates_InstagramUsername ON FeedBridgeAccountStates (InstagramUsername);",
+                "CREATE TABLE IF NOT EXISTS FeedBridgeJobs (Id TEXT NOT NULL CONSTRAINT PK_FeedBridgeJobs PRIMARY KEY, ExternalRequestId TEXT, ClientName TEXT NOT NULL DEFAULT 'GetIGFeed', TargetUsername TEXT, TargetUserId TEXT, Limit INTEGER NOT NULL DEFAULT 12, MaxId TEXT, IncludeStories INTEGER NOT NULL DEFAULT 0, Status INTEGER NOT NULL DEFAULT 0, AssignedAccountId TEXT, AssignedAccountStateId TEXT, AssignedDeviceId TEXT, AssignedInstallationId TEXT, RequestJson TEXT, ResponseJson TEXT, ErrorCode TEXT, ErrorMessage TEXT, Attempt INTEGER NOT NULL DEFAULT 1, CreatedAt TEXT NOT NULL, AssignedAt TEXT, ExpiresAt TEXT NOT NULL, CompletedAt TEXT, UpdatedAt TEXT NOT NULL);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeJobs_Status_ExpiresAt ON FeedBridgeJobs (Status, ExpiresAt);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeJobs_AssignedDeviceId_Status ON FeedBridgeJobs (AssignedDeviceId, Status);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeJobs_ExternalRequestId ON FeedBridgeJobs (ExternalRequestId);",
+                "CREATE INDEX IF NOT EXISTS IX_FeedBridgeJobs_CreatedAt ON FeedBridgeJobs (CreatedAt);"
+            };
+
+            foreach (var sql in sqls)
+            {
+                try { db.Database.ExecuteSqlRaw(sql); } catch { }
+            }
+        }
     }
 
     /// <summary>

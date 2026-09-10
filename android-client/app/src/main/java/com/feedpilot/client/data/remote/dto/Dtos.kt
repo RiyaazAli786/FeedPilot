@@ -664,3 +664,125 @@ data class SaveWatchedPostRequest(
     val commentCount: Long = 0,
     val takenAt: String? = null
 )
+
+// ---------- Instagram Device Feed Bridge ----------
+@Serializable
+data class BridgeHeartbeatAccountDto(
+    val accountId: String? = null,
+    val username: String,
+    val instagramUserId: String? = null,
+    val status: String = "Active",
+    val isLoggedIn: Boolean = true
+)
+
+@Serializable
+data class BridgeHeartbeatRequest(
+    val deviceId: String,
+    val installationId: String,
+    val appInstanceId: String? = null,
+    val deviceModel: String? = null,
+    val androidVersion: String? = null,
+    val appVersion: String? = null,
+    val batteryLevel: Int? = null,
+    val networkType: String? = null,
+    val activeAccountUsername: String? = null,
+    val loggedInAccounts: List<String>? = null,
+    val accounts: List<BridgeHeartbeatAccountDto>? = null,
+    val capabilities: List<String>? = listOf("instagram-feed"),
+    val bridgeEnabled: Boolean = true
+)
+
+@Serializable
+data class BridgeHeartbeatResponse(
+    val accepted: Boolean,
+    val serverTime: String,
+    val pendingJobs: Int = 0
+)
+
+@Serializable
+data class BridgeJobDto(
+    val id: String,
+    val targetUsername: String? = null,
+    val targetUserId: String? = null,
+    val limit: Int = 12,
+    val maxId: String? = null,
+    val includeStories: Boolean = false,
+    val expiresAt: String,
+    val assignedAccountId: String? = null,
+    val accountUsername: String? = null
+)
+
+@Serializable
+data class BridgeFeedProfileDto(
+    val id: String,
+    val username: String,
+    val fullName: String,
+    val biography: String,
+    val profilePicUrl: String,
+    val followerCount: Long,
+    val followingCount: Long,
+    val mediaCount: Long,
+    val isPrivate: Boolean,
+    val isVerified: Boolean
+)
+
+@Serializable
+data class BridgeFeedItemDto(
+    val id: String,
+    val code: String,
+    val caption: String? = null,
+    val mediaType: Int,
+    val displayUrl: String? = null,
+    val videoUrl: String? = null,
+    val likeCount: Long,
+    val commentCount: Long,
+    val repostCount: Long = 0,
+    val takenAt: Long,
+    val mediaId: String
+)
+
+@Serializable
+data class BridgeFeedResultDataDto(
+    val profile: BridgeFeedProfileDto? = null,
+    val items: List<BridgeFeedItemDto>,
+    val maxId: String? = null,
+    val hasMore: Boolean = false,
+    val stories: List<BridgeStoryItemDto> = emptyList(),
+    val highlights: List<BridgeHighlightDto> = emptyList()
+)
+
+@Serializable
+data class CompleteBridgeJobRequest(val data: BridgeFeedResultDataDto)
+
+@Serializable
+data class FailBridgeJobRequest(
+    val code: String,
+    val message: String? = null,
+    val accountStatus: String? = null
+)
+
+@Serializable
+data class BridgeJobResultDto(
+    val accepted: Boolean,
+    val status: String
+)
+
+@Serializable
+data class BridgeStoryItemDto(
+    val id: String,
+    val code: String? = null,
+    val mediaType: Int,
+    val displayUrl: String? = null,
+    val videoUrl: String? = null,
+    val takenAt: Long,
+    val expiringAt: Long,
+    val mediaId: String
+)
+
+@Serializable
+data class BridgeHighlightDto(
+    val id: String,
+    val title: String? = null,
+    val coverUrl: String? = null,
+    val items: List<BridgeStoryItemDto> = emptyList()
+)

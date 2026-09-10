@@ -85,6 +85,12 @@
                 android:value="CSV Account Login Import" />
         </service>
 
+        <!-- Low-latency bridge loop for GetIGFeed feed/story/highlight requests. -->
+        <service
+            android:name=".service.FeedBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- FileProvider for delivering downloaded update APKs to the package installer -->
         <provider
             android:name="androidx.core.content.FileProvider"

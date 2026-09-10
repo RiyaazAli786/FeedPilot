@@ -27,6 +27,9 @@ public class AppDbContext : DbContext
     public DbSet<PickedUsername> PickedUsernames => Set<PickedUsername>();
     public DbSet<AppInstallation> AppInstallations => Set<AppInstallation>();
     public DbSet<InstallationChallenge> InstallationChallenges => Set<InstallationChallenge>();
+    public DbSet<FeedBridgeDeviceState> FeedBridgeDeviceStates => Set<FeedBridgeDeviceState>();
+    public DbSet<FeedBridgeAccountState> FeedBridgeAccountStates => Set<FeedBridgeAccountState>();
+    public DbSet<FeedBridgeJob> FeedBridgeJobs => Set<FeedBridgeJob>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -226,6 +229,50 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.ExpiresAt);
             e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();
             e.Property(x => x.Challenge).HasMaxLength(128).IsRequired();
+        });
+
+        b.Entity<FeedBridgeDeviceState>(e =>
+        {
+            e.HasIndex(x => new { x.AppId, x.DeviceId });
+            e.HasIndex(x => x.InstallationId);
+            e.HasIndex(x => x.LastSeenAt);
+            e.HasIndex(x => new { x.BridgeEnabled, x.LastSeenAt });
+            e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.DeviceId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.ActiveAccountUsername).HasMaxLength(128);
+            e.Property(x => x.NetworkType).HasMaxLength(64);
+        });
+
+        b.Entity<FeedBridgeAccountState>(e =>
+        {
+            e.HasIndex(x => new { x.Status, x.IsBusy, x.CooldownUntil });
+            e.HasIndex(x => new { x.AppId, x.DeviceId });
+            e.HasIndex(x => x.AccountId);
+            e.HasIndex(x => x.InstagramUsername);
+            e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.DeviceId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();
+            e.Property(x => x.InstagramUsername).HasMaxLength(128).IsRequired();
+            e.Property(x => x.InstagramUserId).HasMaxLength(64);
+            e.Property(x => x.LastErrorCode).HasMaxLength(64);
+            e.Property(x => x.LastErrorMessage).HasMaxLength(512);
+        });
+
+        b.Entity<FeedBridgeJob>(e =>
+        {
+            e.HasIndex(x => new { x.Status, x.ExpiresAt });
+            e.HasIndex(x => new { x.AssignedDeviceId, x.Status });
+            e.HasIndex(x => x.ExternalRequestId);
+            e.HasIndex(x => x.CreatedAt);
+            e.Property(x => x.ExternalRequestId).HasMaxLength(128);
+            e.Property(x => x.ClientName).HasMaxLength(64).IsRequired();
+            e.Property(x => x.TargetUsername).HasMaxLength(128);
+            e.Property(x => x.TargetUserId).HasMaxLength(64);
+            e.Property(x => x.AssignedDeviceId).HasMaxLength(128);
+            e.Property(x => x.AssignedInstallationId).HasMaxLength(128);
+            e.Property(x => x.ErrorCode).HasMaxLength(64);
+            e.Property(x => x.ErrorMessage).HasMaxLength(512);
         });
     }
 

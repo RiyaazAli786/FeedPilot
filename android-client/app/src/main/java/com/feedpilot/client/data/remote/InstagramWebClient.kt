@@ -211,6 +211,25 @@ data class InstagramUserFeedResult(
     val hasMore: Boolean
 )
 
+
+data class InstagramStoryItem(
+    val id: String,
+    val code: String?,
+    val mediaType: Int,
+    val displayUrl: String?,
+    val videoUrl: String?,
+    val takenAt: Long,
+    val expiringAt: Long,
+    val mediaId: String
+)
+
+data class InstagramHighlightItem(
+    val id: String,
+    val title: String?,
+    val coverUrl: String?,
+    val items: List<InstagramStoryItem> = emptyList()
+)
+
 data class InstagramPostDetails(
     val id: String,
     val code: String,
@@ -2076,6 +2095,122 @@ class InstagramWebClient @Inject constructor(
             false
         }
     }
+    suspend fun fetchUserStoryItems(userId: String, sessionCookies: String): List<InstagramStoryItem> = withContext(Dispatchers.IO) {
+        try {
+            val json = fetchInstagramJson("https://www.instagram.com/api/v1/feed/user/$userId/story/", sessionCookies)
+                ?: return@withContext emptyList()
+            val items = json.optJSONObject("reel")?.optJSONArray("items") ?: return@withContext emptyList()
+            parseStoryItems(items)
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchUserStoryItems failed for $userId", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchUserHighlights(
+        userId: String,
+        sessionCookies: String,
+        includeDetails: Boolean,
+        detailLimit: Int
+    ): List<InstagramHighlightItem> = withContext(Dispatchers.IO) {
+        try {
+            val json = fetchInstagramJson("https://www.instagram.com/api/v1/highlights/$userId/highlights_tray/", sessionCookies)
+                ?: return@withContext emptyList()
+            val tray = json.optJSONArray("tray") ?: json.optJSONArray("items") ?: return@withContext emptyList()
+            val highlights = mutableListOf<InstagramHighlightItem>()
+            for (i in 0 until tray.length()) {
+                val obj = tray.optJSONObject(i) ?: continue
+                val id = obj.optString("id").ifBlank { obj.optString("reel_id") }
+                if (id.isBlank()) continue
+                val cover = obj.optJSONObject("cover_media")
+                    ?.optJSONObject("cropped_image_version")
+                    ?.optString("url")
+                    ?.ifBlank { null }
+                    ?: obj.optJSONObject("cover_media")
+                        ?.optJSONObject("image_versions2")
+                        ?.optJSONArray("candidates")
+                        ?.optJSONObject(0)
+                        ?.optString("url")
+                        ?.ifBlank { null }
+                highlights.add(InstagramHighlightItem(id.removePrefix("highlight:"), obj.optString("title").ifBlank { null }, cover))
+            }
+            if (!includeDetails || highlights.isEmpty()) return@withContext highlights
+            val maxDetails = if (detailLimit <= 0) highlights.size else minOf(detailLimit, highlights.size)
+            highlights.mapIndexed { index, highlight ->
+                if (index >= maxDetails) highlight else highlight.copy(items = fetchHighlightItems(highlight.id, sessionCookies))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchUserHighlights failed for $userId", e)
+            emptyList()
+        }
+    }
+
+    private fun fetchHighlightItems(highlightId: String, sessionCookies: String): List<InstagramStoryItem> {
+        val bare = highlightId.removePrefix("highlight:")
+        val json = fetchInstagramJsonBlocking(
+            "https://www.instagram.com/api/v1/feed/reels_media/?reel_ids=highlight:$bare",
+            sessionCookies
+        ) ?: return emptyList()
+        val reels = json.optJSONObject("reels") ?: return emptyList()
+        val reel = reels.optJSONObject("highlight:$bare") ?: reels.optJSONObject(bare) ?: return emptyList()
+        return parseStoryItems(reel.optJSONArray("items") ?: return emptyList())
+    }
+
+    private suspend fun fetchInstagramJson(url: String, sessionCookies: String): JSONObject? =
+        withContext(Dispatchers.IO) { fetchInstagramJsonBlocking(url, sessionCookies) }
+
+    private fun fetchInstagramJsonBlocking(url: String, sessionCookies: String): JSONObject? {
+        return try {
+            val csrfToken = extractCookie(sessionCookies, "csrftoken") ?: ""
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .applyDeviceHeaders()
+                .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                .header("Accept", "*/*")
+                .header("Cookie", sessionCookies)
+                .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+            if (csrfToken.isNotBlank()) reqBuilder.header("x-csrftoken", csrfToken)
+
+            http.newCall(reqBuilder.build()).execute().use { response ->
+                val bodyText = response.body?.string() ?: ""
+                if (!response.isSuccessful || bodyText.isBlank()) return null
+                JSONObject(bodyText)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchInstagramJsonBlocking failed for $url", e)
+            null
+        }
+    }
+
+    private fun parseStoryItems(items: org.json.JSONArray): List<InstagramStoryItem> {
+        val parsed = mutableListOf<InstagramStoryItem>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val image = item.optJSONObject("image_versions2")
+                ?.optJSONArray("candidates")
+                ?.optJSONObject(0)
+                ?.optString("url")
+                ?.ifBlank { null }
+            val video = item.optJSONArray("video_versions")
+                ?.optJSONObject(0)
+                ?.optString("url")
+                ?.ifBlank { null }
+            parsed.add(
+                InstagramStoryItem(
+                    id = item.optString("id"),
+                    code = item.optString("code").ifBlank { null },
+                    mediaType = item.optInt("media_type", 1),
+                    displayUrl = image,
+                    videoUrl = video,
+                    takenAt = item.optLong("taken_at", 0L),
+                    expiringAt = item.optLong("expiring_at", 0L),
+                    mediaId = item.optString("pk").ifBlank { item.optString("id") }
+                )
+            )
+        }
+        return parsed
+    }
+
 
     /**
      * A GraphQL mutation answers 200 even for some failures, so "ok" means: a 2xx response
@@ -3863,3 +3998,5 @@ data class UsernameValidationResult(
     val suggestions: List<String>,
     val error: String? = null
 )
+
+

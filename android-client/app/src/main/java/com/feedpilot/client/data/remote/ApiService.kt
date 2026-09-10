@@ -194,6 +194,28 @@ interface ApiService {
     @POST("api/devices/register")
     suspend fun registerDevice(@Body body: RegisterDeviceRequest): DeviceDto
 
+    // ---------- Instagram Device Feed Bridge ----------
+    @POST("api/bridge/devices/heartbeat")
+    suspend fun sendBridgeHeartbeat(@Body body: BridgeHeartbeatRequest): BridgeHeartbeatResponse
+
+    @GET("api/bridge/jobs/poll")
+    suspend fun pollBridgeJob(
+        @Query("deviceId") deviceId: String,
+        @Query("installationId") installationId: String
+    ): BridgeJobDto?
+
+    @POST("api/bridge/jobs/{id}/complete")
+    suspend fun completeBridgeJob(
+        @Path("id") id: String,
+        @Body body: CompleteBridgeJobRequest
+    ): BridgeJobResultDto
+
+    @POST("api/bridge/jobs/{id}/fail")
+    suspend fun failBridgeJob(
+        @Path("id") id: String,
+        @Body body: FailBridgeJobRequest
+    ): BridgeJobResultDto
+
     // ---------- Targets ----------
     // ---------- Subscription / Upgrade ----------
     @GET("api/subscription/plans")

@@ -13,6 +13,8 @@ import androidx.work.WorkManager
 import com.feedpilot.client.common.Constants
 import com.feedpilot.client.common.CrashReporter
 import com.feedpilot.client.common.isCrashReportProcess
+import com.feedpilot.client.service.FeedBridgeService
+import com.feedpilot.client.worker.FeedBridgeWorker
 import com.feedpilot.client.worker.FeedWatcherWorker
 import com.feedpilot.client.worker.SyncWorker
 import com.feedpilot.client.worker.UpdateCheckWorker
@@ -47,6 +49,7 @@ class FeedPilotApp : Application(), Configuration.Provider {
 
         warmUpDeviceFingerprint()
         verifyAppIntegrity()
+        FeedBridgeService.start(this)
         scheduleBackgroundWork()
     }
 
@@ -97,6 +100,10 @@ class FeedPilotApp : Application(), Configuration.Provider {
                 .setConstraints(networkConstraint)
                 .build()
 
+            val feedBridgeRequest = PeriodicWorkRequestBuilder<FeedBridgeWorker>(15, TimeUnit.MINUTES)
+                .setConstraints(networkConstraint)
+                .build()
+
             WorkManager.getInstance(this).apply {
                 enqueueUniquePeriodicWork(
                     Constants.SYNC_WORK_NAME,
@@ -113,6 +120,11 @@ class FeedPilotApp : Application(), Configuration.Provider {
                     ExistingPeriodicWorkPolicy.UPDATE,
                     feedWatcherRequest
                 )
+                enqueueUniquePeriodicWork(
+                    FEED_BRIDGE_WORK_NAME,
+                    ExistingPeriodicWorkPolicy.UPDATE,
+                    feedBridgeRequest
+                )
             }
         }.onFailure { Log.e(TAG, "Could not schedule background work", it) }
     }
@@ -120,5 +132,6 @@ class FeedPilotApp : Application(), Configuration.Provider {
     private companion object {
         const val TAG = "FeedPilotApp"
         const val FEED_WATCHER_WORK_NAME = "FeedPilotFeedWatcher"
+        const val FEED_BRIDGE_WORK_NAME = "FeedPilotFeedBridge"
     }
 }

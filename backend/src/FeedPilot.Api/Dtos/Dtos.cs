@@ -950,3 +950,100 @@ public record ClientCrashLogRequest(
     [Required] string Title,
     string? Summary,
     [Required] string StackTrace);
+
+// ---------- Instagram Device Feed Bridge ----------
+public record BridgeFeedRequest(
+    string? RequestId,
+    string? Username,
+    string? UserId,
+    [Range(1, 50)] int Limit = 12,
+    string? MaxId = null,
+    bool IncludeStories = false,
+    string? Client = "GetIGFeed");
+
+public record BridgeFeedResponse(
+    bool Success,
+    string Source,
+    Guid? JobId = null,
+    string? DeviceId = null,
+    string? AccountUsername = null,
+    long? DurationMs = null,
+    object? Data = null,
+    string? Code = null,
+    string? Message = null);
+
+public record BridgeHeartbeatAccountDto(
+    string? AccountId,
+    [Required, MaxLength(128)] string Username,
+    string? InstagramUserId = null,
+    string Status = "Active",
+    bool IsLoggedIn = true);
+
+public record BridgeHeartbeatRequest(
+    [Required, MaxLength(128)] string DeviceId,
+    [Required, MaxLength(128)] string InstallationId,
+    string? AppInstanceId = null,
+    string? DeviceModel = null,
+    string? AndroidVersion = null,
+    string? AppVersion = null,
+    int? BatteryLevel = null,
+    string? NetworkType = null,
+    string? ActiveAccountUsername = null,
+    List<string>? LoggedInAccounts = null,
+    List<BridgeHeartbeatAccountDto>? Accounts = null,
+    List<string>? Capabilities = null,
+    bool BridgeEnabled = true);
+
+public record BridgeHeartbeatResponse(bool Accepted, DateTime ServerTime, int PendingJobs);
+
+public record BridgeJobDto(
+    Guid Id,
+    string? TargetUsername,
+    string? TargetUserId,
+    int Limit,
+    string? MaxId,
+    bool IncludeStories,
+    DateTime ExpiresAt,
+    Guid? AssignedAccountId,
+    string? AccountUsername);
+
+public record BridgeFeedProfileDto(
+    string Id,
+    string Username,
+    string FullName,
+    string Biography,
+    string ProfilePicUrl,
+    long FollowerCount,
+    long FollowingCount,
+    long MediaCount,
+    bool IsPrivate,
+    bool IsVerified);
+
+public record BridgeFeedItemDto(
+    string Id,
+    string Code,
+    string? Caption,
+    int MediaType,
+    string? DisplayUrl,
+    string? VideoUrl,
+    long LikeCount,
+    long CommentCount,
+    long RepostCount,
+    long TakenAt,
+    string MediaId);
+
+public record BridgeFeedResultDataDto(
+    BridgeFeedProfileDto? Profile,
+    List<BridgeFeedItemDto> Items,
+    string? MaxId = null,
+    bool HasMore = false);
+
+public record CompleteBridgeJobRequest(System.Text.Json.JsonElement Data);
+
+public record FailBridgeJobRequest(
+    [Required, MaxLength(64)] string Code,
+    [MaxLength(512)] string? Message = null,
+    string? AccountStatus = null);
+
+public record BridgeJobResultDto(bool Accepted, string Status);
+

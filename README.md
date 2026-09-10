@@ -69,6 +69,7 @@ android-client/app/build/outputs/apk/release/app-release.apk
 - [Build](docs/BUILD.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [iOS](docs/IOS.md)
+- [Instagram Device Feed Bridge Architecture](docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md)
 
 ## Security Notes
 

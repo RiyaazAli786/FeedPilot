@@ -125,3 +125,14 @@ public enum AppOrderStatus
     /// <summary>The Instagram target no longer resolves, so no worker should claim it again.</summary>
     NotFound
 }
+
+public enum FeedBridgeJobStatus
+{
+    Pending,
+    Assigned,
+    Running,
+    Completed,
+    Failed,
+    TimedOut,
+    Cancelled
+}

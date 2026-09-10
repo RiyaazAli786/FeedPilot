@@ -78,6 +78,21 @@ class InstagramRepository @Inject constructor(
         return instagramWebClient.fetchHasActiveStory(userId, cookies)
     }
 
+
+    suspend fun getUserStoryItems(userId: String, customCookies: String? = null): List<InstagramStoryItem> {
+        val cookies = customCookies ?: getActiveAccountCookies() ?: return emptyList()
+        return instagramWebClient.fetchUserStoryItems(userId, cookies)
+    }
+
+    suspend fun getUserHighlights(
+        userId: String,
+        includeDetails: Boolean,
+        detailLimit: Int,
+        customCookies: String? = null
+    ): List<InstagramHighlightItem> {
+        val cookies = customCookies ?: getActiveAccountCookies() ?: return emptyList()
+        return instagramWebClient.fetchUserHighlights(userId, cookies, includeDetails, detailLimit)
+    }
     /** Fetches media feed for a user ID or username. */
     suspend fun getUserFeed(userId: String, maxId: String? = null, customCookies: String? = null): InstagramUserFeedResult? {
         val cookies = customCookies ?: getActiveAccountCookies() ?: return null

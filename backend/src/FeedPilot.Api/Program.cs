@@ -79,6 +79,7 @@ builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 builder.Services.AddScoped<IAppOrderService, AppOrderService>();
 builder.Services.AddScoped<IUpgradeAssetStorage, UpgradeAssetStorage>();
 builder.Services.AddScoped<IInstagramFeedService, InstagramFeedService>();
+builder.Services.AddScoped<IFeedBridgeService, FeedBridgeService>();
 builder.Services.AddSingleton<CommentFileService>();
 // Installation identity is additive: old clients still work, newer clients can register and verify keys.
 builder.Services.AddScoped<IInstallationService, InstallationService>();
@@ -93,6 +94,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SmmPanelSyncServic
 // Proactively frees orders whose worker-device claim has gone stale, independent of any
 // device polling for work again — see StaleClaimSweepService for why that matters.
 builder.Services.AddHostedService<StaleClaimSweepService>();
+builder.Services.AddHostedService<FeedBridgeJobSweepService>();
 
 // Optional Telegram request logging — see TelegramSettings for the on/off env vars.
 builder.Services.AddHttpClient("Telegram");
