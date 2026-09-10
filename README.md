@@ -64,6 +64,8 @@ android-client/app/build/outputs/apk/release/app-release.apk
 
 ## Documentation
 
+- [Project Context](PROJECT_CONTEXT.md)
+- [Complete Architecture & Workspace Context](context.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
 - [Build](docs/BUILD.md)
