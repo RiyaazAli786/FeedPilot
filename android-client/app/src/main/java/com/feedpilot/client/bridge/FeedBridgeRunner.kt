@@ -95,6 +95,12 @@ class FeedBridgeRunner @Inject constructor(
                 BridgeStatusStore.online()
                 return
             }
+            if (feed.items.isEmpty()) {
+                val profileLabel = feed.profile?.username?.let { "@$it" } ?: feedTarget
+                fail(job, "IG_EMPTY_FEED", "Instagram feed API returned zero posts for $profileLabel.")
+                BridgeStatusStore.online()
+                return
+            }
             val profile = feed.profile
             val feedUserId = job.targetUserId ?: profile?.id ?: feedTarget
 

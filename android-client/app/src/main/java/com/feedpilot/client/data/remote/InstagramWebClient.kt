@@ -2687,13 +2687,17 @@ class InstagramWebClient @Inject constructor(
                 }
                 throwIfInstagramAuthFailure(response.code, bodyText, "feed/user")
 
+                if (bodyText.trimStart().startsWith("<")) {
+                    throw IllegalStateException("login_required: Instagram feed/user returned HTML instead of JSON")
+                }
+
                 val json = JSONObject(bodyText)
-                val itemsArr = json.optJSONArray("items") ?: return@use null
-                val feedItems = parsePrivateFeedItems(itemsArr)
+                val itemsArr = json.optJSONArray("items")
+                val feedItems = itemsArr?.let { parsePrivateFeedItems(it) } ?: emptyList()
                 val hasMore = json.optBoolean("more_available", false) || json.optBoolean("has_more", false)
                 val nextMaxId = json.optString("next_max_id").ifBlank { null }
                 val userObj = json.optJSONObject("user")
-                    ?: itemsArr.optJSONObject(0)?.optJSONObject("user")
+                    ?: itemsArr?.optJSONObject(0)?.optJSONObject("user")
                 val profile = userObj?.let { user ->
                     InstagramUserProfileDetails(
                         id = user.optString("pk_id").ifBlank { user.optString("pk").ifBlank { user.optString("id") } },
@@ -2707,6 +2711,10 @@ class InstagramWebClient @Inject constructor(
                         isPrivate = user.optBoolean("is_private", false),
                         isVerified = user.optBoolean("is_verified", false)
                     )
+                }
+                if (itemsArr == null && profile == null) {
+                    val keys = json.keys().asSequence().take(12).joinToString(",")
+                    throw IllegalStateException("unexpected feed/user response for $userId: keys=$keys body=${bodyText.take(220)}")
                 }
 
                 InstagramUserFeedResult(
