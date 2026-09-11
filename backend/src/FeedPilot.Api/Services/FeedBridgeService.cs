@@ -310,7 +310,7 @@ public class FeedBridgeService : IFeedBridgeService
             .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && (d.CooldownUntil == null || d.CooldownUntil <= now))
             .Select(d => new { d.AppId, d.DeviceId, d.InstallationId });
 
-        return await _db.FeedBridgeAccountStates
+        var joined = await _db.FeedBridgeAccountStates
             .Where(a =>
                 a.Status == AccountStatus.Active &&
                 !a.IsBusy &&
@@ -323,6 +323,49 @@ public class FeedBridgeService : IFeedBridgeService
             .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
             .ThenBy(a => a.CreatedAt)
             .FirstOrDefaultAsync(ct);
+
+        if (joined is not null) return joined;
+
+        var devices = await _db.FeedBridgeDeviceStates
+            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && (d.CooldownUntil == null || d.CooldownUntil <= now))
+            .OrderByDescending(d => d.LastSeenAt)
+            .ToListAsync(ct);
+
+        foreach (var device in devices)
+        {
+            var usernames = ParseLoggedInUsernames(device.LoggedInAccountsJson)
+                .Append(device.ActiveAccountUsername ?? string.Empty)
+                .Select(NormalizeUsername)
+                .Where(u => !string.IsNullOrWhiteSpace(u))
+                .Distinct()
+                .ToList();
+            if (usernames.Count == 0) continue;
+
+            var account = await _db.FeedBridgeAccountStates
+                .Where(a =>
+                    a.Status == AccountStatus.Active &&
+                    !a.IsBusy &&
+                    (a.CooldownUntil == null || a.CooldownUntil <= now) &&
+                    usernames.Contains(a.InstagramUsername))
+                .OrderBy(a => a.FailureCount)
+                .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
+                .ThenBy(a => a.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (account is null) continue;
+
+            account.AppId = device.AppId;
+            account.DeviceId = device.DeviceId;
+            account.InstallationId = device.InstallationId;
+            account.LastValidatedAt = now;
+            account.UpdatedAt = now;
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Feed bridge moved @{Username} account state onto online device {DeviceId}.",
+                account.InstagramUsername, device.DeviceId);
+            return account;
+        }
+
+        return null;
     }
 
     private async Task ReleaseStaleAssignmentsAsync(CancellationToken ct)
@@ -373,10 +416,25 @@ public class FeedBridgeService : IFeedBridgeService
             a.Status == AccountStatus.Active &&
             !a.IsBusy &&
             (a.CooldownUntil == null || a.CooldownUntil <= now), ct);
+        var joinedAvailableAccountCount = await _db.FeedBridgeAccountStates
+            .Where(a =>
+                a.Status == AccountStatus.Active &&
+                !a.IsBusy &&
+                (a.CooldownUntil == null || a.CooldownUntil <= now))
+            .Join(
+                _db.FeedBridgeDeviceStates.Where(d =>
+                    d.BridgeEnabled &&
+                    d.LastSeenAt >= onlineAfter &&
+                    (d.CooldownUntil == null || d.CooldownUntil <= now)),
+                a => new { a.AppId, a.DeviceId, a.InstallationId },
+                d => new { d.AppId, d.DeviceId, d.InstallationId },
+                (a, _) => a)
+            .CountAsync(ct);
 
         return "No active Android device with a valid Instagram session is available. " +
                $"Diagnostics: devices={deviceCount}, onlineDevices={onlineDeviceCount}, " +
-               $"accounts={accountCount}, activeAccounts={activeAccountCount}, availableAccounts={availableAccountCount}.";
+               $"accounts={accountCount}, activeAccounts={activeAccountCount}, " +
+               $"availableAccounts={availableAccountCount}, joinedAvailableAccounts={joinedAvailableAccountCount}.";
     }
 
     private async Task MarkTimedOutAsync(FeedBridgeJob job, CancellationToken ct)
@@ -457,4 +515,17 @@ public class FeedBridgeService : IFeedBridgeService
 
     private static AccountStatus ParseAccountStatus(string? value) =>
         Enum.TryParse<AccountStatus>(value, true, out var status) ? status : AccountStatus.Unknown;
+
+    private static IEnumerable<string> ParseLoggedInUsernames(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json, JsonOptions) ?? new List<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
 }
