@@ -54,11 +54,15 @@ class TargetRepository @Inject constructor(
         Resource.Error(mapError(t, "Couldn't load that post"), t)
     }
 
-    suspend fun fetchUserFeed(userIdOrUsername: String, maxId: String? = null): Resource<InstagramUserFeedResult> = try {
-        // The feed endpoint is /feed/user/<username>/username/ — it expects the USERNAME, and
+    suspend fun fetchUserFeed(
+        userIdOrUsername: String,
+        maxId: String? = null,
+        customCookies: String? = null
+    ): Resource<InstagramUserFeedResult> = try {
+        // The feed endpoint is /feed/user/<username>/username/ - it expects the USERNAME, and
         // returns 0 items when given a numeric id. So pass the handle straight through; do NOT
         // resolve it to a numeric id first (that was silently emptying the posts + like counts).
-        val feedResult = instagramRepository.getUserFeed(userIdOrUsername.trim().removePrefix("@"), maxId)
+        val feedResult = instagramRepository.getUserFeed(userIdOrUsername.trim().removePrefix("@"), maxId, customCookies)
         if (feedResult != null) {
             Resource.Success(feedResult)
         } else {

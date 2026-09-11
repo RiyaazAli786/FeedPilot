@@ -2,6 +2,7 @@ package com.feedpilot.client.bridge
 
 import android.util.Log
 import com.feedpilot.client.common.DeviceIdentity
+import com.feedpilot.client.common.Resource
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountEntity
 import com.feedpilot.client.data.remote.ApiService
@@ -16,6 +17,7 @@ import com.feedpilot.client.data.remote.dto.BridgeStoryItemDto
 import com.feedpilot.client.data.remote.dto.CompleteBridgeJobRequest
 import com.feedpilot.client.data.remote.dto.FailBridgeJobRequest
 import com.feedpilot.client.data.repository.InstagramRepository
+import com.feedpilot.client.data.repository.TargetRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -24,6 +26,7 @@ class FeedBridgeRunner @Inject constructor(
     private val api: ApiService,
     private val accounts: AccountDao,
     private val instagram: InstagramRepository,
+    private val targets: TargetRepository,
     private val identity: DeviceIdentity
 ) {
     suspend fun heartbeat(): Boolean {
@@ -89,11 +92,18 @@ class FeedBridgeRunner @Inject constructor(
 
         try {
             val feedTarget = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId ?: target
-            val feed = instagram.getUserFeed(feedTarget, job.maxId, account.sessionCookies)
-            if (feed == null) {
-                fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $feedTarget.")
-                BridgeStatusStore.online()
-                return
+            val feed = when (val result = targets.fetchUserFeed(feedTarget, job.maxId, account.sessionCookies)) {
+                is Resource.Success -> result.data
+                is Resource.Error -> {
+                    fail(job, classify(result.cause ?: IllegalStateException(result.message)), result.message)
+                    BridgeStatusStore.online()
+                    return
+                }
+                Resource.Loading -> {
+                    fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $feedTarget.")
+                    BridgeStatusStore.online()
+                    return
+                }
             }
             if (feed.items.isEmpty()) {
                 val profileLabel = feed.profile?.username?.let { "@$it" } ?: feedTarget
