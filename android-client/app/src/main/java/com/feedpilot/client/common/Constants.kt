@@ -28,6 +28,6 @@ object Constants {
     /** Notification channel for CSV account login imports. */
     const val CSV_IMPORT_CHANNEL_ID = "csv_account_import"
 
-    /** Notification channel for low-latency FeedPilot bridge polling. */
-    const val FEED_BRIDGE_CHANNEL_ID = "feed_bridge"
+    /** Silent/minimized notification channel required by Android for low-latency bridge polling. */
+    const val FEED_BRIDGE_CHANNEL_ID = "feed_bridge_silent"
 }

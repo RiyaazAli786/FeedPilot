@@ -15,9 +15,11 @@ import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import android.content.pm.ServiceInfo
 import com.feedpilot.client.R
+import com.feedpilot.client.bridge.BridgeStatusStore
 import com.feedpilot.client.bridge.FeedBridgeRunner
 import com.feedpilot.client.common.Constants
 import com.feedpilot.client.common.DeviceIdentity
+import com.feedpilot.client.common.hasInternetConnection
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +42,7 @@ class FeedBridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
+        BridgeStatusStore.starting()
         startForegroundCompat(buildNotification("Feed bridge active"))
         scope.launch { loop() }
     }
@@ -55,17 +58,34 @@ class FeedBridgeService : Service() {
         super.onDestroy()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // Keep the bridge alive when the user only clears Recents. Android still stops this
+        // after a real force-stop, which is the intended hard off switch.
+        start(this)
+    }
+
     private suspend fun loop() {
         var idleTicks = 0
         while (scope.isActive) {
             try {
+                if (!hasInternetConnection()) {
+                    idleTicks = 0
+                    BridgeStatusStore.offline()
+                    updateNotification("Bridge offline - waiting for internet")
+                    delay(ERROR_DELAY_MS)
+                    continue
+                }
+
                 val ranJob = runner.runOneJob()
                 idleTicks = if (ranJob) 0 else idleTicks + 1
                 val text = if (ranJob) "Completed bridge feed request" else "Waiting for bridge requests"
+                if (!ranJob) BridgeStatusStore.online(text)
                 updateNotification(text)
                 delay(if (ranJob) ACTIVE_DELAY_MS else IDLE_DELAY_MS)
             } catch (e: Exception) {
                 Log.w(TAG, "Feed bridge loop failed", e)
+                BridgeStatusStore.error("Bridge retrying after network error")
                 updateNotification("Bridge retrying after network error")
                 delay(ERROR_DELAY_MS)
             }
@@ -79,8 +99,14 @@ class FeedBridgeService : Service() {
             NotificationChannel(
                 Constants.FEED_BRIDGE_CHANNEL_ID,
                 "Feed bridge",
-                NotificationManager.IMPORTANCE_LOW
-            )
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
         )
     }
 
@@ -104,8 +130,11 @@ class FeedBridgeService : Service() {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
     }
 

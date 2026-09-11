@@ -208,7 +208,8 @@ data class InstagramCommentPage(
 data class InstagramUserFeedResult(
     val items: List<InstagramUserFeedItem>,
     val maxId: String?,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    val profile: InstagramUserProfileDetails? = null
 )
 
 
@@ -2658,7 +2659,7 @@ class InstagramWebClient @Inject constructor(
         if (userId.isBlank()) return@withContext null
         try {
             val maxParam = if (!maxId.isNullOrBlank()) "&max_id=$maxId" else ""
-            // www.instagram.com, not i.instagram.com — see the note in fetchCurrentLoggedInUser.
+            // www.instagram.com, not i.instagram.com - see the note in fetchCurrentLoggedInUser.
             val url = "https://www.instagram.com/api/v1/feed/user/$userId/username/?count=12$maxParam"
             val csrfToken = if (!sessionCookies.isNullOrBlank()) extractCookie(sessionCookies, "csrftoken") else null
 
@@ -2679,70 +2680,128 @@ class InstagramWebClient @Inject constructor(
 
             http.newCall(reqBuilder.build()).execute().use { response ->
                 val bodyText = response.body?.string() ?: ""
-                if (!response.isSuccessful || bodyText.isBlank()) return@withContext null
+                if (!response.isSuccessful || bodyText.isBlank()) {
+                    Log.w(TAG, "feed/user returned HTTP ${response.code} for $userId")
+                    throwInstagramFeedHttpFailure(response.code, bodyText, "feed/user")
+                    return@use null
+                }
+                throwIfInstagramAuthFailure(response.code, bodyText, "feed/user")
 
                 val json = JSONObject(bodyText)
-                val itemsArr = json.optJSONArray("items") ?: return@withContext null
-
-                val feedItems = mutableListOf<InstagramUserFeedItem>()
-                for (i in 0 until itemsArr.length()) {
-                    val item = itemsArr.optJSONObject(i) ?: continue
-                    val id = item.optString("id", "")
-                    val code = item.optString("code", "")
-                    val mediaType = item.optInt("media_type", 1)
-                    val captionObj = item.optJSONObject("caption")
-                    val caption = captionObj?.optString("text")?.ifBlank { null }
-                    val likeCount = item.optLong("like_count", 0L)
-                    val commentCount = item.optLong("comment_count", 0L)
-                    val repostCount = item.optLong("media_repost_count", item.optLong("reshare_count", item.optLong("repost_count", 0L)))
-                    val takenAt = item.optLong("taken_at", 0L)
-
-                    var displayUrl: String? = null
-                    val imgVersions = item.optJSONObject("image_versions2")
-                    val candidates = imgVersions?.optJSONArray("candidates")
-                    if (candidates != null && candidates.length() > 0) {
-                        displayUrl = candidates.optJSONObject(0)?.optString("url")?.ifBlank { null }
-                    }
-
-                    val videoUrl = item.optJSONArray("video_versions")
-                        ?.optJSONObject(0)?.optString("url")?.ifBlank { null }
-
-                    val mediaId = item.optString("pk").ifBlank { id.substringBefore('_') }
-
-                    feedItems.add(
-                        InstagramUserFeedItem(
-                            id = id,
-                            code = code,
-                            caption = caption,
-                            mediaType = mediaType,
-                            displayUrl = displayUrl,
-                            videoUrl = videoUrl,
-                            likeCount = likeCount,
-                            commentCount = commentCount,
-                            repostCount = repostCount,
-                            takenAt = takenAt,
-                            mediaId = mediaId,
-                            hasLiked = item.optBoolean("has_liked", false),
-                            canReshare = item.optBoolean("can_viewer_reshare", true),
-                            commentsDisabled = item.optBoolean("comments_disabled", false) ||
-                                item.optBoolean("disable_caption_and_comment", false)
-                        )
-                    )
-                }
-
+                val itemsArr = json.optJSONArray("items") ?: return@use null
+                val feedItems = parsePrivateFeedItems(itemsArr)
                 val hasMore = json.optBoolean("more_available", false) || json.optBoolean("has_more", false)
                 val nextMaxId = json.optString("next_max_id").ifBlank { null }
+                val userObj = json.optJSONObject("user")
+                    ?: itemsArr.optJSONObject(0)?.optJSONObject("user")
+                val profile = userObj?.let { user ->
+                    InstagramUserProfileDetails(
+                        id = user.optString("pk_id").ifBlank { user.optString("pk").ifBlank { user.optString("id") } },
+                        username = user.optString("username"),
+                        fullName = user.optString("full_name"),
+                        biography = user.optString("biography"),
+                        profilePicUrl = user.optString("profile_pic_url").ifBlank { user.optString("profile_pic_url_hd") },
+                        followerCount = user.optLong("follower_count", user.optLong("followers_count", 0L)),
+                        followingCount = user.optLong("following_count", user.optLong("following", 0L)),
+                        mediaCount = user.optLong("media_count", user.optLong("media_count_for_profile", feedItems.size.toLong())),
+                        isPrivate = user.optBoolean("is_private", false),
+                        isVerified = user.optBoolean("is_verified", false)
+                    )
+                }
 
                 InstagramUserFeedResult(
                     items = feedItems,
                     maxId = nextMaxId,
-                    hasMore = hasMore
+                    hasMore = hasMore,
+                    profile = profile
                 )
             }
         } catch (e: Exception) {
+            if (e.isClassifiedInstagramFailure()) throw e
             Log.e(TAG, "Failed fetching user feed for userId $userId", e)
             null
         }
+    }
+
+    private fun throwInstagramFeedHttpFailure(httpCode: Int, bodyText: String, endpoint: String) {
+        val lower = bodyText.lowercase(Locale.ROOT)
+        when {
+            httpCode == 401 || lower.contains("login_required") || lower.contains("not-logged-in") ->
+                throw IllegalStateException("login_required: Instagram $endpoint returned HTTP $httpCode")
+            httpCode == 429 || lower.contains("please wait a few minutes") ->
+                throw IllegalStateException("rate limited: Instagram $endpoint returned HTTP $httpCode")
+            httpCode == 403 && (lower.contains("checkpoint") || lower.contains("challenge")) ->
+                throw IllegalStateException("checkpoint_required: Instagram $endpoint returned HTTP $httpCode")
+        }
+    }
+
+    private fun throwIfInstagramAuthFailure(httpCode: Int, bodyText: String, endpoint: String) {
+        val lower = bodyText.lowercase(Locale.ROOT)
+        if (lower.contains("login_required") || lower.contains("not-logged-in")) {
+            throw IllegalStateException("login_required: Instagram $endpoint returned HTTP $httpCode")
+        }
+        if (lower.contains("checkpoint_required") || lower.contains("challenge_required")) {
+            throw IllegalStateException("checkpoint_required: Instagram $endpoint returned HTTP $httpCode")
+        }
+        if (lower.contains("please wait a few minutes") || lower.contains("rate_limit") || lower.contains("too many requests")) {
+            throw IllegalStateException("rate limited: Instagram $endpoint returned HTTP $httpCode")
+        }
+    }
+
+    private fun Exception.isClassifiedInstagramFailure(): Boolean {
+        val message = message.orEmpty().lowercase(Locale.ROOT)
+        return message.contains("login_required") ||
+            message.contains("checkpoint_required") ||
+            message.contains("rate limited")
+    }
+
+    private fun parsePrivateFeedItems(itemsArr: org.json.JSONArray): List<InstagramUserFeedItem> {
+        val feedItems = mutableListOf<InstagramUserFeedItem>()
+        for (i in 0 until itemsArr.length()) {
+            val item = itemsArr.optJSONObject(i) ?: continue
+            val id = item.optString("id", "")
+            val code = item.optString("code", "")
+            val mediaType = item.optInt("media_type", 1)
+            val captionObj = item.optJSONObject("caption")
+            val caption = captionObj?.optString("text")?.ifBlank { null }
+            val likeCount = item.optLong("like_count", 0L)
+            val commentCount = item.optLong("comment_count", 0L)
+            val repostCount = item.optLong("media_repost_count", item.optLong("reshare_count", item.optLong("repost_count", 0L)))
+            val takenAt = item.optLong("taken_at", 0L)
+
+            var displayUrl: String? = null
+            val imgVersions = item.optJSONObject("image_versions2")
+            val candidates = imgVersions?.optJSONArray("candidates")
+            if (candidates != null && candidates.length() > 0) {
+                displayUrl = candidates.optJSONObject(0)?.optString("url")?.ifBlank { null }
+            }
+
+            val videoUrl = item.optJSONArray("video_versions")
+                ?.optJSONObject(0)?.optString("url")?.ifBlank { null }
+
+            val mediaId = item.optString("pk").ifBlank { id.substringBefore('_') }
+
+            feedItems.add(
+                InstagramUserFeedItem(
+                    id = id,
+                    code = code,
+                    caption = caption,
+                    mediaType = mediaType,
+                    displayUrl = displayUrl,
+                    videoUrl = videoUrl,
+                    likeCount = likeCount,
+                    commentCount = commentCount,
+                    repostCount = repostCount,
+                    takenAt = takenAt,
+                    mediaId = mediaId,
+                    hasLiked = item.optBoolean("has_liked", false),
+                    canReshare = item.optBoolean("can_viewer_reshare", true),
+                    commentsDisabled = item.optBoolean("comments_disabled", false) ||
+                        item.optBoolean("disable_caption_and_comment", false)
+                )
+            )
+        }
+        return feedItems
     }
 
     /**
@@ -3501,6 +3560,11 @@ class InstagramWebClient @Inject constructor(
                     val json = JSONObject(bodyText)
                     val uObj = json.optJSONObject("user")
                         ?: json.optJSONArray("items")?.optJSONObject(0)?.optJSONObject("user")
+                    val resolvedUsername = uObj?.optString("username")?.trim()
+                    if (!resolvedUsername.equals(username, ignoreCase = true)) {
+                        Log.w(TAG, "feed/user PK resolution mismatch for @$username: returned @$resolvedUsername")
+                        return@use
+                    }
                     val pk = uObj?.optString("pk_id")?.ifBlank { null }
                         ?: uObj?.optString("pk")?.ifBlank { null }
                         ?: uObj?.optString("id")?.ifBlank { null }
@@ -3530,9 +3594,9 @@ class InstagramWebClient @Inject constructor(
                         for (i in 0 until usersArr.length()) {
                             val uObj = usersArr.optJSONObject(i)?.optJSONObject("user")
                             if (uObj != null && uObj.optString("username").equals(username, ignoreCase = true)) {
-                                val pk = uObj.optString("pk_id").ifBlank { null }
-                                    ?: uObj.optString("pk").ifBlank { null }
-                                    ?: uObj.optString("id").ifBlank { null }
+                                val pk = uObj?.optString("pk_id")?.ifBlank { null }
+                                    ?: uObj?.optString("pk")?.ifBlank { null }
+                                    ?: uObj?.optString("id")?.ifBlank { null }
                                 if (!pk.isNullOrBlank()) return pk
                             }
                         }

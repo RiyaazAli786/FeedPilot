@@ -3,8 +3,11 @@ package com.feedpilot.client
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -47,6 +50,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.feedpilot.client.data.repository.ThemeMode
+import com.feedpilot.client.bridge.BridgeConnectionState
+import com.feedpilot.client.bridge.BridgeStatusStore
 import com.feedpilot.client.feature.accounts.AddAccountScreen
 import com.feedpilot.client.feature.connect.VerifyCodeScreen
 import com.feedpilot.client.feature.followers.FollowersScreen
@@ -90,6 +95,7 @@ class MainActivity : ComponentActivity() {
         captureLaunchDestination(intent)
         enableEdgeToEdge()
         requestNotificationPermission()
+        requestBatteryOptimizationExemption()
         setContent {
             FeedPilotRoot(
                 launchDestination = launchDestination.value,
@@ -117,6 +123,23 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        val powerManager = getSystemService(PowerManager::class.java)
+        if (powerManager?.isIgnoringBatteryOptimizations(packageName) == true) return
+
+        val prefs = getSharedPreferences("bridge_runtime", MODE_PRIVATE)
+        if (prefs.getBoolean("battery_prompt_shown", false)) return
+        prefs.edit().putBoolean("battery_prompt_shown", true).apply()
+
+        runCatching {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        }
     }
 }
 
@@ -557,11 +580,67 @@ private fun MainScreenLayout(
         }
 
         if (onTab) {
+            BridgeStatusBanner()
             BottomNavBar(navController, currentRoute?.route)
         }
     }
 }
 
+@Composable
+private fun BridgeStatusBanner() {
+    val status by BridgeStatusStore.status.collectAsStateWithLifecycle()
+    val dotColor = when (status.state) {
+        BridgeConnectionState.Online,
+        BridgeConnectionState.RunningJob -> androidx.compose.ui.graphics.Color(0xFF18B26B)
+        BridgeConnectionState.Starting -> AppTheme.brand.orange
+        BridgeConnectionState.Offline,
+        BridgeConnectionState.Error -> MaterialTheme.colorScheme.error
+    }
+    val label = when (status.state) {
+        BridgeConnectionState.RunningJob -> status.currentUsername?.let { "Bridge online - resolving @$it" }
+            ?: status.message
+        BridgeConnectionState.Online -> "Bridge online"
+        BridgeConnectionState.Starting -> "Bridge starting"
+        BridgeConnectionState.Offline -> "Bridge offline"
+        BridgeConnectionState.Error -> "Bridge needs attention"
+    }
+    val detail = status.message
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 3.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(dotColor)
+            )
+            Column(Modifier.weight(1f)) {
+                Text(
+                    label,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (detail.isNotBlank() && detail != label) {
+                    Text(
+                        detail,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun BottomNavBar(navController: NavHostController, currentRoute: String?) {
     Row(

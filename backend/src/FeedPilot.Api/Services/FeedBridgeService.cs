@@ -50,9 +50,10 @@ public class FeedBridgeService : IFeedBridgeService
         await SelectionGate.WaitAsync(ct);
         try
         {
+            await ReleaseStaleAssignmentsAsync(ct);
             var selected = await SelectAccountAsync(ct);
             if (selected is null)
-                return Fail("NO_ACTIVE_SESSION", "No active Android device with a valid Instagram session is available.");
+                return Fail("NO_ACTIVE_SESSION", await BuildNoActiveSessionMessageAsync(ct));
 
             account = selected;
             var now = DateTime.UtcNow;
@@ -322,6 +323,60 @@ public class FeedBridgeService : IFeedBridgeService
             .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
             .ThenBy(a => a.CreatedAt)
             .FirstOrDefaultAsync(ct);
+    }
+
+    private async Task ReleaseStaleAssignmentsAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var staleJobs = await _db.FeedBridgeJobs
+            .Where(j => (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) && j.ExpiresAt <= now)
+            .ToListAsync(ct);
+
+        foreach (var job in staleJobs)
+        {
+            job.Status = FeedBridgeJobStatus.TimedOut;
+            job.ErrorCode = "JOB_TIMEOUT";
+            job.ErrorMessage = "Bridge job expired before device completed it.";
+            job.CompletedAt = now;
+            job.UpdatedAt = now;
+            await ReleaseAssignedAccountAsync(job, success: false, errorCode: job.ErrorCode, errorMessage: job.ErrorMessage, ct);
+        }
+
+        var staleBusyBefore = now.Subtract(TimeSpan.FromMinutes(2));
+        var staleBusyAccounts = await _db.FeedBridgeAccountStates
+            .Where(a => a.IsBusy && a.UpdatedAt <= staleBusyBefore)
+            .ToListAsync(ct);
+        foreach (var account in staleBusyAccounts)
+        {
+            account.IsBusy = false;
+            account.UpdatedAt = now;
+        }
+
+        if (staleJobs.Count > 0 || staleBusyAccounts.Count > 0)
+        {
+            await _db.SaveChangesAsync(ct);
+            _logger.LogInformation("Feed bridge released {JobCount} stale job(s) and {AccountCount} stale busy account(s).",
+                staleJobs.Count, staleBusyAccounts.Count);
+        }
+    }
+
+    private async Task<string> BuildNoActiveSessionMessageAsync(CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var onlineAfter = now.Subtract(OnlineWindow);
+        var deviceCount = await _db.FeedBridgeDeviceStates.CountAsync(ct);
+        var onlineDeviceCount = await _db.FeedBridgeDeviceStates.CountAsync(d =>
+            d.BridgeEnabled && d.LastSeenAt >= onlineAfter && (d.CooldownUntil == null || d.CooldownUntil <= now), ct);
+        var accountCount = await _db.FeedBridgeAccountStates.CountAsync(ct);
+        var activeAccountCount = await _db.FeedBridgeAccountStates.CountAsync(a => a.Status == AccountStatus.Active, ct);
+        var availableAccountCount = await _db.FeedBridgeAccountStates.CountAsync(a =>
+            a.Status == AccountStatus.Active &&
+            !a.IsBusy &&
+            (a.CooldownUntil == null || a.CooldownUntil <= now), ct);
+
+        return "No active Android device with a valid Instagram session is available. " +
+               $"Diagnostics: devices={deviceCount}, onlineDevices={onlineDeviceCount}, " +
+               $"accounts={accountCount}, activeAccounts={activeAccountCount}, availableAccounts={availableAccountCount}.";
     }
 
     private async Task MarkTimedOutAsync(FeedBridgeJob job, CancellationToken ct)

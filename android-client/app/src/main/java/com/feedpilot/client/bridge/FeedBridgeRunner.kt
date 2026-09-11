@@ -47,6 +47,9 @@ class FeedBridgeRunner @Inject constructor(
             }
         )
         return runCatching { api.sendBridgeHeartbeat(body).accepted }
+            .onSuccess { accepted ->
+                if (accepted) BridgeStatusStore.online()
+            }
             .onFailure { Log.w(TAG, "Bridge heartbeat failed", it) }
             .getOrDefault(false)
     }
@@ -54,10 +57,14 @@ class FeedBridgeRunner @Inject constructor(
     suspend fun runOneJob(): Boolean {
         heartbeat()
         val job = runCatching {
-            api.pollBridgeJob(
+            val response = api.pollBridgeJob(
                 deviceId = identity.stableAppInstallationId,
                 installationId = identity.accountBindingInstallationId
             )
+            if (response.isSuccessful) response.body() else {
+                Log.w(TAG, "Bridge poll failed HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty().take(300)}")
+                null
+            }
         }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrNull() ?: return false
 
         execute(job)
@@ -65,39 +72,34 @@ class FeedBridgeRunner @Inject constructor(
     }
 
     private suspend fun execute(job: BridgeJobDto) {
+        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId)
         val account = resolveAccount(job)
         if (account == null) {
             fail(job, "NO_LOCAL_SESSION", "Assigned Instagram account is not available on this device.")
+            BridgeStatusStore.online()
             return
         }
 
         val target = job.targetUsername ?: job.targetUserId
         if (target.isNullOrBlank()) {
             fail(job, "INVALID_TARGET", "Bridge job did not include a username or user id.")
+            BridgeStatusStore.online()
             return
         }
 
         try {
-            val profile = if (job.targetUsername != null) {
-                instagram.getUserProfileDetails(job.targetUsername, account.sessionCookies)
-            } else {
-                null
-            }
-            val feedUserId = job.targetUserId ?: profile?.id ?: target
-            val primaryFeed = instagram.getUserFeed(feedUserId, job.maxId, account.sessionCookies)
-            val feed = primaryFeed ?: job.targetUsername
-                ?.takeIf { it.isNotBlank() && !it.equals(feedUserId, ignoreCase = true) }
-                ?.let { username ->
-                    Log.w(TAG, "Bridge feed returned null for id=$feedUserId; retrying with username=$username")
-                    instagram.getUserFeed(username, job.maxId, account.sessionCookies)
-                }
+            val feedTarget = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId ?: target
+            val feed = instagram.getUserFeed(feedTarget, job.maxId, account.sessionCookies)
             if (feed == null) {
-                val resolvedAs = if (profile != null) "resolved user ${profile.username} (${profile.id})" else "unresolved target"
-                fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $resolvedAs.")
+                fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $feedTarget.")
+                BridgeStatusStore.online()
                 return
             }
+            val profile = feed.profile
+            val feedUserId = job.targetUserId ?: profile?.id ?: feedTarget
 
-            val stories = if (job.includeStories) {
+            val canFetchStorySurfaces = feedUserId.all(Char::isDigit)
+            val stories = if (job.includeStories && canFetchStorySurfaces) {
                 instagram.getUserStoryItems(feedUserId, account.sessionCookies).map {
                     BridgeStoryItemDto(
                         id = it.id,
@@ -114,7 +116,7 @@ class FeedBridgeRunner @Inject constructor(
                 emptyList()
             }
 
-            val highlights = if (job.includeStories) {
+            val highlights = if (job.includeStories && canFetchStorySurfaces) {
                 instagram.getUserHighlights(
                     userId = feedUserId,
                     includeDetails = true,
@@ -179,9 +181,11 @@ class FeedBridgeRunner @Inject constructor(
                 highlights = highlights
             )
             api.completeBridgeJob(job.id, CompleteBridgeJobRequest(data))
+            BridgeStatusStore.online("Completed bridge feed request")
         } catch (e: Exception) {
             Log.w(TAG, "Bridge job ${job.id} failed", e)
             fail(job, classify(e), e.message ?: "Instagram feed execution failed.")
+            BridgeStatusStore.online()
         }
     }
 

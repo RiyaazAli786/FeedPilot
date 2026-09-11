@@ -8,6 +8,13 @@ import android.net.NetworkRequest
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 
+fun Context.hasInternetConnection(): Boolean {
+    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val active = connectivityManager.activeNetwork ?: return false
+    val caps = connectivityManager.getNetworkCapabilities(active) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
 /**
  * A Jetpack Compose helper that observes real-time internet connectivity status.
  * Returns true if the device is currently connected to an active network with internet capability.
