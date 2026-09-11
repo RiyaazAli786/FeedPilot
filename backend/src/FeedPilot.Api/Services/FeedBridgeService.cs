@@ -365,6 +365,33 @@ public class FeedBridgeService : IFeedBridgeService
             return account;
         }
 
+        if (devices.Count == 1)
+        {
+            var device = devices[0];
+            var account = await _db.FeedBridgeAccountStates
+                .Where(a =>
+                    a.Status == AccountStatus.Active &&
+                    !a.IsBusy &&
+                    (a.CooldownUntil == null || a.CooldownUntil <= now))
+                .OrderBy(a => a.FailureCount)
+                .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
+                .ThenBy(a => a.CreatedAt)
+                .FirstOrDefaultAsync(ct);
+
+            if (account is not null)
+            {
+                account.AppId = device.AppId;
+                account.DeviceId = device.DeviceId;
+                account.InstallationId = device.InstallationId;
+                account.LastValidatedAt = now;
+                account.UpdatedAt = now;
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation("Feed bridge moved available @{Username} account state onto the only online device {DeviceId}.",
+                    account.InstagramUsername, device.DeviceId);
+                return account;
+            }
+        }
+
         return null;
     }
 
