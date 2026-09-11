@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using FeedPilot.Api.Data;
 using FeedPilot.Api.Domain;
 using FeedPilot.Api.Dtos;
@@ -136,8 +137,16 @@ public class AdminInstagramSessionsController : ControllerBase
     {
         var expires = DateTimeOffset.UtcNow.AddDays(180).ToUnixTimeSeconds();
         var cookies = new List<AdminInstagramBrowserCookieDto>();
+        var trimmed = sessionData.Trim();
 
-        foreach (var part in sessionData.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        if (trimmed.StartsWith('[') || trimmed.StartsWith('{'))
+        {
+            cookies.AddRange(ParseJsonBrowserCookies(trimmed, expires));
+            if (cookies.Count > 0)
+                return DeduplicateCookies(cookies);
+        }
+
+        foreach (var part in trimmed.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var index = part.IndexOf('=');
             if (index <= 0) continue;
@@ -158,9 +167,156 @@ public class AdminInstagramSessionsController : ControllerBase
                 expires));
         }
 
+        return DeduplicateCookies(cookies);
+    }
+
+    private static List<AdminInstagramBrowserCookieDto> ParseJsonBrowserCookies(string sessionData, long defaultExpires)
+    {
+        var cookies = new List<AdminInstagramBrowserCookieDto>();
+
+        try
+        {
+            using var document = JsonDocument.Parse(sessionData);
+            var root = document.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in root.EnumerateArray())
+                    AddJsonCookie(cookies, item, defaultExpires);
+            }
+            else if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (TryGetProperty(root, "cookies", out var nested) && nested.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in nested.EnumerateArray())
+                        AddJsonCookie(cookies, item, defaultExpires);
+                }
+                else
+                {
+                    foreach (var property in root.EnumerateObject())
+                    {
+                        if (!BrowserCookieAllowList.Contains(property.Name)) continue;
+                        var value = property.Value.ValueKind == JsonValueKind.String
+                            ? property.Value.GetString()
+                            : property.Value.ToString();
+                        AddCookie(cookies, property.Name, value, defaultExpires);
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall back to cookie-header parsing below.
+        }
+
+        return cookies;
+    }
+
+    private static void AddJsonCookie(List<AdminInstagramBrowserCookieDto> cookies, JsonElement item, long defaultExpires)
+    {
+        if (item.ValueKind != JsonValueKind.Object) return;
+
+        var name = GetString(item, "name") ?? GetString(item, "key");
+        var value = GetString(item, "value");
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value))
+            return;
+
+        var domain = GetString(item, "domain")?.Trim();
+        if (string.IsNullOrWhiteSpace(domain) || !domain.Contains("instagram.com", StringComparison.OrdinalIgnoreCase))
+            domain = ".instagram.com";
+
+        AddCookie(
+            cookies,
+            name,
+            value,
+            GetExpiration(item, defaultExpires),
+            domain.StartsWith('.') ? domain : $".{domain}",
+            NormalizePath(GetString(item, "path")),
+            GetBool(item, "secure") ?? true,
+            GetBool(item, "httpOnly") ?? false);
+    }
+
+    private static void AddCookie(
+        List<AdminInstagramBrowserCookieDto> cookies,
+        string name,
+        string? value,
+        long expires,
+        string domain = ".instagram.com",
+        string path = "/",
+        bool secure = true,
+        bool httpOnly = false)
+    {
+        name = name.Trim();
+        value = value?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(value) || !BrowserCookieAllowList.Contains(name))
+            return;
+
+        cookies.Add(new AdminInstagramBrowserCookieDto(
+            name,
+            value,
+            domain,
+            string.IsNullOrWhiteSpace(path) ? "/" : path,
+            secure,
+            httpOnly || name.Equals("sessionid", StringComparison.OrdinalIgnoreCase),
+            "no_restriction",
+            expires));
+    }
+
+    private static List<AdminInstagramBrowserCookieDto> DeduplicateCookies(List<AdminInstagramBrowserCookieDto> cookies)
+    {
         return cookies
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.Last())
             .ToList();
     }
+
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.NameEquals(name) || property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? GetString(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value)) return null;
+        return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
+    }
+
+    private static bool? GetBool(JsonElement element, string name)
+    {
+        if (!TryGetProperty(element, name, out var value)) return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(value.GetString(), out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    private static long GetExpiration(JsonElement element, long fallback)
+    {
+        foreach (var name in new[] { "expirationDate", "expiration", "expires" })
+        {
+            if (!TryGetProperty(element, name, out var value)) continue;
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) && number > 0)
+                return number;
+            if (value.ValueKind == JsonValueKind.String && long.TryParse(value.GetString(), out number) && number > 0)
+                return number;
+        }
+
+        return fallback;
+    }
+
+    private static string NormalizePath(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? "/" : path.Trim();
 }
