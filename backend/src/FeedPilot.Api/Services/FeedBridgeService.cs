@@ -21,7 +21,7 @@ public class FeedBridgeService : IFeedBridgeService
 {
     private static readonly SemaphoreSlim SelectionGate = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan OnlineWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan JobTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan JobExpiry = TimeSpan.FromSeconds(40);
 
@@ -353,27 +353,35 @@ public class FeedBridgeService : IFeedBridgeService
             return;
         }
 
-        account.FailureCount += 1;
         account.LastErrorCode = errorCode;
         account.LastErrorMessage = errorMessage;
         if (errorCode is "IG_SESSION_EXPIRED")
         {
+            account.FailureCount += 1;
             account.Status = AccountStatus.SessionExpired;
         }
         else if (errorCode is "IG_CHECKPOINT_REQUIRED")
         {
+            account.FailureCount += 1;
             account.Status = AccountStatus.Checkpoint;
         }
         else if (errorCode is "IG_CAPTCHA_REQUIRED")
         {
+            account.FailureCount += 1;
             account.Status = AccountStatus.Captcha;
         }
         else if (errorCode is "IG_RATE_LIMITED")
         {
+            account.FailureCount += 1;
             account.CooldownUntil = DateTime.UtcNow.AddMinutes(30);
+        }
+        else if (errorCode is "IG_EMPTY_FEED" or "IG_TARGET_NOT_FOUND" or "IG_PRIVATE_PROFILE" or "INVALID_TARGET")
+        {
+            account.CooldownUntil = null;
         }
         else
         {
+            account.FailureCount += 1;
             account.CooldownUntil = DateTime.UtcNow.AddMinutes(Math.Min(10, Math.Max(2, account.FailureCount)));
         }
     }

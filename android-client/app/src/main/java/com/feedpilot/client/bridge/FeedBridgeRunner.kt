@@ -84,9 +84,16 @@ class FeedBridgeRunner @Inject constructor(
                 null
             }
             val feedUserId = job.targetUserId ?: profile?.id ?: target
-            val feed = instagram.getUserFeed(feedUserId, job.maxId, account.sessionCookies)
+            val primaryFeed = instagram.getUserFeed(feedUserId, job.maxId, account.sessionCookies)
+            val feed = primaryFeed ?: job.targetUsername
+                ?.takeIf { it.isNotBlank() && !it.equals(feedUserId, ignoreCase = true) }
+                ?.let { username ->
+                    Log.w(TAG, "Bridge feed returned null for id=$feedUserId; retrying with username=$username")
+                    instagram.getUserFeed(username, job.maxId, account.sessionCookies)
+                }
             if (feed == null) {
-                fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data.")
+                val resolvedAs = if (profile != null) "resolved user ${profile.username} (${profile.id})" else "unresolved target"
+                fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $resolvedAs.")
                 return
             }
 
