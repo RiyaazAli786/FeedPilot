@@ -2648,8 +2648,9 @@ class InstagramWebClient @Inject constructor(
     }
 
     /**
-     * Fetches user media feed from user ID via www.instagram.com feed/user/{userId}/username/ endpoint.
-     * Ports logic from GramDominator GetUserFeedAsync.
+     * Fetches a user's profile posts. Instagram's old `feed/user/{username}/username/` endpoint
+     * now rejects some valid browser sessions, so prefer the current Polaris GraphQL profile-posts
+     * query and keep the old endpoint as a fallback.
      */
     suspend fun fetchUserFeed(
         userId: String,
@@ -2657,10 +2658,21 @@ class InstagramWebClient @Inject constructor(
         sessionCookies: String? = null
     ): InstagramUserFeedResult? = withContext(Dispatchers.IO) {
         if (userId.isBlank()) return@withContext null
+        val target = userId.trim().removePrefix("@")
+
+        if (!sessionCookies.isNullOrBlank() && target.any { !it.isDigit() }) {
+            try {
+                fetchUserFeedViaGraphql(target, maxId, sessionCookies)?.let { return@withContext it }
+            } catch (e: Exception) {
+                if (e.isClassifiedInstagramFailure()) throw e
+                Log.w(TAG, "GraphQL profile feed failed for $target; trying feed/user fallback", e)
+            }
+        }
+
         try {
             val maxParam = if (!maxId.isNullOrBlank()) "&max_id=$maxId" else ""
             // www.instagram.com, not i.instagram.com - see the note in fetchCurrentLoggedInUser.
-            val url = "https://www.instagram.com/api/v1/feed/user/$userId/username/?count=12$maxParam"
+            val url = "https://www.instagram.com/api/v1/feed/user/$target/username/?count=12$maxParam"
             val csrfToken = if (!sessionCookies.isNullOrBlank()) extractCookie(sessionCookies, "csrftoken") else null
 
             val reqBuilder = Request.Builder()
@@ -2681,7 +2693,7 @@ class InstagramWebClient @Inject constructor(
             http.newCall(reqBuilder.build()).execute().use { response ->
                 val bodyText = response.body?.string() ?: ""
                 if (!response.isSuccessful || bodyText.isBlank()) {
-                    Log.w(TAG, "feed/user returned HTTP ${response.code} for $userId")
+                    Log.w(TAG, "feed/user returned HTTP ${response.code} for $target")
                     throwInstagramFeedHttpFailure(response.code, bodyText, "feed/user")
                     return@use null
                 }
@@ -2714,7 +2726,7 @@ class InstagramWebClient @Inject constructor(
                 }
                 if (itemsArr == null && profile == null) {
                     val keys = json.keys().asSequence().take(12).joinToString(",")
-                    throw IllegalStateException("unexpected feed/user response for $userId: keys=$keys body=${bodyText.take(220)}")
+                    throw IllegalStateException("unexpected feed/user response for $target: keys=$keys body=${bodyText.take(220)}")
                 }
 
                 InstagramUserFeedResult(
@@ -2726,18 +2738,113 @@ class InstagramWebClient @Inject constructor(
             }
         } catch (e: Exception) {
             if (e.isClassifiedInstagramFailure()) throw e
-            Log.e(TAG, "Failed fetching user feed for userId $userId", e)
+            Log.e(TAG, "Failed fetching user feed for userId $target", e)
             null
+        }
+    }
+
+    private fun fetchUserFeedViaGraphql(
+        username: String,
+        maxId: String?,
+        sessionCookies: String
+    ): InstagramUserFeedResult? {
+        val csrfToken = extractCookie(sessionCookies, "csrftoken")
+        val variables = JSONObject()
+            .put("before", maxId?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            .put(
+                "data",
+                JSONObject()
+                    .put("count", 12)
+                    .put("include_reel_media_seen_timestamp", true)
+                    .put("include_relationship_info", true)
+                    .put("latest_besties_reel_media", true)
+                    .put("latest_reel_media", true)
+            )
+            .put("first", 12)
+            .put("last", JSONObject.NULL)
+            .put("username", username)
+            .put("__relay_internal__pv__PolarisIsLoggedInrelayprovider", true)
+            .put("__relay_internal__pv__PolarisShareSheetV3relayprovider", false)
+
+        val formBody = FormBody.Builder()
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "PolarisProfilePostsTabContentQuery_connection")
+            .add("doc_id", "25765904473087536")
+            .add("variables", variables.toString())
+            .build()
+
+        val reqBuilder = Request.Builder()
+            .url("https://www.instagram.com/graphql/query")
+            .post(formBody)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("sec-ch-ua-platform", "\"Windows\"")
+            .header("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
+            .header("sec-ch-ua-mobile", "?0")
+            .header("X-Fb-Friendly-Name", "PolarisProfilePostsTabContentQuery_connection")
+            .header("X-Ig-App-Id", InstagramCrypto.INSTAGRAM_APP_ID)
+            .header("Accept", "*/*")
+            .header("Origin", "chrome-extension://jedadojkeieofinbpffchndbaphloein")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Dest", "empty")
+            .header("Sec-Fetch-Storage-Access", "active")
+            .header("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+            .header("Cookie", sessionCookies)
+
+        if (!csrfToken.isNullOrBlank()) {
+            reqBuilder.header("X-Csrftoken", csrfToken)
+        }
+
+        http.newCall(reqBuilder.build()).execute().use { response ->
+            val bodyText = response.body?.string() ?: ""
+            if (!response.isSuccessful || bodyText.isBlank()) {
+                Log.w(TAG, "GraphQL profile feed returned HTTP ${response.code} for $username")
+                throwInstagramFeedHttpFailure(response.code, bodyText, "graphql/query")
+                return null
+            }
+            throwIfInstagramAuthFailure(response.code, bodyText, "graphql/query")
+            if (bodyText.trimStart().startsWith("<")) {
+                throw IllegalStateException("login_required: Instagram graphql/query returned HTML instead of JSON")
+            }
+
+            val json = JSONObject(bodyText.removePrefix("for (;;);"))
+            val errors = json.optJSONArray("errors")
+            if (errors != null && errors.length() > 0) {
+                val message = errors.optJSONObject(0)?.optString("message").orEmpty()
+                if (message.contains("rate limit", ignoreCase = true)) {
+                    throw IllegalStateException("rate limited: Instagram graphql/query returned $message")
+                }
+                throw IllegalStateException("Instagram graphql/query error: ${message.ifBlank { errors.toString() }}")
+            }
+
+            val items = parseGraphqlTimelineItems(json).toMutableList()
+            if (items.isEmpty()) {
+                collectGraphqlFeedItems(json, items, mutableSetOf())
+            }
+            val pageInfo = findPageInfo(json)
+            val profile = findGraphqlProfile(json, username, items.size.toLong())
+            if (items.isEmpty() && profile == null) {
+                val keys = json.keys().asSequence().take(12).joinToString(",")
+                throw IllegalStateException("unexpected graphql/query response for $username: keys=$keys body=${bodyText.take(220)}")
+            }
+
+            return InstagramUserFeedResult(
+                items = items,
+                maxId = pageInfo?.optString("end_cursor")?.ifBlank { null },
+                hasMore = pageInfo?.optBoolean("has_next_page", false) ?: false,
+                profile = profile
+            )
         }
     }
 
     private fun throwInstagramFeedHttpFailure(httpCode: Int, bodyText: String, endpoint: String) {
         val lower = bodyText.lowercase(Locale.ROOT)
         when {
+            httpCode == 429 || lower.contains("please wait a few minutes") || lower.contains("rate_limit") || lower.contains("too many requests") ->
+                throw IllegalStateException("rate limited: Instagram $endpoint returned HTTP $httpCode")
             httpCode == 401 || lower.contains("login_required") || lower.contains("not-logged-in") ->
                 throw IllegalStateException("login_required: Instagram $endpoint returned HTTP $httpCode")
-            httpCode == 429 || lower.contains("please wait a few minutes") ->
-                throw IllegalStateException("rate limited: Instagram $endpoint returned HTTP $httpCode")
             httpCode == 403 && (lower.contains("checkpoint") || lower.contains("challenge")) ->
                 throw IllegalStateException("checkpoint_required: Instagram $endpoint returned HTTP $httpCode")
         }
@@ -2761,6 +2868,191 @@ class InstagramWebClient @Inject constructor(
         return message.contains("login_required") ||
             message.contains("checkpoint_required") ||
             message.contains("rate limited")
+    }
+
+    private fun parseGraphqlTimelineItems(json: JSONObject): List<InstagramUserFeedItem> {
+        val connection = findGraphqlTimelineConnection(json) ?: return emptyList()
+        val edges = connection.optJSONArray("edges") ?: return emptyList()
+        val items = mutableListOf<InstagramUserFeedItem>()
+        val seenMediaIds = mutableSetOf<String>()
+        for (i in 0 until edges.length()) {
+            val node = edges.optJSONObject(i)?.optJSONObject("node") ?: continue
+            val item = parseGraphqlFeedItem(node) ?: continue
+            val key = item.mediaId.ifBlank { item.id.ifBlank { item.code } }
+            if (key.isBlank() || !seenMediaIds.add(key)) continue
+            items.add(item)
+        }
+        return items
+    }
+
+    private fun findGraphqlTimelineConnection(value: Any?): JSONObject? {
+        when (value) {
+            is JSONObject -> {
+                val edges = value.optJSONArray("edges")
+                val pageInfo = value.optJSONObject("page_info")
+                if (edges != null && pageInfo != null) {
+                    val firstNode = edges.optJSONObject(0)?.optJSONObject("node")
+                    if (firstNode?.has("code") == true || firstNode?.has("shortcode") == true) {
+                        return value
+                    }
+                }
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    findGraphqlTimelineConnection(value.opt(keys.next()))?.let { return it }
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    findGraphqlTimelineConnection(value.opt(i))?.let { return it }
+                }
+            }
+        }
+        return null
+    }
+    private fun collectGraphqlFeedItems(
+        value: Any?,
+        items: MutableList<InstagramUserFeedItem>,
+        seenMediaIds: MutableSet<String>
+    ) {
+        when (value) {
+            is JSONObject -> {
+                parseGraphqlFeedItem(value)?.let { item ->
+                    val key = item.mediaId.ifBlank { item.id.ifBlank { item.code } }
+                    if (key.isNotBlank() && seenMediaIds.add(key)) {
+                        items.add(item)
+                    }
+                }
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    collectGraphqlFeedItems(value.opt(keys.next()), items, seenMediaIds)
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    collectGraphqlFeedItems(value.opt(i), items, seenMediaIds)
+                }
+            }
+        }
+    }
+
+    private fun parseGraphqlFeedItem(obj: JSONObject): InstagramUserFeedItem? {
+        val code = obj.optString("code").ifBlank { obj.optString("shortcode") }.ifBlank { null }
+            ?: return null
+        val id = obj.optString("id").ifBlank { obj.optString("pk") }.ifBlank { obj.optString("media_id") }
+        val mediaId = obj.optString("pk").ifBlank { obj.optString("media_id") }.ifBlank { id.substringBefore('_') }
+        if (mediaId.isBlank() && id.isBlank()) return null
+
+        val typename = obj.optString("__typename")
+        val mediaType = when {
+            obj.optInt("media_type", 0) > 0 -> obj.optInt("media_type")
+            obj.optBoolean("is_video", false) -> 2
+            typename.contains("Sidecar", ignoreCase = true) || obj.has("carousel_media") -> 8
+            else -> 1
+        }
+
+        val caption = obj.optJSONObject("caption")?.optString("text")?.ifBlank { null }
+            ?: obj.optJSONObject("edge_media_to_caption")
+                ?.optJSONArray("edges")
+                ?.optJSONObject(0)
+                ?.optJSONObject("node")
+                ?.optString("text")
+                ?.ifBlank { null }
+
+        val displayUrl = obj.optString("display_url").ifBlank { null }
+            ?: obj.optString("thumbnail_src").ifBlank { null }
+            ?: obj.optJSONObject("image_versions2")
+                ?.optJSONArray("candidates")
+                ?.optJSONObject(0)
+                ?.optString("url")
+                ?.ifBlank { null }
+
+        val videoUrl = obj.optString("video_url").ifBlank { null }
+            ?: obj.optJSONArray("video_versions")
+                ?.optJSONObject(0)
+                ?.optString("url")
+                ?.ifBlank { null }
+
+        val likeCount = obj.optLong("like_count", -1L).takeIf { it >= 0 }
+            ?: obj.optJSONObject("edge_liked_by")?.optLong("count", -1L)?.takeIf { it >= 0 }
+            ?: obj.optJSONObject("edge_media_preview_like")?.optLong("count", -1L)?.takeIf { it >= 0 }
+            ?: 0L
+        val commentCount = obj.optLong("comment_count", -1L).takeIf { it >= 0 }
+            ?: obj.optJSONObject("edge_media_to_comment")?.optLong("count", -1L)?.takeIf { it >= 0 }
+            ?: 0L
+        val repostCount = obj.optLong("media_repost_count", obj.optLong("reshare_count", obj.optLong("repost_count", 0L)))
+        val takenAt = obj.optLong("taken_at", obj.optLong("taken_at_timestamp", 0L))
+
+        return InstagramUserFeedItem(
+            id = id.ifBlank { mediaId },
+            code = code,
+            caption = caption,
+            mediaType = mediaType,
+            displayUrl = displayUrl,
+            videoUrl = videoUrl,
+            likeCount = likeCount,
+            commentCount = commentCount,
+            repostCount = repostCount,
+            takenAt = takenAt,
+            mediaId = mediaId,
+            hasLiked = obj.optBoolean("has_liked", obj.optBoolean("viewer_has_liked", false)),
+            canReshare = obj.optBoolean("can_viewer_reshare", true),
+            commentsDisabled = obj.optBoolean("comments_disabled", false) ||
+                obj.optBoolean("disable_caption_and_comment", false)
+        )
+    }
+
+    private fun findPageInfo(value: Any?): JSONObject? {
+        when (value) {
+            is JSONObject -> {
+                value.optJSONObject("page_info")?.let { return it }
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    findPageInfo(value.opt(keys.next()))?.let { return it }
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    findPageInfo(value.opt(i))?.let { return it }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findGraphqlProfile(value: Any?, username: String, itemCount: Long): InstagramUserProfileDetails? {
+        when (value) {
+            is JSONObject -> {
+                val foundUsername = value.optString("username")
+                val hasProfileShape = foundUsername.equals(username, ignoreCase = true) &&
+                    (value.has("profile_pic_url") || value.has("full_name") || value.has("biography") || value.has("follower_count"))
+                if (hasProfileShape) {
+                    return InstagramUserProfileDetails(
+                        id = value.optString("pk").ifBlank { value.optString("pk_id").ifBlank { value.optString("id") } },
+                        username = foundUsername,
+                        fullName = value.optString("full_name"),
+                        biography = value.optString("biography"),
+                        profilePicUrl = value.optString("profile_pic_url").ifBlank {
+                            value.optJSONObject("hd_profile_pic_url_info")?.optString("url").orEmpty()
+                        },
+                        followerCount = value.optLong("follower_count", value.optJSONObject("edge_followed_by")?.optLong("count", 0L) ?: 0L),
+                        followingCount = value.optLong("following_count", value.optJSONObject("edge_follow")?.optLong("count", 0L) ?: 0L),
+                        mediaCount = value.optLong("media_count", value.optJSONObject("edge_owner_to_timeline_media")?.optLong("count", itemCount) ?: itemCount),
+                        isPrivate = value.optBoolean("is_private", false),
+                        isVerified = value.optBoolean("is_verified", false)
+                    )
+                }
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    findGraphqlProfile(value.opt(keys.next()), username, itemCount)?.let { return it }
+                }
+            }
+            is org.json.JSONArray -> {
+                for (i in 0 until value.length()) {
+                    findGraphqlProfile(value.opt(i), username, itemCount)?.let { return it }
+                }
+            }
+        }
+        return null
     }
 
     private fun parsePrivateFeedItems(itemsArr: org.json.JSONArray): List<InstagramUserFeedItem> {

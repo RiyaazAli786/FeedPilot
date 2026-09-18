@@ -1,11 +1,13 @@
 package com.feedpilot.client.data.repository
 
+import com.feedpilot.client.common.Resource
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountEntity
 import com.feedpilot.client.data.remote.InstagramWebClient
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -58,6 +60,7 @@ class InstagramRepositoryTest {
             override suspend fun getById(id: String): AccountEntity? = getAll().firstOrNull()
             override suspend fun upsertAll(accounts: List<AccountEntity>) {}
             override suspend fun incrementCoinsEarned(id: String, increment: Long) {}
+            override suspend fun setCoinsEarned(id: String, coinsEarned: Long) {}
             override suspend fun updateStatus(id: String, status: String) {}
             override suspend fun updateSessionCookies(id: String, sessionCookies: String) {}
             override suspend fun updateLoginStatus(id: String, isLoggedIn: Boolean) {}
@@ -117,6 +120,111 @@ class InstagramRepositoryTest {
             "A user id should be all digits, got '$resolvedId'",
             resolvedId!!.isNotBlank() && resolvedId.all(Char::isDigit)
         )
+    }
+
+    @Test
+    fun `parses xdt graphql timeline response edges`() {
+        val client = InstagramWebClient(OkHttpClient.Builder().build(), null)
+        val json = JSONObject(
+            """
+            {
+              "data": {
+                "xdt_api__v1__feed__user_timeline_graphql_connection": {
+                  "edges": [
+                    {
+                      "node": {
+                        "code": "DdSrXHitmbz",
+                        "pk": "3986439324822824691",
+                        "id": "3986439324822824691_45145019",
+                        "caption": { "text": "After his successful title defense" },
+                        "taken_at": 1789440691,
+                        "video_versions": [{ "url": "https://cdn.example/video.mp4" }],
+                        "image_versions2": { "candidates": [{ "url": "https://cdn.example/image.jpg" }] },
+                        "comment_count": 1966,
+                        "like_count": 111559,
+                        "media_type": 2,
+                        "carousel_media": [
+                          {
+                            "code": "NestedShouldNotBecomeAFeedItem",
+                            "pk": "nested_pk",
+                            "id": "nested_id",
+                            "media_type": 1
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "node": {
+                        "code": "DdOtherCode",
+                        "pk": "3987742705182008029",
+                        "id": "3987742705182008029_45145019",
+                        "caption": { "text": "Second item" },
+                        "taken_at": 1789440799,
+                        "image_versions2": { "candidates": [{ "url": "https://cdn.example/second.jpg" }] },
+                        "comment_count": 10,
+                        "like_count": 20,
+                        "media_type": 1
+                      }
+                    }
+                  ],
+                  "page_info": {
+                    "end_cursor": "3987742705182008029_45145019",
+                    "has_next_page": true
+                  }
+                }
+              },
+              "status": "ok"
+            }
+            """.trimIndent()
+        )
+
+        val method = InstagramWebClient::class.java.getDeclaredMethod(
+            "parseGraphqlTimelineItems",
+            JSONObject::class.java
+        )
+        method.isAccessible = true
+        val items = method.invoke(client, json) as List<*>
+
+        assertTrue("Expected exactly top-level edge nodes, got ${items.size}", items.size == 2)
+        val first = items[0] as com.feedpilot.client.data.remote.InstagramUserFeedItem
+        assertTrue("First code should parse", first.code == "DdSrXHitmbz")
+        assertTrue("Video URL should parse", first.videoUrl == "https://cdn.example/video.mp4")
+        assertTrue("Display URL should parse", first.displayUrl == "https://cdn.example/image.jpg")
+        assertTrue("Like count should parse", first.likeCount == 111559L)
+        assertTrue("Comment count should parse", first.commentCount == 1966L)
+    }
+    @Test
+    fun `bridge path fetches target feed by username`() = runBlocking {
+        requireSession()
+
+        val targetUsername = System.getenv("FEEDPILOT_BRIDGE_TEST_USERNAME")
+            ?.trim()
+            ?.removePrefix("@")
+            ?.takeIf { it.isNotBlank() }
+            ?: "instagram"
+        val targetRepository = TargetRepository(instagramRepository)
+        val result = targetRepository.fetchUserFeed(targetUsername, customCookies = sessionCookies)
+
+        assertTrue(
+            "Bridge target feed should succeed for @$targetUsername, got $result",
+            result is Resource.Success
+        )
+        val feed = (result as Resource.Success).data
+        println("BRIDGE_FEED username=@$targetUsername items=${feed.items.size} hasMore=${feed.hasMore} maxId=${feed.maxId}")
+        feed.items.take(5).forEachIndexed { index, item ->
+            println(
+                "BRIDGE_FEED_ITEM[$index] code=${item.code} mediaId=${item.mediaId} " +
+                    "type=${item.mediaType} likes=${item.likeCount} comments=${item.commentCount} " +
+                    "takenAt=${item.takenAt} hasImage=${!item.displayUrl.isNullOrBlank()} hasVideo=${!item.videoUrl.isNullOrBlank()}"
+            )
+        }
+        feed.profile?.username?.takeIf { it.isNotBlank() }?.let { resolvedUsername ->
+            assertTrue(
+                "Expected bridge feed profile username to be '$targetUsername' but was '$resolvedUsername'",
+                resolvedUsername.equals(targetUsername, ignoreCase = true)
+            )
+        }
+        assertTrue("Bridge target feed should return at least one post", feed.items.isNotEmpty())
     }
 
     @Test
