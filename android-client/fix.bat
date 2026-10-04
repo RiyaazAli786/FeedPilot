@@ -9,7 +9,7 @@ call "%SCRIPT_DIR%gradlew.bat" --stop
 
 echo Closing Android JDK Java processes that can lock Gradle build files...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "Get-Process java -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*Android\openjdk*' } | Stop-Process -Force"
+  "Get-Process java -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '*Android\openjdk*' -or $_.Path -like '*jdk-17*' } | Stop-Process -Force"
 
 echo Verifying build directory...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
