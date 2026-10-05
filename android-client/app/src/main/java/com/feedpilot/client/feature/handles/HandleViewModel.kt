@@ -292,12 +292,10 @@ class HandleViewModel @Inject constructor(
             rssLoadingHandleId.value = handle.id
             error.value = null
             runCatching {
-                val profile = instagram.getUserProfileDetails(handle.username)
-                    ?: error("Instagram profile could not be loaded for @${handle.username}.")
-                val profileFeed = instagram.getUserFeed(profile.id)
-                val feed = profileFeed?.takeIf { it.items.isNotEmpty() }
-                    ?: instagram.getUserFeed(handle.username)
+                val feed = instagram.getUserFeed(handle.username)
                     ?: error("Instagram feed could not be loaded for @${handle.username}.")
+                val profile = feed.profile ?: instagram.getUserProfileDetails(handle.username)
+                    ?: error("Instagram profile could not be loaded for @${handle.username}.")
                 if (feed.items.isEmpty()) {
                     error("Instagram returned no feed posts for @${handle.username}.")
                 }
@@ -385,17 +383,13 @@ class HandleViewModel @Inject constructor(
             error.value = null
             message.value = null
             runCatching {
-                val profile = instagram.getUserProfileDetails(handle.username)
-                    ?: error("Instagram profile could not be loaded. Make sure one account is logged in.")
-                val profileFeed = instagram.getUserFeed(profile.id)
-                val feed = profileFeed?.takeIf { it.items.isNotEmpty() }
-                    ?: instagram.getUserFeed(handle.username)
+                val feed = instagram.getUserFeed(handle.username)
                     ?: error("Instagram feed could not be loaded.")
                 if (feed.items.isEmpty()) {
                     error("Instagram returned no feed posts for @${handle.username}. Check that the handle is public and the logged-in account can view it.")
                 }
                 nextMaxId = feed.maxId
-                nextFeedTarget = if (profileFeed === feed) profile.id else handle.username
+                nextFeedTarget = handle.username
                 feedHasMore.value = feed.hasMore && !feed.maxId.isNullOrBlank()
                 feedPosts.value = feed.items.map { it.toFeedPost() }
                 message.value = "Loaded ${feed.items.size} latest posts for @${handle.username}."

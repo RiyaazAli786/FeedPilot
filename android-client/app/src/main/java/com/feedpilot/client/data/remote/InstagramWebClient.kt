@@ -2700,7 +2700,7 @@ class InstagramWebClient @Inject constructor(
                 throwIfInstagramAuthFailure(response.code, bodyText, "feed/user")
 
                 if (bodyText.trimStart().startsWith("<")) {
-                    throw IllegalStateException("login_required: Instagram feed/user returned HTML instead of JSON")
+                    throwInstagramFeedHtmlFailure(response.request.url.encodedPath, "feed/user")
                 }
 
                 val json = JSONObject(bodyText)
@@ -2739,7 +2739,7 @@ class InstagramWebClient @Inject constructor(
         } catch (e: Exception) {
             if (e.isClassifiedInstagramFailure()) throw e
             Log.e(TAG, "Failed fetching user feed for userId $target", e)
-            null
+            throw e
         }
     }
 
@@ -2749,54 +2749,27 @@ class InstagramWebClient @Inject constructor(
         sessionCookies: String
     ): InstagramUserFeedResult? {
         val csrfToken = extractCookie(sessionCookies, "csrftoken")
-        val variables = JSONObject()
-            .put("before", maxId?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
-            .put(
-                "data",
-                JSONObject()
-                    .put("count", 12)
-                    .put("include_reel_media_seen_timestamp", true)
-                    .put("include_relationship_info", true)
-                    .put("latest_besties_reel_media", true)
-                    .put("latest_reel_media", true)
-            )
-            .put("first", 12)
-            .put("last", JSONObject.NULL)
-            .put("username", username)
-            .put("__relay_internal__pv__PolarisIsLoggedInrelayprovider", true)
-            .put("__relay_internal__pv__PolarisShareSheetV3relayprovider", false)
-
-        val formBody = FormBody.Builder()
-            .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "PolarisProfilePostsTabContentQuery_connection")
-            .add("doc_id", "25765904473087536")
-            .add("variables", variables.toString())
-            .build()
-
-        val reqBuilder = Request.Builder()
-            .url("https://www.instagram.com/graphql/query")
-            .post(formBody)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36")
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-ch-ua", "\"Chromium\";v=\"152\", \"Not?A_Brand\";v=\"24\", \"Google Chrome\";v=\"152\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("X-Fb-Friendly-Name", "PolarisProfilePostsTabContentQuery_connection")
-            .header("X-Ig-App-Id", InstagramCrypto.INSTAGRAM_APP_ID)
-            .header("Accept", "*/*")
-            .header("Origin", "chrome-extension://jedadojkeieofinbpffchndbaphloein")
-            .header("Sec-Fetch-Site", "none")
-            .header("Sec-Fetch-Mode", "cors")
-            .header("Sec-Fetch-Dest", "empty")
-            .header("Sec-Fetch-Storage-Access", "active")
-            .header("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+        // Bootstrap session-bound tokens from the target page instead of reusing captured credentials.
+        val pageRequest = Request.Builder()
+            .url("https://www.instagram.com/$username/")
+            .header("User-Agent", InstagramProfileFeedRequest.USER_AGENT)
+            .header("Accept", "text/html,application/xhtml+xml")
             .header("Cookie", sessionCookies)
-
-        if (!csrfToken.isNullOrBlank()) {
-            reqBuilder.header("X-Csrftoken", csrfToken)
+            .build()
+        val tokens = http.newCall(pageRequest).execute().use { response ->
+            val html = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throwInstagramFeedHttpFailure(response.code, html, "profile page")
+            }
+            if (response.request.url.encodedPath.startsWith("/accounts/login") ||
+                response.request.url.encodedPath.startsWith("/challenge") ||
+                response.request.url.encodedPath.startsWith("/checkpoint")) {
+                throwInstagramFeedHtmlFailure(response.request.url.encodedPath, "profile page")
+            }
+            InstagramProfileFeedRequest.tokens(html)
         }
-
-        http.newCall(reqBuilder.build()).execute().use { response ->
+        val request = InstagramProfileFeedRequest.build(username, maxId, sessionCookies, csrfToken, tokens)
+        http.newCall(request).execute().use { response ->
             val bodyText = response.body?.string() ?: ""
             if (!response.isSuccessful || bodyText.isBlank()) {
                 Log.w(TAG, "GraphQL profile feed returned HTTP ${response.code} for $username")
@@ -2805,7 +2778,7 @@ class InstagramWebClient @Inject constructor(
             }
             throwIfInstagramAuthFailure(response.code, bodyText, "graphql/query")
             if (bodyText.trimStart().startsWith("<")) {
-                throw IllegalStateException("login_required: Instagram graphql/query returned HTML instead of JSON")
+                throwInstagramFeedHtmlFailure(response.request.url.encodedPath, "graphql/query")
             }
 
             val json = JSONObject(bodyText.removePrefix("for (;;);"))
@@ -2838,6 +2811,16 @@ class InstagramWebClient @Inject constructor(
         }
     }
 
+    private fun throwInstagramFeedHtmlFailure(finalPath: String, endpoint: String): Nothing {
+        val message = when {
+            finalPath.startsWith("/accounts/login") -> "login_required: Instagram redirected $endpoint to login"
+            finalPath.startsWith("/challenge") || finalPath.startsWith("/checkpoint") ->
+                "checkpoint_required: Instagram redirected $endpoint to verification"
+            else -> "Instagram $endpoint returned HTML instead of feed JSON (path=$finalPath); request may be restricted"
+        }
+        throw IllegalStateException(message)
+    }
+
     private fun throwInstagramFeedHttpFailure(httpCode: Int, bodyText: String, endpoint: String) {
         val lower = bodyText.lowercase(Locale.ROOT)
         when {
@@ -2847,6 +2830,7 @@ class InstagramWebClient @Inject constructor(
                 throw IllegalStateException("login_required: Instagram $endpoint returned HTTP $httpCode")
             httpCode == 403 && (lower.contains("checkpoint") || lower.contains("challenge")) ->
                 throw IllegalStateException("checkpoint_required: Instagram $endpoint returned HTTP $httpCode")
+            else -> throw IllegalStateException("Instagram $endpoint returned HTTP $httpCode without feed JSON")
         }
     }
 

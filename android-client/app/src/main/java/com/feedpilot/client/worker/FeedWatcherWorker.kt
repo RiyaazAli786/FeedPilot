@@ -32,8 +32,8 @@ class FeedWatcherWorker @AssistedInject constructor(
                 .filter { it.isDue(now) }
                 .take(MAX_HANDLES_PER_RUN)
                 .forEach { handle ->
-                    val profile = instagram.getUserProfileDetails(handle.username) ?: return@forEach
-                    val feed = instagram.getUserFeed(profile.id) ?: return@forEach
+                    val feed = instagram.getUserFeed(handle.username) ?: return@forEach
+                    val profile = feed.profile ?: instagram.getUserProfileDetails(handle.username) ?: return@forEach
                     val posts = feed.items.map { item ->
                         SaveWatchedPostRequest(
                             postId = item.mediaId.ifBlank { item.id },

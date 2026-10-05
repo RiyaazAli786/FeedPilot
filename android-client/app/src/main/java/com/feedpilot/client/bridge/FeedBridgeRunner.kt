@@ -6,10 +6,7 @@ import com.feedpilot.client.common.Resource
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountEntity
 import com.feedpilot.client.data.remote.ApiService
-import com.feedpilot.client.data.remote.dto.BridgeFeedItemDto
 import com.feedpilot.client.data.remote.dto.BridgeHighlightDto
-import com.feedpilot.client.data.remote.dto.BridgeFeedProfileDto
-import com.feedpilot.client.data.remote.dto.BridgeFeedResultDataDto
 import com.feedpilot.client.data.remote.dto.BridgeHeartbeatAccountDto
 import com.feedpilot.client.data.remote.dto.BridgeHeartbeatRequest
 import com.feedpilot.client.data.remote.dto.BridgeJobDto
@@ -83,7 +80,7 @@ class FeedBridgeRunner @Inject constructor(
             return
         }
 
-        val target = job.targetUsername ?: job.targetUserId
+        val target = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId
         if (target.isNullOrBlank()) {
             fail(job, "INVALID_TARGET", "Bridge job did not include a username or user id.")
             BridgeStatusStore.online()
@@ -91,7 +88,11 @@ class FeedBridgeRunner @Inject constructor(
         }
 
         try {
-            val feedTarget = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId ?: target
+            // GraphQL profile feeds require a handle, including jobs submitted with only a user ID.
+            val feedTarget = job.targetUsername?.takeIf { it.isNotBlank() }
+                ?: instagram.getUserProfileDetails(target, account.sessionCookies)?.username
+                    ?.takeIf { it.isNotBlank() && it.any { char -> !char.isDigit() } }
+                ?: error("Instagram username could not be resolved for user ID $target.")
             val feed = when (val result = targets.fetchUserFeed(feedTarget, job.maxId, account.sessionCookies)) {
                 is Resource.Success -> result.data
                 is Resource.Error -> {
@@ -161,41 +162,7 @@ class FeedBridgeRunner @Inject constructor(
                 emptyList()
             }
 
-            val data = BridgeFeedResultDataDto(
-                profile = profile?.let {
-                    BridgeFeedProfileDto(
-                        id = it.id,
-                        username = it.username,
-                        fullName = it.fullName,
-                        biography = it.biography,
-                        profilePicUrl = it.profilePicUrl,
-                        followerCount = it.followerCount,
-                        followingCount = it.followingCount,
-                        mediaCount = it.mediaCount,
-                        isPrivate = it.isPrivate,
-                        isVerified = it.isVerified
-                    )
-                },
-                items = feed.items.take(job.limit).map {
-                    BridgeFeedItemDto(
-                        id = it.id,
-                        code = it.code,
-                        caption = it.caption,
-                        mediaType = it.mediaType,
-                        displayUrl = it.displayUrl,
-                        videoUrl = it.videoUrl,
-                        likeCount = it.likeCount,
-                        commentCount = it.commentCount,
-                        repostCount = it.repostCount,
-                        takenAt = it.takenAt,
-                        mediaId = it.mediaId
-                    )
-                },
-                maxId = feed.maxId,
-                hasMore = feed.hasMore,
-                stories = stories,
-                highlights = highlights
-            )
+            val data = feed.toBridgeResultData(job.limit, stories, highlights)
             api.completeBridgeJob(job.id, CompleteBridgeJobRequest(data))
             BridgeStatusStore.online("Completed bridge feed request")
         } catch (e: Exception) {
