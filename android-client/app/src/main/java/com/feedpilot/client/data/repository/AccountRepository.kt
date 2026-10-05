@@ -696,8 +696,10 @@ class AccountRepository @Inject constructor(
                 lastLogin = now,
                 lastActive = now,
                 coinsEarned = 0L,
-                sessionCookies = sessionCookies
+                sessionCookies = sessionCookies,
+                isLoggedIn = true
             )
+            accountDao.clearLoginStatusExcept(id)
             accountDao.upsertAll(listOf(entity))
             backupAccountsToDisk()
 
@@ -721,6 +723,7 @@ class AccountRepository @Inject constructor(
                         dto.toEntity().copy(
                             username = finalUsername,
                             sessionCookies = sessionCookies,
+                            isLoggedIn = true,
                             profilePictureUrl = dto.profilePictureUrl?.ifBlank { null } ?: profilePic
                         )
                     )

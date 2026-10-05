@@ -209,7 +209,8 @@ data class InstagramUserFeedResult(
     val items: List<InstagramUserFeedItem>,
     val maxId: String?,
     val hasMore: Boolean,
-    val profile: InstagramUserProfileDetails? = null
+    val profile: InstagramUserProfileDetails? = null,
+    val updatedCookies: String? = null
 )
 
 
@@ -2748,13 +2749,14 @@ class InstagramWebClient @Inject constructor(
         maxId: String?,
         sessionCookies: String
     ): InstagramUserFeedResult? {
-        val csrfToken = extractCookie(sessionCookies, "csrftoken")
+        var currentCookies = sessionCookies
         // Bootstrap session-bound tokens from the target page instead of reusing captured credentials.
         val pageRequest = Request.Builder()
             .url("https://www.instagram.com/$username/")
             .header("User-Agent", InstagramProfileFeedRequest.USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml")
             .header("Cookie", sessionCookies)
+            .apply { if (context != null) applyDeviceHeaders() }
             .build()
         val tokens = http.newCall(pageRequest).execute().use { response ->
             val html = response.body?.string().orEmpty()
@@ -2766,9 +2768,14 @@ class InstagramWebClient @Inject constructor(
                 response.request.url.encodedPath.startsWith("/checkpoint")) {
                 throwInstagramFeedHtmlFailure(response.request.url.encodedPath, "profile page")
             }
+            currentCookies = mergeSetCookiesAndClaim(currentCookies, response) ?: currentCookies
             InstagramProfileFeedRequest.tokens(html)
         }
-        val request = InstagramProfileFeedRequest.build(username, maxId, sessionCookies, csrfToken, tokens)
+        val request = InstagramProfileFeedRequest.build(username, maxId, currentCookies, extractCookie(currentCookies, "csrftoken"), tokens)
+            .newBuilder()
+            .apply { if (context != null) applyDeviceHeaders() }
+            .header("X-IG-WWW-Claim", extractWwwClaim(currentCookies))
+            .build()
         http.newCall(request).execute().use { response ->
             val bodyText = response.body?.string() ?: ""
             if (!response.isSuccessful || bodyText.isBlank()) {
@@ -2806,7 +2813,8 @@ class InstagramWebClient @Inject constructor(
                 items = items,
                 maxId = pageInfo?.optString("end_cursor")?.ifBlank { null },
                 hasMore = pageInfo?.optBoolean("has_next_page", false) ?: false,
-                profile = profile
+                profile = profile,
+                updatedCookies = (mergeSetCookiesAndClaim(currentCookies, response) ?: currentCookies).takeIf { it != sessionCookies }
             )
         }
     }

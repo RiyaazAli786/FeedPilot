@@ -136,38 +136,33 @@ class PostsViewModel @Inject constructor(
         val username = com.feedpilot.client.common.InstagramCrypto.parseUsername(clean) ?: clean.removePrefix("@")
         content.update { it.copy(targetUsername = username, profile = null, posts = emptyList(), loading = true, nextMaxId = null, hasMorePosts = false, loadingMore = false, message = null) }
         viewModelScope.launch {
-            when (val r = targetRepository.fetchProfile(username)) {
+            when (val feedRes = targetRepository.fetchUserFeed(username)) {
                 is Resource.Success -> {
-                    val profileDto = r.data
-                    val feedRes = targetRepository.fetchUserFeed(profileDto.username)
-                    var nextMaxId: String? = null
-                    var hasMore = false
-                    val postsList: List<PostItem> = if (feedRes is Resource.Success && feedRes.data.items.isNotEmpty()) {
-                        nextMaxId = feedRes.data.maxId
-                        hasMore = feedRes.data.hasMore && !nextMaxId.isNullOrBlank()
-                        feedRes.data.items.map { it.toPostItem() }
-                    } else {
-                        profileDto.toPosts()
-                    }
+                    val feed = feedRes.data
+                    val postsList = feed.items.map { it.toPostItem() }
+                    val profile = feed.profile?.let {
+                        TargetProfile(it.username, it.fullName, it.profilePicUrl, it.followerCount,
+                            it.followingCount, it.mediaCount, it.isPrivate)
+                    } ?: (targetRepository.fetchProfile(username) as? Resource.Success)?.data?.toProfile()
+                        ?: TargetProfile(username, null, null, 0, 0, postsList.size.toLong(), false)
                     content.update {
-                        val baseProfile = profileDto.toProfile()
-                        val updatedProfile = baseProfile.copy(posts = maxOf(baseProfile.posts, postsList.size.toLong()))
                         it.copy(
                             loading = false,
-                            profile = updatedProfile,
+                            profile = profile.copy(posts = maxOf(profile.posts, postsList.size.toLong())),
                             posts = postsList,
-                            nextMaxId = nextMaxId,
-                            hasMorePosts = hasMore,
+                            nextMaxId = feed.maxId,
+                            hasMorePosts = feed.hasMore && !feed.maxId.isNullOrBlank(),
                             loadingMore = false
                         )
                     }
                 }
-                is Resource.Error -> content.update { it.copy(loading = false, profile = null, posts = emptyList(), hasMorePosts = false, message = r.message) }
+                is Resource.Error -> content.update {
+                    it.copy(loading = false, profile = null, posts = emptyList(), hasMorePosts = false, message = feedRes.message)
+                }
                 Resource.Loading -> Unit
             }
         }
     }
-
     /** Fetches next page of posts for current target handle. */
     fun loadMorePosts() {
         val curr = content.value

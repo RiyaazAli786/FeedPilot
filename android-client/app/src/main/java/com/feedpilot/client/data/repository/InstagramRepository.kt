@@ -96,7 +96,9 @@ class InstagramRepository @Inject constructor(
     /** Fetches media feed for a user ID or username. */
     suspend fun getUserFeed(userId: String, maxId: String? = null, customCookies: String? = null): InstagramUserFeedResult? {
         val cookies = customCookies ?: getActiveAccountCookies() ?: return null
-        return instagramWebClient.fetchUserFeed(userId, maxId, cookies)
+        val feed = instagramWebClient.fetchUserFeed(userId, maxId, cookies)
+        feed?.updatedCookies?.let { sessionGate.persistSessionCookies(cookies, it) }
+        return feed
     }
 
     /** Fetches metadata for a specific media item by ID or shortcode. */

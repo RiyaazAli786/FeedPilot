@@ -21,8 +21,15 @@ class AccountSessionGate @Inject constructor(
     private val accountDao: AccountDao
 ) {
     /** Cookies of the account to act as, or null when nothing is signed in. */
-    suspend fun activeSessionCookies(): String? =
-        accountDao.getAll().firstOrNull { it.sessionCookies.isNotBlank() }?.sessionCookies
+    suspend fun activeSessionCookies(): String? {
+        val accounts = accountDao.getAll().filter { it.sessionCookies.isNotBlank() }
+        return (accounts.firstOrNull { it.isLoggedIn } ?: accounts.firstOrNull())?.sessionCookies
+    }
+
+    suspend fun persistSessionCookies(original: String, updated: String) {
+        val account = accountDao.getAll().firstOrNull { it.sessionCookies == original } ?: return
+        accountDao.updateSessionCookies(account.id, updated)
+    }
 
     suspend fun isSignedIn(): Boolean = activeSessionCookies() != null
 }
