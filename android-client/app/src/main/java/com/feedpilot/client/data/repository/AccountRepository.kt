@@ -354,11 +354,7 @@ class AccountRepository @Inject constructor(
             // optimistic credit the server just hasn't caught up to yet.
             val previousServerCoinsEarned = lastServerCoinsEarned[r.id]
             lastServerCoinsEarned[r.id] = r.coinsEarned
-            val finalCookies = when {
-                r.sessionCookies.isNotBlank() -> r.sessionCookies
-                local != null && local.sessionCookies.isNotBlank() -> local.sessionCookies
-                else -> ""
-            }
+            val finalCookies = mergeAccountSessionCookies(local?.sessionCookies, r.sessionCookies)
             r.copy(
                 sessionCookies = finalCookies,
                 profilePictureUrl = r.profilePictureUrl?.ifBlank { null } ?: local?.profilePictureUrl,
