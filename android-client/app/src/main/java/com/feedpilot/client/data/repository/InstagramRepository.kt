@@ -98,6 +98,20 @@ class InstagramRepository @Inject constructor(
         val cookies = customCookies ?: getActiveAccountCookies() ?: return null
         val feed = instagramWebClient.fetchUserFeed(userId, maxId, cookies)
         feed?.updatedCookies?.let { sessionGate.persistSessionCookies(cookies, it) }
+        // Timeline media owners omit account totals. Enrich the first page for every consumer
+        // (Posts, Handles and bridge) rather than treating those missing fields as real zeros.
+        if (feed != null && maxId.isNullOrBlank()) {
+            val profile = try {
+                instagramWebClient.fetchUserProfileDetails(feed.profile?.username ?: userId, feed.updatedCookies ?: cookies)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            if (profile != null && (profile.followerCount > 0 || profile.followingCount > 0 || profile.mediaCount > 0)) {
+                return feed.copy(profile = profile)
+            }
+        }
         return feed
     }
 

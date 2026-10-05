@@ -227,6 +227,12 @@ class InstagramRepositoryTest {
         )
         val feed = (result as Resource.Success).data
         println("BRIDGE_FEED username=@$targetUsername items=${feed.items.size} hasMore=${feed.hasMore} maxId=${feed.maxId}")
+        println("BRIDGE_PROFILE followers=${feed.profile?.followerCount} following=${feed.profile?.followingCount} posts=${feed.profile?.mediaCount}")
+        if (targetUsername.equals("mitxelena14", ignoreCase = true)) {
+            assertTrue("Expected follower total", (feed.profile?.followerCount ?: 0) > 0)
+            assertTrue("Expected following total", (feed.profile?.followingCount ?: 0) > 0)
+            assertTrue("Expected total posts beyond the first page", (feed.profile?.mediaCount ?: 0) > feed.items.size)
+        }
         feed.items.take(5).forEachIndexed { index, item ->
             println(
                 "BRIDGE_FEED_ITEM[$index] code=${item.code} mediaId=${item.mediaId} " +
