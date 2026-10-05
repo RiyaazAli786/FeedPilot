@@ -9,6 +9,22 @@ import org.junit.Test
 import java.util.concurrent.TimeUnit
 
 class InstagramFeedSessionTest {
+    @Test fun `partial graphql field errors preserve usable posts without fallback`() = runBlocking {
+        val server = MockWebServer()
+        server.start()
+        try {
+            server.enqueue(MockResponse().setBody("<html></html>"))
+            server.enqueue(MockResponse().setBody("""{"data":{"xdt_api__v1__feed__user_timeline_graphql_connection":{"edges":[{"node":{"id":"123_456","code":"partialPost","media_type":1,"taken_at":1791140402}}],"page_info":{"end_cursor":"next","has_next_page":true}}},"errors":[{"message":"A server error field_exception occured. Check server logs for details.","path":["xdt_api__v1__feed__user_timeline_graphql_connection","edges",0,"node","optional_field"]}]}"""))
+            val http = OkHttpClient.Builder().addInterceptor { chain ->
+                chain.proceed(chain.request().newBuilder().url(server.url(chain.request().url.encodedPath)).build())
+            }.build()
+            val feed = InstagramWebClient(http, null).fetchUserFeed("example", sessionCookies = "sessionid=valid")!!
+            assertEquals("partialPost", feed.items.single().code)
+            assertEquals("next", feed.maxId)
+            assertTrue(feed.hasMore)
+            assertEquals(2, server.requestCount)
+        } finally { server.shutdown() }
+    }
     @Test fun `profile cookie rotation is used in graphql and returned for persistence`() = runBlocking {
         val server = MockWebServer()
         server.start()

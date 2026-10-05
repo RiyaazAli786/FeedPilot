@@ -2789,8 +2789,14 @@ class InstagramWebClient @Inject constructor(
             }
 
             val json = JSONObject(bodyText.removePrefix("for (;;);"))
+            val items = parseGraphqlTimelineItems(json).toMutableList()
+            if (items.isEmpty()) {
+                collectGraphqlFeedItems(json, items, mutableSetOf())
+            }
+            val pageInfo = findPageInfo(json)
+            val profile = findGraphqlProfile(json, username, items.size.toLong())
             val errors = json.optJSONArray("errors")
-            if (errors != null && errors.length() > 0) {
+            if (errors != null && errors.length() > 0 && items.isEmpty() && profile == null) {
                 val message = errors.optJSONObject(0)?.optString("message").orEmpty()
                 if (message.contains("rate limit", ignoreCase = true)) {
                     throw IllegalStateException("rate limited: Instagram graphql/query returned $message")
@@ -2798,12 +2804,6 @@ class InstagramWebClient @Inject constructor(
                 throw IllegalStateException("Instagram graphql/query error: ${message.ifBlank { errors.toString() }}")
             }
 
-            val items = parseGraphqlTimelineItems(json).toMutableList()
-            if (items.isEmpty()) {
-                collectGraphqlFeedItems(json, items, mutableSetOf())
-            }
-            val pageInfo = findPageInfo(json)
-            val profile = findGraphqlProfile(json, username, items.size.toLong())
             if (items.isEmpty() && profile == null) {
                 val keys = json.keys().asSequence().take(12).joinToString(",")
                 throw IllegalStateException("unexpected graphql/query response for $username: keys=$keys body=${bodyText.take(220)}")
