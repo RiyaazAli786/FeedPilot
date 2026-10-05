@@ -41,7 +41,23 @@ class InstagramRepositoryTest {
 
         // No Android Context in a JVM test; the client only uses it for the device fingerprint,
         // which falls back to a default UA when null.
-        val instagramWebClient = InstagramWebClient(OkHttpClient.Builder().build(), null)
+        val http = OkHttpClient.Builder().apply {
+            if (System.getenv("FEEDPILOT_TEST_MOBILE_HEADERS") == "true") {
+                addInterceptor { chain ->
+                    val crypto = com.feedpilot.client.common.InstagramCrypto
+                    chain.proceed(chain.request().newBuilder()
+                        .header("User-Agent", crypto.DEFAULT_USER_AGENT)
+                        .header("sec-ch-ua", crypto.SEC_CH_UA)
+                        .header("sec-ch-ua-mobile", crypto.SEC_CH_UA_MOBILE)
+                        .header("sec-ch-ua-platform", crypto.SEC_CH_UA_PLATFORM)
+                        .header("sec-ch-ua-platform-version", crypto.SEC_CH_UA_PLATFORM_VERSION)
+                        .header("sec-ch-ua-model", crypto.SEC_CH_UA_MODEL)
+                        .header("Accept-Language", crypto.ACCEPT_LANGUAGE)
+                        .build())
+                }
+            }
+        }.build()
+        val instagramWebClient = InstagramWebClient(http, null)
 
         val stubAccountDao = object : AccountDao {
             override fun observeAll() = throw UnsupportedOperationException("not used in these tests")
