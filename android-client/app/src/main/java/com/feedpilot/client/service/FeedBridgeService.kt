@@ -10,7 +10,6 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import android.content.pm.ServiceInfo
@@ -55,6 +54,7 @@ class FeedBridgeService : Service() {
 
     override fun onDestroy() {
         scope.cancel()
+        BridgeStatusStore.error("Bridge stopped. Reopen FeedPilot to reconnect.")
         super.onDestroy()
     }
 
@@ -66,27 +66,21 @@ class FeedBridgeService : Service() {
     }
 
     private suspend fun loop() {
-        var idleTicks = 0
         while (scope.isActive) {
             try {
                 if (!hasInternetConnection()) {
-                    idleTicks = 0
                     BridgeStatusStore.offline()
-                    updateNotification("Bridge offline - waiting for internet")
                     delay(ERROR_DELAY_MS)
                     continue
                 }
 
                 val ranJob = runner.runOneJob()
-                idleTicks = if (ranJob) 0 else idleTicks + 1
                 val text = if (ranJob) "Completed bridge feed request" else "Waiting for bridge requests"
                 if (!ranJob) BridgeStatusStore.online(text)
-                updateNotification(text)
                 delay(if (ranJob) ACTIVE_DELAY_MS else IDLE_DELAY_MS)
             } catch (e: Exception) {
                 Log.w(TAG, "Feed bridge loop failed", e)
                 BridgeStatusStore.error("Bridge retrying after network error")
-                updateNotification("Bridge retrying after network error")
                 delay(ERROR_DELAY_MS)
             }
         }
@@ -99,13 +93,14 @@ class FeedBridgeService : Service() {
             NotificationChannel(
                 Constants.FEED_BRIDGE_CHANNEL_ID,
                 "Feed bridge",
-                NotificationManager.IMPORTANCE_MIN
+                NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setShowBadge(false)
                 enableLights(false)
                 enableVibration(false)
                 setSound(null, null)
                 lockscreenVisibility = Notification.VISIBILITY_SECRET
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setBlockable(true)
             }
         )
     }
@@ -126,22 +121,16 @@ class FeedBridgeService : Service() {
     private fun buildNotification(text: String): Notification {
         return NotificationCompat.Builder(this, Constants.FEED_BRIDGE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("FeedPilot bridge")
+            .setContentTitle("Bridge mode on")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setOngoing(true)
+            .setOngoing(false)
             .setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-    }
-
-    private fun updateNotification(text: String) {
-        runCatching {
-            NotificationManagerCompat.from(this).notify(notificationId, buildNotification(text))
-        }
     }
 
     companion object {

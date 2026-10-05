@@ -1,8 +1,6 @@
 package com.feedpilot.client
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,8 +9,6 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -50,8 +46,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.feedpilot.client.data.repository.ThemeMode
-import com.feedpilot.client.bridge.BridgeConnectionState
-import com.feedpilot.client.bridge.BridgeStatusStore
 import com.feedpilot.client.feature.accounts.AddAccountScreen
 import com.feedpilot.client.feature.connect.VerifyCodeScreen
 import com.feedpilot.client.feature.followers.FollowersScreen
@@ -87,14 +81,10 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
     private val launchDestination = mutableStateOf<String?>(null)
 
-    private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* runner works either way */ }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         captureLaunchDestination(intent)
         enableEdgeToEdge()
-        requestNotificationPermission()
         requestBatteryOptimizationExemption()
         setContent {
             FeedPilotRoot(
@@ -115,14 +105,6 @@ class MainActivity : ComponentActivity() {
             CsvAccountImportService.ACTION_OPEN_CSV_IMPORT_STATUS -> Routes.CSV_IMPORT_STATUS
             else -> null
         }
-    }
-
-    /** The task runner posts an ongoing notification; on Android 13+ that needs user consent. */
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun requestBatteryOptimizationExemption() {
@@ -379,9 +361,11 @@ private fun MainScreenLayout(
     }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (onTab) com.feedpilot.client.ui.components.BridgeModeBadge()
         Box(
             Modifier
                 .weight(1f)
+                .then(if (onTab) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)
                 .swipeBetweenBottomTabs(navController, currentRoute?.route)
         ) {
             NavHost(navController = navController, startDestination = Routes.SPLASH) {
@@ -580,67 +564,11 @@ private fun MainScreenLayout(
         }
 
         if (onTab) {
-            BridgeStatusBanner()
             BottomNavBar(navController, currentRoute?.route)
         }
     }
 }
 
-@Composable
-private fun BridgeStatusBanner() {
-    val status by BridgeStatusStore.status.collectAsStateWithLifecycle()
-    val dotColor = when (status.state) {
-        BridgeConnectionState.Online,
-        BridgeConnectionState.RunningJob -> androidx.compose.ui.graphics.Color(0xFF18B26B)
-        BridgeConnectionState.Starting -> AppTheme.brand.orange
-        BridgeConnectionState.Offline,
-        BridgeConnectionState.Error -> MaterialTheme.colorScheme.error
-    }
-    val label = when (status.state) {
-        BridgeConnectionState.RunningJob -> status.currentUsername?.let { "Bridge online - resolving @$it" }
-            ?: status.message
-        BridgeConnectionState.Online -> "Bridge online"
-        BridgeConnectionState.Starting -> "Bridge starting"
-        BridgeConnectionState.Offline -> "Bridge offline"
-        BridgeConnectionState.Error -> "Bridge needs attention"
-    }
-    val detail = status.message
-
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 3.dp,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
-            Column(Modifier.weight(1f)) {
-                Text(
-                    label,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                if (detail.isNotBlank() && detail != label) {
-                    Text(
-                        detail,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
-            }
-        }
-    }
-}
 @Composable
 private fun BottomNavBar(navController: NavHostController, currentRoute: String?) {
     Row(
