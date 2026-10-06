@@ -33,6 +33,7 @@ android-client/.cxx/
 *.apk
 *.aab
 *.keystore
+!/android-client/release.keystore
 !backend/src/FeedPilot.Api/wwwroot/apk/
 !backend/src/FeedPilot.Api/wwwroot/apk/*.json
 

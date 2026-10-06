@@ -52,7 +52,7 @@ fun MoreScreen(
             onSettings = onSettings,
             onWithdraw = onWithdraw
         ) {
-            Surface(shape = RoundedCornerShape(12.dp), color = Color.White) {
+            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,

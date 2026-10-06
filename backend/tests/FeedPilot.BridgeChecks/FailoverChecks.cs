@@ -36,7 +36,12 @@ internal static class FailoverChecks
             await Heartbeat(Service(seed), "second");
             await Heartbeat(Service(seed), "first");
             var devices = await seed.FeedBridgeDeviceStates.ToListAsync();
-            foreach (var d in devices) d.LastSeenAt = DateTime.UtcNow.AddSeconds(d.DeviceId == "first" ? 0 : -1);
+            foreach (var d in devices)
+            {
+                d.LastSeenAt = DateTime.UtcNow.AddSeconds(d.DeviceId == "first" ? 0 : -1);
+                // With unused devices, the rotation starts in stable creation order.
+                d.CreatedAt = DateTime.UtcNow.AddMinutes(d.DeviceId == "first" ? -2 : -1);
+            }
             await seed.SaveChangesAsync();
         }
         using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(20));

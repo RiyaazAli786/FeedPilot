@@ -522,19 +522,19 @@ private fun PostCard(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.25f)),
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Surface(
                             shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.65f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                             modifier = Modifier.size(42.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Filled.PlayArrow,
                                     contentDescription = "Play Reel",
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(26.dp)
                                 )
                             }
@@ -637,13 +637,13 @@ private fun PostCard(
                         Icon(
                             imageVector = Icons.Filled.Favorite,
                             contentDescription = null,
-                            tint = Color.Black,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             text = "Get Likes",
-                            color = Color.Black,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -697,7 +697,7 @@ private fun CountBadge(
 ) {
     Surface(
         shape = RoundedCornerShape(8.dp),
-        color = Color.Black.copy(alpha = 0.55f)
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
     ) {
         Row(
             Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
@@ -705,7 +705,7 @@ private fun CountBadge(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(12.dp))
-            Text(countStr, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(countStr, color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -748,9 +748,9 @@ fun ReelPlayerDialog(
 
         Surface(
             modifier = containerModifier,
-            color = Color.Black,
+            color = MaterialTheme.colorScheme.onSurface,
             shadowElevation = if (isFullScreen) 0.dp else 8.dp,
-            border = if (isFullScreen) null else androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            border = if (isFullScreen) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))
         ) {
             Box(Modifier.fillMaxSize()) {
                 // Background Poster Image (ALWAYS visible as base layer so screen is NEVER black!)
@@ -817,7 +817,7 @@ fun ReelPlayerDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.35f)),
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(color = AppTheme.brand.magenta)
@@ -833,14 +833,14 @@ fun ReelPlayerDialog(
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.65f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         modifier = Modifier.size(38.dp)
                     ) {
                         IconButton(onClick = { isFullScreen = !isFullScreen }) {
                             Icon(
                                 imageVector = if (isFullScreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
                                 contentDescription = if (isFullScreen) "Exit Fullscreen" else "Fullscreen",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -848,14 +848,14 @@ fun ReelPlayerDialog(
 
                     Surface(
                         shape = CircleShape,
-                        color = Color.Black.copy(alpha = 0.65f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         modifier = Modifier.size(38.dp)
                     ) {
                         IconButton(onClick = onDismiss) {
                             Icon(
                                 imageVector = Icons.Filled.Close,
                                 contentDescription = "Close",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -869,7 +869,7 @@ fun ReelPlayerDialog(
                         .fillMaxWidth()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))
+                                colors = listOf(Color.Transparent, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.88f))
                             )
                         )
                         .padding(16.dp)
@@ -877,7 +877,7 @@ fun ReelPlayerDialog(
                     if (!post.caption.isNullOrBlank()) {
                         Text(
                             text = post.caption,
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
@@ -895,19 +895,19 @@ fun ReelPlayerDialog(
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = AppTheme.brand.orange)
                         ) {
-                            Icon(Icons.Filled.Favorite, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Get Likes for Reel", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("Get Likes for Reel", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                         }
 
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.2f),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                             modifier = Modifier.clickable { isFullScreen = !isFullScreen }
                         ) {
                             Text(
                                 text = if (isFullScreen) "Exit Full Screen" else "Full Screen",
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -989,12 +989,12 @@ private fun PlacePostOrderDialog(
                 // Header Bar with Back Arrow and Title
                 Row(
                     Modifier.fillMaxWidth()
-                        .background(Color(0xFF6B1D90))
+                        .background(MaterialTheme.colorScheme.primaryContainer)
                         .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onDismiss) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                     }
                     Spacer(Modifier.width(4.dp))
                     Text(
@@ -1007,7 +1007,7 @@ private fun PlacePostOrderDialog(
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -1030,7 +1030,7 @@ private fun PlacePostOrderDialog(
                         // Top-Left Badge (Images 1, 2, 3, 4)
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.95f),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
                         ) {
                             Row(
@@ -1041,17 +1041,17 @@ private fun PlacePostOrderDialog(
                                     "Repost" -> {
                                         Icon(Icons.Filled.Repeat, contentDescription = null, tint = Color(0xFF8E24AA), modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("1168", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text("1168", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                     }
                                     "Save" -> {
                                         Icon(Icons.Filled.Bookmark, contentDescription = null, tint = Color(0xFF8E24AA), modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("1891", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text("1891", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                     }
                                     else -> {
                                         Icon(Icons.Filled.FavoriteBorder, contentDescription = null, tint = Color(0xFFD81B60), modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text(formatCount(post.likes), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text(formatCount(post.likes), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                     }
                                 }
                             }
@@ -1060,7 +1060,7 @@ private fun PlacePostOrderDialog(
                         // Bottom-Right Badge (Images 1, 2, 3, 4)
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.95f),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp)
                         ) {
                             Row(
@@ -1069,12 +1069,12 @@ private fun PlacePostOrderDialog(
                             ) {
                                 when (selectedTab) {
                                     "Comment", "Like" -> {
-                                        Text(formatCount(post.comments), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text(formatCount(post.comments), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(Modifier.width(4.dp))
                                         Icon(Icons.Filled.ModeComment, contentDescription = null, tint = Color(0xFF8E24AA), modifier = Modifier.size(16.dp))
                                     }
                                     else -> {
-                                        Text(formatCount(post.likes), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                        Text(formatCount(post.likes), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                         Spacer(Modifier.width(4.dp))
                                         Icon(Icons.Filled.FavoriteBorder, contentDescription = null, tint = Color(0xFFD81B60), modifier = Modifier.size(16.dp))
                                     }
@@ -1197,7 +1197,7 @@ private fun PlacePostOrderDialog(
                                             }
                                         ) {
                                             Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Filled.Add, contentDescription = "Add", tint = Color.White)
+                                                Icon(Icons.Filled.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.onSurface)
                                             }
                                         }
                                     }
@@ -1292,12 +1292,12 @@ private fun PlacePostOrderDialog(
                             contentPadding = PaddingValues(vertical = 14.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Filled.ModeComment, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ModeComment, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = if (selectedCommentsSet.isEmpty()) "Select comments to place order"
                                        else "Place Comment Order (${selectedCommentsSet.size})",
-                                color = Color.Black,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.Bold
                             )
                         }

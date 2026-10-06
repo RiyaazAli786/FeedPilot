@@ -428,11 +428,18 @@ public class FeedBridgeService : IFeedBridgeService
                 a => new { a.AppId, a.DeviceId, a.InstallationId },
                 d => new { d.AppId, d.DeviceId, d.InstallationId },
                 (a, d) => new { Account = a, Device = d })
-            .OrderByDescending(x => x.Device.LastSeenAt)
-            .ThenByDescending(x => x.Account.InstagramUsername == x.Device.ActiveAccountUsername)
-            .ThenBy(x => x.Account.FailureCount)
+            // Rotate devices independently of how many accounts they hold, then
+            // rotate accounts on the selected device. Assignment updates LastUsedAt
+            // under SelectionGate, so failures also advance both rotations.
+            .OrderBy(x => _db.FeedBridgeAccountStates
+                .Where(a => a.AppId == x.Device.AppId && a.DeviceId == x.Device.DeviceId &&
+                    a.InstallationId == x.Device.InstallationId)
+                .Max(a => a.LastUsedAt) ?? DateTime.MinValue)
+            .ThenBy(x => x.Device.CreatedAt)
+            .ThenBy(x => x.Device.Id)
             .ThenBy(x => x.Account.LastUsedAt ?? DateTime.MinValue)
             .ThenBy(x => x.Account.CreatedAt)
+            .ThenBy(x => x.Account.Id)
             .Select(x => x.Account)
             .FirstOrDefaultAsync(ct);
     }

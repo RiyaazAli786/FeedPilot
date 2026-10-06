@@ -48,7 +48,7 @@ class RootViewModel @Inject constructor(
     val themeMode: StateFlow<ThemeMode> =
         settingsRepository.settings
             .map { it.theme }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.LIGHT)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
 
     val bridgeEnabled: StateFlow<Boolean> = settingsRepository.settings
         .map { it.bridgeEnabled }

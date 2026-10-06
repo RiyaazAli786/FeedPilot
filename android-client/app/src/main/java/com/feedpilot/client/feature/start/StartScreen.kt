@@ -1,6 +1,9 @@
 package com.feedpilot.client.feature.start
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.feedpilot.client.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -71,7 +74,7 @@ class StartViewModel @Inject constructor(
     }
 
     /**
-     * Restores a Backup Code from the very first screen a brand-new install lands on — a fresh
+     * Restores a Backup Code from the very first screen a brand-new install lands on ï¿½ a fresh
      * install, a data clear, and a reinstall are all indistinguishable from here (each starts
      * with zero linked accounts), so this is offered unconditionally rather than trying to guess
      * which case it is. See AuthRepository.restoreWithBackupCode for the actual mechanism.
@@ -80,15 +83,15 @@ class StartViewModel @Inject constructor(
         viewModelScope.launch {
             when (val res = authRepository.restoreWithBackupCode(code)) {
                 is Resource.Success -> {
-                    // Re-cache the code on this install too — otherwise Settings' "Backup Code"
+                    // Re-cache the code on this install too ï¿½ otherwise Settings' "Backup Code"
                     // section would think this install was never secured, even though it just was.
                     secureStorage.put(SecureStorage.KEY_BACKUP_CODE, code.trim())
                     walletRepository.refresh()
                     // Retried, not fire-and-forget: this is the account_logs completed-task
                     // backfill's first and highest-stakes chance to land before the operator taps
-                    // Start — see AccountRepository.refreshWithRetry's doc for why that matters.
+                    // Start ï¿½ see AccountRepository.refreshWithRetry's doc for why that matters.
                     accountRepository.refreshWithRetry()
-                    onResult(true, "Account restored — your coins are back.")
+                    onResult(true, "Account restored ï¿½ your coins are back.")
                 }
                 is Resource.Error -> onResult(false, res.message ?: "Could not restore with that code.")
                 Resource.Loading -> Unit
@@ -120,32 +123,22 @@ fun StartScreen(
         label = "scale"
     )
 
-    val gradientBg = Brush.verticalGradient(
-        colors = listOf(
-            Color(0xFF07141D),
-            Color(0xFF050A10),
-            Color(0xFF020407)
-        )
-    )
-
-    val emblemGradient = Brush.linearGradient(
-        colors = listOf(Color(0xFF26F0DF), Color(0xFF4D7CFF), Color(0xFF9B5CFF))
-    )
-
-    val primaryGradient = Brush.horizontalGradient(
-        colors = listOf(
-            Color(0xFF0BC9BF),
-            Color(0xFF2554D9),
-            Color(0xFF1A2540)
-        )
-    )
-
+    val gradientBg = Brush.verticalGradient(listOf(
+        MaterialTheme.colorScheme.surfaceContainerHigh,
+        MaterialTheme.colorScheme.background
+    ))
+    val emblemGradient = Brush.linearGradient(listOf(
+        AppTheme.brand.coinGold, MaterialTheme.colorScheme.primary
+    ))
+    val primaryGradient = Brush.horizontalGradient(listOf(
+        MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primary
+    ))
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(gradientBg)
             // The activity is edge-to-edge, so the gradient fills the whole screen but content
-            // must stay clear of the status and navigation bars — without this the bottom
+            // must stay clear of the status and navigation bars ï¿½ without this the bottom
             // "Safe & Secure" row is drawn underneath the navigation bar and gets clipped.
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(24.dp),
@@ -170,18 +163,17 @@ fun StartScreen(
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
-                                colors = listOf(Color(0xFF25D9D0).copy(alpha = 0.28f), Color.Transparent)
+                                colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f), Color.Transparent)
                             )
                         )
                         .border(width = 3.dp, brush = emblemGradient, shape = CircleShape)
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.FlightTakeoff,
+                    Image(
+                        painter = painterResource(R.drawable.ic_launcher_foreground),
                         contentDescription = "FeedPilot Emblem",
-                        tint = Color(0xFF8DEDE8),
-                        modifier = Modifier.size(54.dp)
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
 
@@ -191,7 +183,7 @@ fun StartScreen(
                     text = "FeedPilot",
                     fontWeight = FontWeight.Black,
                     fontSize = 38.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     letterSpacing = 1.2.sp
                 )
 
@@ -199,12 +191,12 @@ fun StartScreen(
 
                 Surface(
                     shape = RoundedCornerShape(20.dp),
-                    color = Color(0xFF0E1B25).copy(alpha = 0.92f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF25D9D0).copy(alpha = 0.42f))
+                    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
                 ) {
                     Text(
-                        text = "Instant Followers • Real Likes • Automated Coins",
-                        color = Color.White.copy(alpha = 0.9f),
+                        text = "Instant Followers ï¿½ Real Likes ï¿½ Automated Coins",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         // Narrow screens cannot fit this on one line; centre it so the wrap reads
@@ -242,12 +234,12 @@ fun StartScreen(
                         Icon(
                             imageVector = Icons.Filled.FlightTakeoff,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
                             text = "Sign in with Instagram",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onPrimary,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -263,12 +255,12 @@ fun StartScreen(
                     Icon(
                         imageVector = Icons.Filled.Lock,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.5f),
+                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                         modifier = Modifier.size(13.dp)
                     )
                     Text(
-                        text = "Safe & Secure • Direct Instagram OAuth",
-                        color = Color.White.copy(alpha = 0.5f),
+                        text = "Safe & Secure ï¿½ Direct Instagram OAuth",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                         fontSize = 12.sp
                     )
                 }
@@ -276,7 +268,7 @@ fun StartScreen(
                 Spacer(Modifier.height(12.dp))
 
                 // Offered unconditionally on the very first screen a brand-new install lands
-                // on — see StartViewModel.restoreWithBackupCode for why a fresh install, a data
+                // on ï¿½ see StartViewModel.restoreWithBackupCode for why a fresh install, a data
                 // clear, and a reinstall can't be told apart here, so this can't be shown only
                 // when it's "needed".
                 if (isOriginalApp) {
@@ -287,7 +279,7 @@ fun StartScreen(
                             .clip(RoundedCornerShape(14.dp))
                             .border(
                                 width = 1.5.dp,
-                                color = Color.White.copy(alpha = 0.35f),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                                 shape = RoundedCornerShape(14.dp)
                             )
                             .clickable { showRestoreDialog = true },
@@ -295,7 +287,7 @@ fun StartScreen(
                     ) {
                         Text(
                             text = "Restore a previous account",
-                            color = Color.White.copy(alpha = 0.9f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -365,7 +357,7 @@ private fun PrivacyPolicyDialog(
                 .fillMaxWidth(0.92f)
                 .wrapContentHeight(),
             shape = RoundedCornerShape(20.dp),
-            color = Color.White
+            color = MaterialTheme.colorScheme.surface
         ) {
             Column(
                 modifier = Modifier
@@ -390,7 +382,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "FeedPilot respects the privacy of its users and is committed to protecting the personal information you provide. Since the collection and processing of personal information is an unavoidable part of mobile phone and internet based processes, it is necessary to read this document in order to fully understand the policies and privacy.",
                         fontSize = 13.sp,
-                        color = Color(0xFF222222),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
 
@@ -400,7 +392,7 @@ private fun PrivacyPolicyDialog(
                         text = "What information is collected by us:",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF222222)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
 
                     Spacer(Modifier.height(8.dp))
@@ -408,7 +400,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "1. By logging into the program, your Android ID will be saved on our server so that we can store information such as the number of coins, the number of crystals, the number of your invitees, etc. on your Android ID. If the data is deleted from your device or the application is deleted and reinstalled, your data will be saved and your coins will not be lost.",
                         fontSize = 13.sp,
-                        color = Color(0xFF333333),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
 
@@ -417,7 +409,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "2. When logging into the Instagram account, we may use cookies to collect information. A cookie is a file that is created by the browser at the request of a site and allows the site to store your information and reactions on the site. Cookies help us communicate with Instagram and send your requests such as follows, likes, comments, etc. directly through the program.",
                         fontSize = 13.sp,
-                        color = Color(0xFF333333),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
 
@@ -426,7 +418,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "3. Your IP address",
                         fontSize = 13.sp,
-                        color = Color(0xFF333333),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
 
@@ -435,7 +427,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "4. Your username and user ID on Instagram",
                         fontSize = 13.sp,
-                        color = Color(0xFF333333),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
 
@@ -444,7 +436,7 @@ private fun PrivacyPolicyDialog(
                     Text(
                         text = "Acceptance of this document will mean acceptance of policies that may change in the future.",
                         fontSize = 13.sp,
-                        color = Color(0xFF222222),
+                        color = MaterialTheme.colorScheme.onSurface,
                         lineHeight = 18.sp
                     )
                 }
@@ -462,8 +454,8 @@ private fun PrivacyPolicyDialog(
                         onClick = onAccept,
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF25D9D0),
-                            contentColor = Color(0xFF031013)
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -485,7 +477,7 @@ private fun PrivacyPolicyDialog(
                     ) {
                         Text(
                             text = "Cancel",
-                            color = Color(0xFF666666),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         )

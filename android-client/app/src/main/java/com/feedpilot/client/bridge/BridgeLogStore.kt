@@ -34,6 +34,10 @@ class BridgeLogHistory(private val now: () -> Long = System::currentTimeMillis) 
         mutableEntries.value = (mutableEntries.value + restored).take(1000)
         file = destination
     }
+    @Synchronized fun clear() {
+        mutableEntries.value = emptyList()
+        file?.let { writes.trySend(it to emptyList()) }
+    }
     @Synchronized fun record(status: BridgeStatus) {
         if (mutableEntries.value.firstOrNull()?.status == status) return
         mutableEntries.value = (listOf(BridgeLogEntry(now(), status)) + mutableEntries.value).take(1000)
@@ -61,4 +65,5 @@ object BridgeLogStore {
     val entries = history.entries
     fun initialize(file: File) = history.initialize(file)
     fun record(status: BridgeStatus) = history.record(status)
+    fun clear() = history.clear()
 }

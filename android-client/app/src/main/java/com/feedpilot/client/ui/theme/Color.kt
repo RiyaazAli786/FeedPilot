@@ -5,7 +5,7 @@ import androidx.compose.ui.graphics.Color
 // ---------- Brand: executive charcoal, ivory, and minted gold ----------
 val PremiumGold = Color(0xFFD8B86A)
 val PremiumGoldBright = Color(0xFFF5D98B)
-val PremiumGoldDeep = Color(0xFF9C7732)
+val PremiumGoldDeep = Color(0xFF805D21)
 val PremiumCopper = Color(0xFFC97D4D)
 val PremiumMint = Color(0xFF41D6B1)
 val PremiumBlue = Color(0xFF5F8DFF)
@@ -28,19 +28,19 @@ val LightOnSurfaceVariant = Color(0xFF625C50)
 val LightBorder = Color(0xFFE1D7C4)
 
 // ---------- Dark ----------
-val DarkBackground = Color(0xFF070807)
-val DarkSurface = Color(0xFF11120F)
-val DarkSurfaceVariant = Color(0xFF1A1C18)
-val DarkSurfaceElevated = Color(0xFF202119)
+val DarkBackground = Color(0xFF090C12)
+val DarkSurface = Color(0xFF121720)
+val DarkSurfaceVariant = Color(0xFF1A222D)
+val DarkSurfaceElevated = Color(0xFF222C38)
 val DarkOnSurface = Color(0xFFF7F1E2)
 val DarkOnSurfaceVariant = Color(0xFFC4BBA7)
-val DarkBorder = Color(0xFF383426)
+val DarkBorder = Color(0xFF384350)
 
 // ---------- Header / nav surfaces ----------
-val HeaderTop = Color(0xFF202015)
-val HeaderMid = Color(0xFF11130F)
-val HeaderBottom = Color(0xFF050605)
-val NavSurface = Color(0xFF0D0E0B)
+val HeaderTop = Color(0xFF222934)
+val HeaderMid = Color(0xFF141A23)
+val HeaderBottom = Color(0xFF090C12)
+val NavSurface = Color(0xFF0F141C)
 
 // ---------- Status ----------
 val StatusGreen = Color(0xFF36C484)

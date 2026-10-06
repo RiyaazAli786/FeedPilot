@@ -12,9 +12,9 @@
                 android:type="linear"
                 android:startX="0" android:startY="0"
                 android:endX="108" android:endY="108"
-                android:startColor="#232116"
-                android:centerColor="#0E100C"
-                android:endColor="#030403" />
+                android:startColor="#222934"
+                android:centerColor="#141A23"
+                android:endColor="#090C12" />
         </aapt:attr>
     </path>
 
@@ -24,8 +24,8 @@
                 android:type="radial"
                 android:centerX="50" android:centerY="38"
                 android:gradientRadius="52"
-                android:startColor="#55F5D98B"
-                android:centerColor="#229C7732"
+                android:startColor="#18F5D98B"
+                android:centerColor="#109C7732"
                 android:endColor="#00000000" />
         </aapt:attr>
     </path>
@@ -36,7 +36,7 @@
                 android:type="radial"
                 android:centerX="77" android:centerY="80"
                 android:gradientRadius="42"
-                android:startColor="#3341D6B1"
+                android:startColor="#00000000"
                 android:endColor="#00000000" />
         </aapt:attr>
     </path>

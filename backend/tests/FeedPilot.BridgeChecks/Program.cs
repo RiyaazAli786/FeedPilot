@@ -46,7 +46,32 @@ var other = new FeedBridgeAccountState
 };
 db.Add(other);
 await db.SaveChangesAsync();
-Check((await Select())?.Id == active.Id, "device's active account is preferred");
+Check((await Select())?.Id == active.Id, "unused account is selected before previously used account");
+active.LastUsedAt = now;
+await db.SaveChangesAsync();
+Check((await Select())?.Id == other.Id, "next request rotates away from the active account");
+other.LastUsedAt = now.AddSeconds(1);
+await db.SaveChangesAsync();
+Check((await Select())?.Id == active.Id, "account rotation returns to the least recently assigned account");
+
+var secondDevice = new FeedBridgeDeviceState
+{
+    AppId = "app", DeviceId = "second", InstallationId = "second-install",
+    LastSeenAt = now.AddSeconds(-1)
+};
+var secondAccount = new FeedBridgeAccountState
+{
+    AppId = "app", DeviceId = "second", InstallationId = "second-install",
+    InstagramUsername = "second-account", LastValidatedAt = now
+};
+db.AddRange(secondDevice, secondAccount);
+await db.SaveChangesAsync();
+Check((await Select())?.Id == secondAccount.Id, "unused online device wins regardless of heartbeat recency");
+secondAccount.LastUsedAt = now.AddSeconds(2);
+await db.SaveChangesAsync();
+Check((await Select())?.Id == active.Id, "device rotation returns to earlier device before rotating its accounts");
+secondDevice.BridgeEnabled = false;
+await db.SaveChangesAsync();
 
 var job = new FeedBridgeJob
 {
@@ -64,7 +89,7 @@ await service.HeartbeatAsync(null, "app", new BridgeHeartbeatRequest(
     "live", "install", Accounts: new List<BridgeHeartbeatAccountDto>()), CancellationToken.None);
 Check(await Select() is null, "removed account sessions become unavailable immediately");
 Check(active.Status == AccountStatus.SessionExpired, "removed session is marked expired");
-Console.WriteLine("All 9 bridge selection checks passed.");
+Console.WriteLine("All bridge selection checks passed.");
 await FailoverChecks.RunAsync();
 
 async Task<FeedBridgeAccountState?> Select()

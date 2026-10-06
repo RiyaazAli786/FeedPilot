@@ -97,7 +97,7 @@ fun SplashScreen(
     }
 
     val background = Brush.verticalGradient(
-        listOf(Color(0xFF232116), Color(0xFF0E100C), Color(0xFF030403))
+        listOf(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.colorScheme.background)
     )
 
     Box(
@@ -145,7 +145,7 @@ fun SplashScreen(
                 text = "FeedPilot",
                 fontWeight = FontWeight.Black,
                 fontSize = 34.sp,
-                color = Color(0xFFF7F1E2)
+                color = MaterialTheme.colorScheme.onBackground
             )
 
             Spacer(Modifier.height(8.dp))
@@ -157,7 +157,7 @@ fun SplashScreen(
             ) {
                 Text(
                     text = "Premium engagement cockpit",
-                    color = Color(0xFFE7D8B7),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
@@ -177,7 +177,7 @@ fun SplashScreen(
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
                     color = AppTheme.brand.coinGold,
-                    trackColor = Color.White.copy(alpha = 0.12f)
+                    trackColor = MaterialTheme.colorScheme.outlineVariant
                 )
 
                 Spacer(Modifier.height(14.dp))
@@ -188,7 +188,7 @@ fun SplashScreen(
                 ) {
                     Text(
                         text = statusText,
-                        color = Color(0xFFC4BBA7),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Start,

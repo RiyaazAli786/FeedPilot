@@ -5,6 +5,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
@@ -23,12 +29,27 @@ private val LightColors = lightColorScheme(
     background = LightBackground,
     onBackground = LightOnSurface,
     surface = LightSurface,
+    surfaceDim = Color(0xFFE8E3D8),
+    surfaceBright = LightSurfaceElevated,
+    surfaceContainerLowest = LightSurfaceElevated,
+    surfaceContainerLow = Color(0xFFF9F6EF),
+    surfaceContainer = Color(0xFFF2EEE4),
+    surfaceContainerHigh = Color(0xFFEDE7DA),
+    surfaceContainerHighest = Color(0xFFE6DDCD),
+    surfaceTint = PremiumGoldDeep,
+    inverseSurface = DarkSurface,
+    inverseOnSurface = DarkOnSurface,
+    inversePrimary = PremiumGold,
     onSurface = LightOnSurface,
     surfaceVariant = Color(0xFFF0E8D9),
     onSurfaceVariant = LightOnSurfaceVariant,
     outline = LightBorder,
     outlineVariant = Color(0xFFECE2CF),
-    error = StatusRed
+    error = Color(0xFFB3261E),
+    onError = Color.White,
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002),
+    onTertiary = Color(0xFF06241C)
 )
 
 private val DarkColors = darkColorScheme(
@@ -46,12 +67,27 @@ private val DarkColors = darkColorScheme(
     background = DarkBackground,
     onBackground = DarkOnSurface,
     surface = DarkSurface,
+    surfaceDim = DarkBackground,
+    surfaceBright = Color(0xFF303A47),
+    surfaceContainerLowest = Color(0xFF070A10),
+    surfaceContainerLow = DarkSurface,
+    surfaceContainer = DarkSurfaceVariant,
+    surfaceContainerHigh = DarkSurfaceElevated,
+    surfaceContainerHighest = Color(0xFF2C3744),
+    surfaceTint = PremiumGold,
+    inverseSurface = LightSurface,
+    inverseOnSurface = LightOnSurface,
+    inversePrimary = PremiumGoldDeep,
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = DarkOnSurfaceVariant,
     outline = DarkBorder,
-    outlineVariant = Color(0xFF2D2B22),
-    error = StatusRed
+    outlineVariant = Color(0xFF2B3542),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    onTertiary = Color(0xFF06241C)
 )
 
 data class BrandColors(
@@ -93,6 +129,19 @@ fun FeedPilotTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            var context: Context = view.context
+            while (context is ContextWrapper && context !is Activity) context = context.baseContext
+            (context as? Activity)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+        }
+    }
     val brand = if (darkTheme) {
         BrandColors(
             headerGradient = Brush.verticalGradient(listOf(HeaderTop, HeaderMid, HeaderBottom)),

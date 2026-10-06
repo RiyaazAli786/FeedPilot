@@ -34,7 +34,7 @@ enum class AppLanguage(val displayName: String, val flag: String) {
 }
 
 data class AppSettings(
-    val theme: ThemeMode = ThemeMode.LIGHT,
+    val theme: ThemeMode = ThemeMode.SYSTEM,
     val notificationsEnabled: Boolean = true,
     val autoUpdate: Boolean = true,
     val backgroundSync: Boolean = true,
@@ -191,7 +191,7 @@ class SettingsRepository @Inject constructor(
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { p ->
         AppSettings(
-            theme = ThemeMode.valueOf(p[Keys.THEME] ?: ThemeMode.LIGHT.name),
+            theme = ThemeMode.valueOf(p[Keys.THEME] ?: ThemeMode.SYSTEM.name),
             notificationsEnabled = p[Keys.NOTIFICATIONS] ?: true,
             autoUpdate = p[Keys.AUTO_UPDATE] ?: true,
             backgroundSync = p[Keys.BACKGROUND_SYNC] ?: true,

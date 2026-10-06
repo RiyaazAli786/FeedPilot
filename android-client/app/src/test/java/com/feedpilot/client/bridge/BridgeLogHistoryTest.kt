@@ -8,6 +8,47 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BridgeLogHistoryTest {
+    @Test fun clearRemovesSavedHistoryAndAllowsNewEntries() = runBlocking {
+        val directory = Files.createTempDirectory("bridge-clear").toFile()
+        val file = java.io.File(directory, "history.tsv")
+        val history = BridgeLogHistory()
+        history.initialize(file)
+        val status = BridgeStatus(BridgeConnectionState.Online, true, "Ready")
+        history.record(status)
+        withTimeout(5000) { while (!file.exists() || file.readText().isEmpty()) delay(10) }
+        history.clear()
+        assertTrue(history.entries.value.isEmpty())
+        withTimeout(5000) { while (file.readText().isNotEmpty()) delay(10) }
+        val restored = BridgeLogHistory()
+        restored.initialize(file)
+        assertTrue(restored.entries.value.isEmpty())
+        history.record(status)
+        assertEquals(status, history.entries.value.single().status)
+        withTimeout(5000) { while (file.readText().isEmpty()) delay(10) }
+        directory.deleteRecursively()
+        Unit
+    }
+
+    @Test fun clearingHistoryPersistsAndAllowsNewEntries() = runBlocking {
+        val directory = Files.createTempDirectory("bridge-clear").toFile()
+        val file = java.io.File(directory, "history.tsv")
+        val history = BridgeLogHistory()
+        history.initialize(file)
+        val online = BridgeStatus(BridgeConnectionState.Online, true)
+        history.record(online)
+        history.clear()
+        assertTrue(history.entries.value.isEmpty())
+        withTimeout(5000) { while (!file.exists() || file.readText().isNotEmpty()) delay(10) }
+        val restored = BridgeLogHistory()
+        restored.initialize(file)
+        assertTrue(restored.entries.value.isEmpty())
+        history.record(online)
+        assertEquals(1, history.entries.value.size)
+        withTimeout(5000) { while (file.readText().isEmpty()) delay(10) }
+        directory.deleteRecursively()
+        Unit
+    }
+
     @Test fun historyKeepsNewestEntriesAndSuppressesRepeatedHeartbeats() {
         var time = 0L
         val history = BridgeLogHistory { ++time }

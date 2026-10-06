@@ -36,6 +36,11 @@ fun BridgeLogsScreen() {
                     clipboard.setText(AnnotatedString(filtered.joinToString("\n") { it.text() }))
                     scope.launch { snackbar.showSnackbar("Copied ${filtered.size} matching logs") }
                 }) { Text("Copy logs") }
+                TextButton(enabled = entries.isNotEmpty(), onClick = {
+                    BridgeLogStore.clear()
+                    requestedPage = 0
+                    scope.launch { snackbar.showSnackbar("Bridge logs cleared") }
+                }) { Text("Clear logs") }
             }
             if (filtered.isEmpty()) {
                 Box(Modifier.weight(1f)) { Text(if (query.isBlank()) "Bridge activity will appear here." else "No matching bridge logs.") }

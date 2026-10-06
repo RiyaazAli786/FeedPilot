@@ -46,7 +46,7 @@ fun UpgradeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF6F7FB))
+            .background(MaterialTheme.colorScheme.background)
     ) {
         // Purple Top Navigation Bar
         PurpleTopBar(title = "Upgrade Account", onBack = onBack)
@@ -166,8 +166,8 @@ fun UpgradeScreen(
                 enabled = !isUpgrading && !state.isUpgraded && state.hasActiveAccount,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFF9800),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
                 modifier = Modifier
@@ -177,7 +177,7 @@ fun UpgradeScreen(
                 if (isUpgrading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onPrimary,
                         strokeWidth = 2.dp
                     )
                 } else {
@@ -206,7 +206,7 @@ private fun GenderSelector(
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 1.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -220,7 +220,7 @@ private fun GenderSelector(
                 text = "Account gender",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF444444),
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
             listOf("male" to "Male", "female" to "Female").forEach { (value, label) ->
@@ -233,9 +233,9 @@ private fun GenderSelector(
                     RadioButton(
                         selected = selected == value,
                         onClick = { onSelect(value) },
-                        colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF8C52FF))
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary)
                     )
-                    Text(label, fontSize = 13.sp, color = Color(0xFF444444))
+                    Text(label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -253,7 +253,7 @@ private fun TaskChecklistCard(
 
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
         shadowElevation = 1.5.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -270,14 +270,14 @@ private fun TaskChecklistCard(
                 modifier = Modifier
                     .size(38.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFFEBF3FE)),
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = task.circleLabel,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF3C78D8),
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
                     lineHeight = 11.sp
                 )
@@ -293,14 +293,14 @@ private fun TaskChecklistCard(
                     text = task.title,
                     fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF222222)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.height(1.dp))
                 Text(
                     text = task.progressText ?: task.subtitle,
                     fontSize = 10.5.sp,
                     fontWeight = if (task.progressText != null) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (task.progressText != null) Color(0xFF3C78D8) else Color(0xFF777777),
+                    color = if (task.progressText != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 13.sp
                 )
             }
@@ -310,7 +310,7 @@ private fun TaskChecklistCard(
             // Right Action Button Badge
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = if (effectiveStatus == TaskStatus.COMPLETED) Color(0xFF4CAF50) else Color(0xFF8C52FF),
+                color = if (effectiveStatus == TaskStatus.COMPLETED) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
                 modifier = Modifier
                     .height(34.dp)
                     .width(42.dp)
@@ -324,14 +324,14 @@ private fun TaskChecklistCard(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = "Start Task",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                         TaskStatus.PROCESSING -> {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(16.dp),
-                                color = Color.White,
+                                color = MaterialTheme.colorScheme.onPrimary,
                                 strokeWidth = 2.dp
                             )
                         }
@@ -339,7 +339,7 @@ private fun TaskChecklistCard(
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = "Done",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
