@@ -84,7 +84,8 @@ data class HandlePostDetailState(
 @OptIn(ExperimentalCoroutinesApi::class)
 class HandleViewModel @Inject constructor(
     private val watchedHandles: WatchedHandleRepository,
-    private val instagram: InstagramRepository
+    private val instagram: InstagramRepository,
+    accountRepository: com.feedpilot.client.data.repository.AccountRepository
 ) : ViewModel() {
     private val selectedHandleId = MutableStateFlow<String?>(null)
     private val busy = MutableStateFlow(false)
@@ -104,6 +105,24 @@ class HandleViewModel @Inject constructor(
     private val rssLoadingHandleId = MutableStateFlow<String?>(null)
     private val rssFeedTitle = MutableStateFlow<String?>(null)
     private val rssFeedJson = MutableStateFlow<String?>(null)
+
+    private val accountSelection = com.feedpilot.client.common.SearchAccountSelection(accountRepository, viewModelScope)
+    val searchAccounts = accountSelection.state
+
+    fun selectSearchAccount(id: String) {
+        if (feedBusy.value || feedLoadingMore.value || searching.value || rssLoadingHandleId.value != null) return
+        accountSelection.select(id)
+        searchResults.value = emptyList()
+        feedPosts.value = emptyList()
+        nextMaxId = null
+        nextFeedTarget = null
+        feedHasMore.value = false
+        postDetail.value = null
+        closeRssFeed()
+    }
+
+    private fun searchCookies(): String? = runCatching { accountSelection.cookies() }
+        .onFailure { error.value = it.message }.getOrNull()
 
     private val handles = watchedHandles.observeHandles()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -269,10 +288,11 @@ class HandleViewModel @Inject constructor(
             error.value = "Enter at least 2 characters to search."
             return
         }
+        val cookies = searchCookies() ?: return
         viewModelScope.launch {
             searching.value = true
             error.value = null
-            runCatching { instagram.searchUsers(clean) }
+            runCatching { instagram.searchUsers(clean, cookies) }
                 .onSuccess {
                     searchResults.value = it
                     if (it.isEmpty()) message.value = "No Instagram users found for \"$clean\"."
@@ -288,13 +308,14 @@ class HandleViewModel @Inject constructor(
 
     fun fetchRssFeed(handle: WatchedHandleEntity) {
         if (rssLoadingHandleId.value != null) return
+        val cookies = searchCookies() ?: return
         viewModelScope.launch {
             rssLoadingHandleId.value = handle.id
             error.value = null
             runCatching {
-                val feed = instagram.getUserFeed(handle.username)
+                val feed = instagram.getUserFeed(handle.username, customCookies = cookies)
                     ?: error("Instagram feed could not be loaded for @${handle.username}.")
-                val profile = feed.profile ?: instagram.getUserProfileDetails(handle.username)
+                val profile = feed.profile ?: instagram.getUserProfileDetails(handle.username, cookies)
                     ?: error("Instagram profile could not be loaded for @${handle.username}.")
                 if (feed.items.isEmpty()) {
                     error("Instagram returned no feed posts for @${handle.username}.")
@@ -378,12 +399,13 @@ class HandleViewModel @Inject constructor(
 
     fun fetchLatestFeed(handle: WatchedHandleEntity?) {
         if (handle == null) return
+        val cookies = searchCookies() ?: return
         viewModelScope.launch {
             feedBusy.value = true
             error.value = null
             message.value = null
             runCatching {
-                val feed = instagram.getUserFeed(handle.username)
+                val feed = instagram.getUserFeed(handle.username, customCookies = cookies)
                     ?: error("Instagram feed could not be loaded.")
                 if (feed.items.isEmpty()) {
                     error("Instagram returned no feed posts for @${handle.username}. Check that the handle is public and the logged-in account can view it.")
@@ -403,10 +425,11 @@ class HandleViewModel @Inject constructor(
     fun loadMoreFeed(handle: WatchedHandleEntity?) {
         if (handle == null || feedLoadingMore.value || !feedHasMore.value) return
         val cursor = nextMaxId ?: return
+        val cookies = searchCookies() ?: return
         viewModelScope.launch {
             feedLoadingMore.value = true
             runCatching {
-                val feed = instagram.getUserFeed(nextFeedTarget ?: handle.username, cursor)
+                val feed = instagram.getUserFeed(nextFeedTarget ?: handle.username, cursor, cookies)
                     ?: error("More feed posts could not be loaded.")
                 nextMaxId = feed.maxId
                 feedHasMore.value = feed.hasMore && !feed.maxId.isNullOrBlank()

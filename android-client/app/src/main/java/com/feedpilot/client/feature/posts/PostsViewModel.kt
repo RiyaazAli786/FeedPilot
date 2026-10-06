@@ -47,7 +47,8 @@ data class PostItem(
     /** Commenting is switched off for this post, so the comment box must not open. */
     val commentsDisabled: Boolean = false,
     /** An action (like/repost) is in flight for this post. */
-    val busy: Boolean = false
+    val busy: Boolean = false,
+    val takenAt: Long = 0L
 )
 
 /** Comment sheet state for one post. */
@@ -83,7 +84,7 @@ class PostsViewModel @Inject constructor(
     private val walletRepository: WalletRepository,
     private val targetRepository: TargetRepository,
     private val authRepository: AuthRepository,
-    private val postFetcherTestService: com.feedpilot.client.service.PostFetcherTestService,
+    accountRepository: com.feedpilot.client.data.repository.AccountRepository,
     private val orderHistoryRepository: OrderHistoryRepository,
     private val appOrderRepository: AppOrderRepository,
     private val instagramRepository: com.feedpilot.client.data.repository.InstagramRepository,
@@ -102,6 +103,19 @@ class PostsViewModel @Inject constructor(
     )
 
     private val content = MutableStateFlow(Content())
+
+    private val accountSelection = com.feedpilot.client.common.SearchAccountSelection(accountRepository, viewModelScope)
+    val searchAccounts = accountSelection.state
+
+    fun selectSearchAccount(id: String) {
+        if (content.value.loading || content.value.loadingMore) return
+        accountSelection.select(id)
+        content.value = Content()
+        _commentSheet.value = null
+    }
+
+    private fun searchCookies(): String? = runCatching { accountSelection.cookies() }
+        .onFailure { failure -> content.update { it.copy(message = failure.message) } }.getOrNull()
 
     val state: StateFlow<PostsUiState> =
         combine(walletRepository.spendableWallet, settingsRepository.settings, content) { wallet, settings, c ->
@@ -134,16 +148,17 @@ class PostsViewModel @Inject constructor(
         }
 
         val username = com.feedpilot.client.common.InstagramCrypto.parseUsername(clean) ?: clean.removePrefix("@")
+        val cookies = searchCookies() ?: return
         content.update { it.copy(targetUsername = username, profile = null, posts = emptyList(), loading = true, nextMaxId = null, hasMorePosts = false, loadingMore = false, message = null) }
         viewModelScope.launch {
-            when (val feedRes = targetRepository.fetchUserFeed(username)) {
+            when (val feedRes = targetRepository.fetchUserFeed(username, customCookies = cookies)) {
                 is Resource.Success -> {
                     val feed = feedRes.data
                     val postsList = feed.items.map { it.toPostItem() }
                     val profile = feed.profile?.let {
                         TargetProfile(it.username, it.fullName, it.profilePicUrl, it.followerCount,
                             it.followingCount, it.mediaCount, it.isPrivate)
-                    } ?: (targetRepository.fetchProfile(username) as? Resource.Success)?.data?.toProfile()
+                    } ?: (targetRepository.fetchProfile(username, cookies) as? Resource.Success)?.data?.toProfile()
                         ?: TargetProfile(username, null, null, 0, 0, postsList.size.toLong(), false)
                     content.update {
                         it.copy(
@@ -169,10 +184,11 @@ class PostsViewModel @Inject constructor(
         val username = curr.targetUsername ?: return
         val cursor = curr.nextMaxId ?: return
         if (!curr.hasMorePosts || curr.loadingMore) return
+        val cookies = searchCookies() ?: return
 
         content.update { it.copy(loadingMore = true) }
         viewModelScope.launch {
-            when (val feedRes = targetRepository.fetchUserFeed(username, maxId = cursor)) {
+            when (val feedRes = targetRepository.fetchUserFeed(username, maxId = cursor, customCookies = cookies)) {
                 is Resource.Success -> {
                     val feedData = feedRes.data
                     val newItems = feedData.items.map { it.toPostItem() }
@@ -205,10 +221,10 @@ class PostsViewModel @Inject constructor(
             content.update { it.copy(message = "Enter a valid post link") }
             return
         }
+        val cookies = searchCookies() ?: return
         content.update { it.copy(loading = true, nextMaxId = null, hasMorePosts = false, loadingMore = false, message = null) }
         viewModelScope.launch {
-            postFetcherTestService.testFetchPost(clean)
-            when (val r = targetRepository.fetchPost(clean)) {
+            when (val r = targetRepository.fetchPost(clean, cookies)) {
                 is Resource.Success -> {
                     val postDto = r.data
                     val item = PostItem(
@@ -220,7 +236,8 @@ class PostsViewModel @Inject constructor(
                         comments = postDto.comments,
                         reposts = postDto.reposts,
                         link = postDto.link ?: "",
-                        caption = postDto.caption
+                        caption = postDto.caption,
+                        takenAt = postDto.takenAt
                     )
                     content.update {
                         it.copy(
@@ -295,9 +312,10 @@ class PostsViewModel @Inject constructor(
             onResult(post.videoUrl)
             return
         }
+        val cookies = searchCookies() ?: run { onResult(null); return }
         viewModelScope.launch {
             try {
-                when (val r = targetRepository.fetchPost(post.link)) {
+                when (val r = targetRepository.fetchPost(post.link, cookies)) {
                     is Resource.Success -> {
                         val resolved = r.data.videoUrl
                         onResult(resolved)
@@ -329,7 +347,8 @@ class PostsViewModel @Inject constructor(
             mediaId = mediaId,
             hasLiked = hasLiked,
             canReshare = canReshare,
-            commentsDisabled = commentsDisabled
+            commentsDisabled = commentsDisabled,
+            takenAt = takenAt
         )
     }
 

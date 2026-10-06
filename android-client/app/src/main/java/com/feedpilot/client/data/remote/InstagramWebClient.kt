@@ -3213,7 +3213,7 @@ class InstagramWebClient @Inject constructor(
                             commentCount = 0L,
                             ownerUserId = json.optString("author_id")?.ifBlank { null },
                             ownerUsername = authorName,
-                            takenAt = System.currentTimeMillis() / 1000
+                            takenAt = 0L
                         )
                     }
                 }
@@ -3255,7 +3255,7 @@ class InstagramWebClient @Inject constructor(
                             commentCount = 0L,
                             ownerUserId = null,
                             ownerUsername = ownerUsername,
-                            takenAt = System.currentTimeMillis() / 1000
+                            takenAt = 0L
                         )
                     }
                 }

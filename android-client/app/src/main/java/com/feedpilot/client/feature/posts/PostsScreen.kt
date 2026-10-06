@@ -55,6 +55,7 @@ fun PostsScreen(
     balanceViewModel: BalanceViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val searchAccounts by viewModel.searchAccounts.collectAsStateWithLifecycle()
     val balanceState by balanceViewModel.state.collectAsStateWithLifecycle()
     val commentSheet by viewModel.commentSheet.collectAsStateWithLifecycle()
     var showLinkDialog by remember { mutableStateOf(false) }
@@ -81,6 +82,11 @@ fun PostsScreen(
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            com.feedpilot.client.ui.components.SearchAccountDropdown(
+                state = searchAccounts,
+                onSelect = viewModel::selectSearchAccount,
+                enabled = !state.loading && !state.loadingMore
+            )
             OutlinedButton(
                 onClick = { showLinkDialog = true },
                 shape = RoundedCornerShape(14.dp),
@@ -551,6 +557,12 @@ private fun PostCard(
 
             // Caption / Get Likes Action
             Column(Modifier.padding(10.dp)) {
+                Text(
+                    com.feedpilot.client.common.formatPostCreatedTime(post.takenAt),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
                 if (!post.caption.isNullOrBlank()) {
                     Text(
                         text = post.caption,

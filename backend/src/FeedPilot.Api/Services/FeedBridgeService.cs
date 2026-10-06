@@ -21,7 +21,7 @@ public class FeedBridgeService : IFeedBridgeService
 {
     private static readonly SemaphoreSlim SelectionGate = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly TimeSpan OnlineWindow = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan JobTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan JobExpiry = TimeSpan.FromSeconds(40);
 
@@ -166,6 +166,20 @@ public class FeedBridgeService : IFeedBridgeService
                 existingDevice.LoggedInAccountsJson = JsonSerializer.Serialize(request.LoggedInAccounts, JsonOptions);
         }
 
+        // An explicit snapshot removes availability for sessions no longer on this device.
+        if (request.Accounts is not null)
+        {
+            var loggedIn = request.Accounts.Where(a => a.IsLoggedIn)
+                .Select(a => NormalizeUsername(a.Username)).ToHashSet();
+            var previousAccounts = await _db.FeedBridgeAccountStates.Where(a =>
+                a.AppId == appId && a.DeviceId == deviceId && a.InstallationId == installationId).ToListAsync(ct);
+            foreach (var previous in previousAccounts.Where(a => !loggedIn.Contains(a.InstagramUsername)))
+            {
+                previous.Status = AccountStatus.SessionExpired;
+                previous.UpdatedAt = now;
+            }
+        }
+
         foreach (var reported in request.Accounts ?? new List<BridgeHeartbeatAccountDto>())
         {
             var username = NormalizeUsername(reported.Username);
@@ -306,93 +320,32 @@ public class FeedBridgeService : IFeedBridgeService
         var now = DateTime.UtcNow;
         var onlineAfter = now.Subtract(OnlineWindow);
 
+        // Require a recent heartbeat and capacity to execute, without moving
+        // account sessions between devices or installations.
         var onlineDevices = _db.FeedBridgeDeviceStates.AsNoTracking()
-            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && (d.CooldownUntil == null || d.CooldownUntil <= now))
-            .Select(d => new { d.AppId, d.DeviceId, d.InstallationId });
+            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter &&
+                (d.CooldownUntil == null || d.CooldownUntil <= now) &&
+                !_db.FeedBridgeJobs.Any(j =>
+                    j.AssignedDeviceId == d.DeviceId &&
+                    j.AssignedInstallationId == d.InstallationId &&
+                    (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+                    j.ExpiresAt > now));
 
-        var joined = await _db.FeedBridgeAccountStates
-            .Where(a =>
-                a.Status == AccountStatus.Active &&
-                !a.IsBusy &&
+        return await _db.FeedBridgeAccountStates
+            .Where(a => a.Status == AccountStatus.Active && !a.IsBusy &&
+                a.LastValidatedAt >= onlineAfter &&
                 (a.CooldownUntil == null || a.CooldownUntil <= now))
             .Join(onlineDevices,
                 a => new { a.AppId, a.DeviceId, a.InstallationId },
                 d => new { d.AppId, d.DeviceId, d.InstallationId },
-                (a, _) => a)
-            .OrderBy(a => a.FailureCount)
-            .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
-            .ThenBy(a => a.CreatedAt)
+                (a, d) => new { Account = a, Device = d })
+            .OrderByDescending(x => x.Device.LastSeenAt)
+            .ThenByDescending(x => x.Account.InstagramUsername == x.Device.ActiveAccountUsername)
+            .ThenBy(x => x.Account.FailureCount)
+            .ThenBy(x => x.Account.LastUsedAt ?? DateTime.MinValue)
+            .ThenBy(x => x.Account.CreatedAt)
+            .Select(x => x.Account)
             .FirstOrDefaultAsync(ct);
-
-        if (joined is not null) return joined;
-
-        var devices = await _db.FeedBridgeDeviceStates
-            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && (d.CooldownUntil == null || d.CooldownUntil <= now))
-            .OrderByDescending(d => d.LastSeenAt)
-            .ToListAsync(ct);
-
-        foreach (var device in devices)
-        {
-            var usernames = ParseLoggedInUsernames(device.LoggedInAccountsJson)
-                .Append(device.ActiveAccountUsername ?? string.Empty)
-                .Select(NormalizeUsername)
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Distinct()
-                .ToList();
-            if (usernames.Count == 0) continue;
-
-            var account = await _db.FeedBridgeAccountStates
-                .Where(a =>
-                    a.Status == AccountStatus.Active &&
-                    !a.IsBusy &&
-                    (a.CooldownUntil == null || a.CooldownUntil <= now) &&
-                    usernames.Contains(a.InstagramUsername))
-                .OrderBy(a => a.FailureCount)
-                .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
-                .ThenBy(a => a.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (account is null) continue;
-
-            account.AppId = device.AppId;
-            account.DeviceId = device.DeviceId;
-            account.InstallationId = device.InstallationId;
-            account.LastValidatedAt = now;
-            account.UpdatedAt = now;
-            await _db.SaveChangesAsync(ct);
-            _logger.LogInformation("Feed bridge moved @{Username} account state onto online device {DeviceId}.",
-                account.InstagramUsername, device.DeviceId);
-            return account;
-        }
-
-        if (devices.Count == 1)
-        {
-            var device = devices[0];
-            var account = await _db.FeedBridgeAccountStates
-                .Where(a =>
-                    a.Status == AccountStatus.Active &&
-                    !a.IsBusy &&
-                    (a.CooldownUntil == null || a.CooldownUntil <= now))
-                .OrderBy(a => a.FailureCount)
-                .ThenBy(a => a.LastUsedAt ?? DateTime.MinValue)
-                .ThenBy(a => a.CreatedAt)
-                .FirstOrDefaultAsync(ct);
-
-            if (account is not null)
-            {
-                account.AppId = device.AppId;
-                account.DeviceId = device.DeviceId;
-                account.InstallationId = device.InstallationId;
-                account.LastValidatedAt = now;
-                account.UpdatedAt = now;
-                await _db.SaveChangesAsync(ct);
-                _logger.LogInformation("Feed bridge moved available @{Username} account state onto the only online device {DeviceId}.",
-                    account.InstagramUsername, device.DeviceId);
-                return account;
-            }
-        }
-
-        return null;
     }
 
     private async Task ReleaseStaleAssignmentsAsync(CancellationToken ct)

@@ -107,6 +107,7 @@ fun HandleScreen(
     balanceViewModel: BalanceViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val searchAccounts by viewModel.searchAccounts.collectAsStateWithLifecycle()
     val balanceState by balanceViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var username by remember { mutableStateOf("") }
@@ -194,6 +195,14 @@ fun HandleScreen(
             latestVersionName = balanceState.latestVersionName,
             onSettings = onSettings,
             onWithdraw = onWithdraw
+        )
+
+        com.feedpilot.client.ui.components.SearchAccountDropdown(
+            state = searchAccounts,
+            onSelect = viewModel::selectSearchAccount,
+            enabled = !state.refreshingFeed && !state.feedLoadingMore && !state.searching &&
+                state.rssLoadingHandleId == null && state.postDetail == null,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
         )
 
         if (detailHandle != null) {
@@ -938,6 +947,8 @@ private fun WatchedPostCard(
             Column(Modifier.weight(1f)) {
                 Text(post.code?.let { "Post $it" } ?: "Post ${post.postId}", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(post.caption ?: post.permalink ?: post.postId, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(com.feedpilot.client.common.formatPostCreatedTime(post.takenAt),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                 Spacer(Modifier.height(4.dp))
                 Text("${formatHandleCount(post.likeCount)} likes  |  ${formatHandleCount(post.commentCount)} comments", color = AppTheme.brand.orange)
             }
@@ -1029,6 +1040,8 @@ private fun HandlePostDetail(
                         maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Text(com.feedpilot.client.common.formatPostCreatedTime(detail.post.takenAt),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     ActionRow(detail, onLike, onRepost, onSave)
                     detail.actionMessage?.let {
                         Text(it, color = AppTheme.brand.orange, fontWeight = FontWeight.Bold)

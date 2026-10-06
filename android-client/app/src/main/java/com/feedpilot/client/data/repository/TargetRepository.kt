@@ -12,10 +12,10 @@ import javax.inject.Singleton
 class TargetRepository @Inject constructor(
     private val instagramRepository: InstagramRepository
 ) {
-    suspend fun fetchProfile(username: String): Resource<TargetProfileDto> = try {
+    suspend fun fetchProfile(username: String, customCookies: String? = null): Resource<TargetProfileDto> = try {
         // Real Instagram data, fetched on-device. There is no backend fallback: the server has
         // no session and used to answer with fabricated numbers, which we never want to show.
-        val webProfile = instagramRepository.getUserProfileDetails(username)
+        val webProfile = instagramRepository.getUserProfileDetails(username, customCookies)
             ?: return Resource.Error("Couldn't load @$username")
         Resource.Success(
             TargetProfileDto(
@@ -33,8 +33,8 @@ class TargetRepository @Inject constructor(
         Resource.Error(mapError(t, "Couldn't load @$username"), t)
     }
 
-    suspend fun fetchPost(link: String): Resource<TargetMediaDto> = try {
-        val postDetails = instagramRepository.getPostDetails(link)
+    suspend fun fetchPost(link: String, customCookies: String? = null): Resource<TargetMediaDto> = try {
+        val postDetails = instagramRepository.getPostDetails(link, customCookies)
             ?: return Resource.Error("Couldn't load that post")
         Resource.Success(
             TargetMediaDto(
@@ -47,7 +47,8 @@ class TargetRepository @Inject constructor(
                 videoUrl = postDetails.videoUrl,
                 isVideo = postDetails.mediaType == 2 || !postDetails.videoUrl.isNullOrBlank(),
                 ownerUsername = postDetails.ownerUsername,
-                caption = postDetails.caption
+                caption = postDetails.caption,
+                takenAt = postDetails.takenAt
             )
         )
     } catch (t: Throwable) {

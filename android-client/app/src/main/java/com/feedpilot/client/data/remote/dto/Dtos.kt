@@ -294,7 +294,8 @@ data class TargetMediaDto(
     val videoUrl: String? = null,
     val isVideo: Boolean = false,
     val ownerUsername: String? = null,
-    val caption: String? = null
+    val caption: String? = null,
+    val takenAt: Long = 0L
 )
 
 @Serializable

@@ -55,17 +55,16 @@ class FeedBridgeRunner @Inject constructor(
     }
 
     suspend fun runOneJob(): Boolean {
-        heartbeat()
+        check(heartbeat()) { "Bridge heartbeat was not accepted" }
         val job = runCatching {
             val response = api.pollBridgeJob(
                 deviceId = identity.stableAppInstallationId,
                 installationId = identity.accountBindingInstallationId
             )
             if (response.isSuccessful) response.body() else {
-                Log.w(TAG, "Bridge poll failed HTTP ${response.code()}: ${response.errorBody()?.string().orEmpty().take(300)}")
-                null
+                error("Bridge poll failed HTTP ${response.code()}")
             }
-        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrNull() ?: return false
+        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return false
 
         execute(job)
         return true
@@ -181,7 +180,7 @@ class FeedBridgeRunner @Inject constructor(
                 it.sessionCookies.isNotBlank() && it.username.equals(username, ignoreCase = true)
             }?.let { return it }
         }
-        return accounts.getAll().firstOrNull { it.sessionCookies.isNotBlank() }
+        return null
     }
 
     private suspend fun fail(job: BridgeJobDto, code: String, message: String) {
