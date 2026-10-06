@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -28,12 +29,12 @@ fun BridgeModeBadge() {
     val status by BridgeStatusStore.status.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showDetails by remember { mutableStateOf(false) }
-    val color = if (status.isOnline) Color(0xFF18B26B) else if (status.state == BridgeConnectionState.Starting) AppTheme.brand.orange else MaterialTheme.colorScheme.error
-    val label = when (status.state) {
-        BridgeConnectionState.Online, BridgeConnectionState.RunningJob -> "Bridge mode on"
-        BridgeConnectionState.Starting -> "Bridge starting"
-        BridgeConnectionState.Offline -> "Bridge offline"
-        BridgeConnectionState.Error -> "Bridge needs attention"
+    val color = when (status.state) {
+        BridgeConnectionState.Starting, BridgeConnectionState.RunningJob,
+        BridgeConnectionState.Finished, BridgeConnectionState.SendingResult -> AppTheme.brand.orange
+        BridgeConnectionState.JobFailed, BridgeConnectionState.ResultFailed,
+        BridgeConnectionState.Error, BridgeConnectionState.Offline -> MaterialTheme.colorScheme.error
+        else -> Color(0xFF18B26B)
     }
     Row(
         Modifier.fillMaxWidth().background(AppTheme.brand.headerGradient)
@@ -43,7 +44,8 @@ fun BridgeModeBadge() {
         Surface(onClick = { showDetails = true }, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-                Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(status.pillLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -51,7 +53,8 @@ fun BridgeModeBadge() {
         AlertDialog(
             onDismissRequest = { showDetails = false },
             title = { Text("Bridge mode") },
-            text = { Text(status.message + "\n\nTo hide the bridge notification while it keeps running, turn off the Feed bridge notification in Android settings.") },
+            text = { Text(status.message + (status.jobId?.let { "\nJob: $it" } ?: "") +
+                "\n\nTo hide the bridge notification while it keeps running, turn off the Feed bridge notification in Android settings.") },
             confirmButton = {
                 TextButton(onClick = {
                     val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

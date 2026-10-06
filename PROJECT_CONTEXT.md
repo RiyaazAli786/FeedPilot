@@ -103,7 +103,9 @@ Bridge selection requires device and account heartbeats within 15 seconds, match
 
 Offline backend selection checks: `dotnet run --project backend/tests/FeedPilot.BridgeChecks` (requires .NET 10).
 
-`FeedBridgeRunner` executes through local Instagram sessions and maps returned data with `BridgeFeedResultMapper`. Backend `FeedBridgeService` currently has a 30-second job wait timeout and 40-second expiry. `FeedBridgeJobSweepService` handles stale jobs. Treat the bridge architecture document as design context; source controls actual timeout and response behavior.
+`FeedBridgeRunner` executes through local Instagram sessions and maps returned data with `BridgeFeedResultMapper`. Backend `FeedBridgeService` has a 30-second total request budget. When another device is available, each attempt gets up to 10 seconds before trying a different device; the last available device can use the remaining budget. Failed/empty feeds also trigger failover, and each device is attempted once per request. Jobs expire at their attempt deadline; duplicate claims and late completions are rejected. `FeedBridgeJobSweepService` handles stale jobs.
+
+The Android bridge pill shows running target, finished/returning result, and backend-acknowledged result or failure. Outcomes stay visible for four seconds, then idle heartbeats restore "Bridge mode on". The foreground service and background worker share a mutex to prevent simultaneous execution.
 
 ### Watched handles and upgrades
 

@@ -17,6 +17,9 @@ import com.feedpilot.client.data.repository.InstagramRepository
 import com.feedpilot.client.data.repository.TargetRepository
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class FeedBridgeRunner @Inject constructor(
@@ -26,9 +29,10 @@ class FeedBridgeRunner @Inject constructor(
     private val targets: TargetRepository,
     private val identity: DeviceIdentity
 ) {
+    private val executionLock = Mutex()
     suspend fun heartbeat(): Boolean {
         val localAccounts = accounts.getAll().filter { it.sessionCookies.isNotBlank() }
-        val active = localAccounts.firstOrNull()
+        val active = localAccounts.firstOrNull { it.isLoggedIn } ?: localAccounts.firstOrNull()
         val body = BridgeHeartbeatRequest(
             deviceId = identity.stableAppInstallationId,
             installationId = identity.accountBindingInstallationId,
@@ -54,7 +58,7 @@ class FeedBridgeRunner @Inject constructor(
             .getOrDefault(false)
     }
 
-    suspend fun runOneJob(): Boolean {
+    suspend fun runOneJob(): Boolean = executionLock.withLock {
         check(heartbeat()) { "Bridge heartbeat was not accepted" }
         val job = runCatching {
             val response = api.pollBridgeJob(
@@ -64,28 +68,27 @@ class FeedBridgeRunner @Inject constructor(
             if (response.isSuccessful) response.body() else {
                 error("Bridge poll failed HTTP ${response.code()}")
             }
-        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return false
+        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return@withLock false
 
         execute(job)
-        return true
+        true
     }
 
     private suspend fun execute(job: BridgeJobDto) {
-        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId)
+        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id)
         val account = resolveAccount(job)
         if (account == null) {
             fail(job, "NO_LOCAL_SESSION", "Assigned Instagram account is not available on this device.")
-            BridgeStatusStore.online()
             return
         }
 
         val target = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId
         if (target.isNullOrBlank()) {
             fail(job, "INVALID_TARGET", "Bridge job did not include a username or user id.")
-            BridgeStatusStore.online()
             return
         }
 
+        var returningResult = false
         try {
             // GraphQL profile feeds require a handle, including jobs submitted with only a user ID.
             val feedTarget = job.targetUsername?.takeIf { it.isNotBlank() }
@@ -96,19 +99,16 @@ class FeedBridgeRunner @Inject constructor(
                 is Resource.Success -> result.data
                 is Resource.Error -> {
                     fail(job, classify(result.cause ?: IllegalStateException(result.message)), result.message)
-                    BridgeStatusStore.online()
                     return
                 }
                 Resource.Loading -> {
                     fail(job, "IG_EMPTY_FEED", "Instagram returned no feed data for $feedTarget.")
-                    BridgeStatusStore.online()
                     return
                 }
             }
             if (feed.items.isEmpty()) {
                 val profileLabel = feed.profile?.username?.let { "@$it" } ?: feedTarget
                 fail(job, "IG_EMPTY_FEED", "Instagram feed API returned zero posts for $profileLabel.")
-                BridgeStatusStore.online()
                 return
             }
             val profile = feed.profile
@@ -162,12 +162,22 @@ class FeedBridgeRunner @Inject constructor(
             }
 
             val data = feed.toBridgeResultData(job.limit, stories, highlights)
-            api.completeBridgeJob(job.id, CompleteBridgeJobRequest(data))
-            BridgeStatusStore.online("Completed bridge feed request")
+            BridgeStatusStore.finished(feed.items.size)
+            BridgeStatusStore.sendingResult()
+            returningResult = true
+            val result = api.completeBridgeJob(job.id, CompleteBridgeJobRequest(data))
+            if (result.accepted && result.status.equals("Completed", ignoreCase = true)) {
+                BridgeStatusStore.resultReturned()
+            } else {
+                BridgeStatusStore.resultFailed("Result was not accepted: ${result.status}")
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Bridge job ${job.id} failed", e)
             fail(job, classify(e), e.message ?: "Instagram feed execution failed.")
-            BridgeStatusStore.online()
+            if (returningResult) BridgeStatusStore.resultFailed(
+                "Could not confirm result delivery: ${e.message ?: "network error"}")
         }
     }
 
@@ -184,11 +194,14 @@ class FeedBridgeRunner @Inject constructor(
     }
 
     private suspend fun fail(job: BridgeJobDto, code: String, message: String) {
-        runCatching {
+        val report = runCatching {
             api.failBridgeJob(job.id, FailBridgeJobRequest(code = code, message = message))
         }.onFailure {
             Log.w(TAG, "Could not report bridge job failure", it)
         }
+        BridgeStatusStore.jobFailed(if (report.getOrNull()?.accepted == true)
+            "$message Failure reported to FeedPilot; another available device can be tried."
+        else "$message Could not confirm failure delivery to FeedPilot.")
     }
 
     private fun classify(error: Throwable): String {

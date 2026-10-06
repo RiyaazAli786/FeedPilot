@@ -23,7 +23,7 @@ public class FeedBridgeService : IFeedBridgeService
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan JobTimeout = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan JobExpiry = TimeSpan.FromSeconds(40);
+    private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(10);
 
     private readonly AppDbContext _db;
     private readonly ILogger<FeedBridgeService> _logger;
@@ -39,84 +39,116 @@ public class FeedBridgeService : IFeedBridgeService
         var username = NormalizeUsername(request.Username);
         var userId = request.UserId?.Trim();
         if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(userId))
-        {
             return Fail("INVALID_REQUEST", "Username or userId is required.");
-        }
 
         var sw = Stopwatch.StartNew();
-        FeedBridgeJob? job;
-        FeedBridgeAccountState? account;
+        var requestDeadline = DateTime.UtcNow.Add(JobTimeout);
+        var attemptedDevices = new HashSet<string>();
+        BridgeFeedResponse? lastFailure = null;
 
-        await SelectionGate.WaitAsync(ct);
+        while (DateTime.UtcNow < requestDeadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            FeedBridgeJob job;
+            FeedBridgeAccountState account;
+            await SelectionGate.WaitAsync(ct);
+            try
+            {
+                await ReleaseStaleAssignmentsAsync(ct);
+                var selected = await SelectAccountAsync(ct, attemptedDevices.ToArray());
+                if (selected is null)
+                    return lastFailure ?? Fail("NO_ACTIVE_SESSION", await BuildNoActiveSessionMessageAsync(ct));
+
+                account = selected;
+                attemptedDevices.Add(account.DeviceId);
+                var now = DateTime.UtcNow;
+                var hasAlternative = await SelectAccountAsync(ct, attemptedDevices.ToArray()) is not null;
+                // Reserve retry time only when another device is currently available.
+                var attemptDeadline = hasAlternative ? now.Add(AttemptTimeout) : requestDeadline;
+                if (attemptDeadline > requestDeadline) attemptDeadline = requestDeadline;
+                account.IsBusy = true;
+                account.LastUsedAt = now;
+                account.UpdatedAt = now;
+
+                job = new FeedBridgeJob
+                {
+                    ExternalRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? null : request.RequestId.Trim(),
+                    ClientName = string.IsNullOrWhiteSpace(request.Client) ? "GetIGFeed" : request.Client.Trim(),
+                    TargetUsername = username,
+                    TargetUserId = userId,
+                    Limit = Math.Clamp(request.Limit, 1, 50),
+                    MaxId = string.IsNullOrWhiteSpace(request.MaxId) ? null : request.MaxId.Trim(),
+                    IncludeStories = request.IncludeStories,
+                    Status = FeedBridgeJobStatus.Assigned,
+                    AssignedAccountId = account.AccountId,
+                    AssignedAccountStateId = account.Id,
+                    AssignedDeviceId = account.DeviceId,
+                    AssignedInstallationId = account.InstallationId,
+                    AssignedAt = now,
+                    ExpiresAt = attemptDeadline,
+                    Attempt = attemptedDevices.Count,
+                    RequestJson = JsonSerializer.Serialize(request, JsonOptions),
+                    UpdatedAt = now
+                };
+                _db.FeedBridgeJobs.Add(job);
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation("Bridge job {JobId} attempt {Attempt} assigned to device {DeviceId}.",
+                    job.Id, job.Attempt, job.AssignedDeviceId);
+            }
+            finally { SelectionGate.Release(); }
+
+            try
+            {
+                while (DateTime.UtcNow < job.ExpiresAt)
+                {
+                    await Task.Delay(250, ct);
+                    await _db.Entry(job).ReloadAsync(ct);
+                    if (job.Status is not (FeedBridgeJobStatus.Assigned or FeedBridgeJobStatus.Running)) break;
+                }
+                await MarkTimedOutAsync(job, ct);
+                // Timeout and completion can cross; always inspect the persisted winner.
+                await _db.Entry(job).ReloadAsync(ct);
+                if (job.Status == FeedBridgeJobStatus.Completed)
+                {
+                    object? data = string.IsNullOrWhiteSpace(job.ResponseJson) ? null
+                        : JsonSerializer.Deserialize<object>(job.ResponseJson, JsonOptions);
+                    return new BridgeFeedResponse(true, "android-device", job.Id,
+                        job.AssignedDeviceId, account.InstagramUsername, sw.ElapsedMilliseconds, data);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                await CancelJobAsync(job);
+                throw;
+            }
+
+            lastFailure = Fail(job.ErrorCode ?? "JOB_FAILED",
+                job.ErrorMessage ?? "Feed bridge job failed.", job.Id);
+            if (job.ErrorCode is "INVALID_REQUEST" or "INVALID_TARGET") return lastFailure;
+            _logger.LogInformation("Bridge job {JobId} failed with {Code}; trying another active device.",
+                job.Id, job.ErrorCode);
+        }
+
+        return lastFailure ?? Fail("JOB_TIMEOUT", "No Android device returned feed before the request timeout.");
+    }
+
+    private async Task CancelJobAsync(FeedBridgeJob job)
+    {
+        await SelectionGate.WaitAsync();
         try
         {
-            await ReleaseStaleAssignmentsAsync(ct);
-            var selected = await SelectAccountAsync(ct);
-            if (selected is null)
-                return Fail("NO_ACTIVE_SESSION", await BuildNoActiveSessionMessageAsync(ct));
-
-            account = selected;
-            var now = DateTime.UtcNow;
-            account.IsBusy = true;
-            account.LastUsedAt = now;
-            account.UpdatedAt = now;
-
-            job = new FeedBridgeJob
+            await _db.Entry(job).ReloadAsync(CancellationToken.None);
+            if (job.Status is not (FeedBridgeJobStatus.Assigned or FeedBridgeJobStatus.Running)) return;
+            job.Status = FeedBridgeJobStatus.Cancelled;
+            job.CompletedAt = job.UpdatedAt = DateTime.UtcNow;
+            if (job.AssignedAccountStateId is { } stateId)
             {
-                ExternalRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? null : request.RequestId.Trim(),
-                ClientName = string.IsNullOrWhiteSpace(request.Client) ? "GetIGFeed" : request.Client.Trim(),
-                TargetUsername = username,
-                TargetUserId = userId,
-                Limit = Math.Clamp(request.Limit, 1, 50),
-                MaxId = string.IsNullOrWhiteSpace(request.MaxId) ? null : request.MaxId.Trim(),
-                IncludeStories = request.IncludeStories,
-                Status = FeedBridgeJobStatus.Assigned,
-                AssignedAccountId = account.AccountId,
-                AssignedAccountStateId = account.Id,
-                AssignedDeviceId = account.DeviceId,
-                AssignedInstallationId = account.InstallationId,
-                AssignedAt = now,
-                ExpiresAt = now.Add(JobExpiry),
-                RequestJson = JsonSerializer.Serialize(request, JsonOptions),
-                UpdatedAt = now
-            };
-            _db.FeedBridgeJobs.Add(job);
-            await _db.SaveChangesAsync(ct);
-        }
-        finally
-        {
-            SelectionGate.Release();
-        }
-
-        var deadline = DateTime.UtcNow.Add(JobTimeout);
-        while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
-        {
-            await Task.Delay(500, ct);
-            await _db.Entry(job).ReloadAsync(ct);
-            if (job.Status == FeedBridgeJobStatus.Completed)
-            {
-                object? data = null;
-                if (!string.IsNullOrWhiteSpace(job.ResponseJson))
-                    data = JsonSerializer.Deserialize<object>(job.ResponseJson, JsonOptions);
-
-                return new BridgeFeedResponse(
-                    Success: true,
-                    Source: "android-device",
-                    JobId: job.Id,
-                    DeviceId: job.AssignedDeviceId,
-                    AccountUsername: account.InstagramUsername,
-                    DurationMs: sw.ElapsedMilliseconds,
-                    Data: data);
+                var account = await _db.FeedBridgeAccountStates.FindAsync(stateId);
+                if (account is not null) { account.IsBusy = false; account.UpdatedAt = DateTime.UtcNow; }
             }
-
-            if (job.Status is FeedBridgeJobStatus.Failed or FeedBridgeJobStatus.Cancelled or FeedBridgeJobStatus.TimedOut)
-            {
-                return Fail(job.ErrorCode ?? "JOB_FAILED", job.ErrorMessage ?? "Feed bridge job failed.", job.Id);
-            }
+            await _db.SaveChangesAsync(CancellationToken.None);
         }
-
-        await MarkTimedOutAsync(job, ct);
-        return Fail("JOB_TIMEOUT", "Android device did not complete the feed job before timeout.", job.Id);
+        finally { SelectionGate.Release(); }
     }
 
     public async Task<BridgeHeartbeatResponse> HeartbeatAsync(Guid? userId, string appId, BridgeHeartbeatRequest request, CancellationToken ct)
@@ -229,101 +261,135 @@ public class FeedBridgeService : IFeedBridgeService
 
     public async Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
-        var job = await _db.FeedBridgeJobs
-            .Where(j =>
-                j.AssignedDeviceId == deviceId &&
-                j.AssignedInstallationId == installationId &&
-                (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
-                j.ExpiresAt > now)
-            .OrderBy(j => j.CreatedAt)
-            .FirstOrDefaultAsync(ct);
-
-        if (job is null) return null;
-
-        job.Status = FeedBridgeJobStatus.Running;
-        job.UpdatedAt = now;
-        await _db.SaveChangesAsync(ct);
-
-        string? accountUsername = null;
-        if (job.AssignedAccountStateId is { } stateId)
+        await SelectionGate.WaitAsync(ct);
+        try
         {
-            accountUsername = await _db.FeedBridgeAccountStates.AsNoTracking()
-                .Where(a => a.Id == stateId)
-                .Select(a => a.InstagramUsername)
+            var now = DateTime.UtcNow;
+            var job = await _db.FeedBridgeJobs
+                .Where(j =>
+                    j.AssignedDeviceId == deviceId &&
+                    j.AssignedInstallationId == installationId &&
+                    j.Status == FeedBridgeJobStatus.Assigned &&
+                    _db.FeedBridgeAccountStates.Any(a => a.Id == j.AssignedAccountStateId && a.AppId == appId) &&
+                    j.ExpiresAt > now)
+                .OrderBy(j => j.CreatedAt)
                 .FirstOrDefaultAsync(ct);
-        }
 
-        return new BridgeJobDto(job.Id, job.TargetUsername, job.TargetUserId, job.Limit, job.MaxId,
-            job.IncludeStories, job.ExpiresAt, job.AssignedAccountId, accountUsername);
+            if (job is null) return null;
+
+            job.Status = FeedBridgeJobStatus.Running;
+            job.UpdatedAt = now;
+            await _db.SaveChangesAsync(ct);
+
+            string? accountUsername = null;
+            if (job.AssignedAccountStateId is { } stateId)
+            {
+                accountUsername = await _db.FeedBridgeAccountStates.AsNoTracking()
+                    .Where(a => a.Id == stateId)
+                    .Select(a => a.InstagramUsername)
+                    .FirstOrDefaultAsync(ct);
+            }
+
+            return new BridgeJobDto(job.Id, job.TargetUsername, job.TargetUserId, job.Limit, job.MaxId,
+                job.IncludeStories, job.ExpiresAt, job.AssignedAccountId, accountUsername);
+        }
+        finally { SelectionGate.Release(); }
     }
 
     public async Task<BridgeJobResultDto> CompleteAsync(Guid id, string appId, string deviceId, CompleteBridgeJobRequest request, CancellationToken ct)
     {
-        var job = await FindDeviceJobAsync(id, deviceId, ct);
-        if (job is null) return new BridgeJobResultDto(false, "NotFound");
+        await SelectionGate.WaitAsync(ct);
+        try
+        {
+            var job = await FindDeviceJobAsync(id, appId, deviceId, ct);
+            if (job is null) return new BridgeJobResultDto(false, "NotFound");
 
-        var now = DateTime.UtcNow;
-        job.Status = FeedBridgeJobStatus.Completed;
-        job.ResponseJson = JsonSerializer.Serialize(request.Data, JsonOptions);
-        job.CompletedAt = now;
-        job.UpdatedAt = now;
-        job.ErrorCode = null;
-        job.ErrorMessage = null;
-        await ReleaseAssignedAccountAsync(job, success: true, errorCode: null, errorMessage: null, ct);
-        await _db.SaveChangesAsync(ct);
-        return new BridgeJobResultDto(true, job.Status.ToString());
+            var now = DateTime.UtcNow;
+            if (request.Data.ValueKind != JsonValueKind.Object ||
+                !request.Data.TryGetProperty("items", out var items) ||
+                items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+            {
+                job.Status = FeedBridgeJobStatus.Failed;
+                job.ErrorCode = "IG_EMPTY_FEED";
+                job.ErrorMessage = "Android device returned no feed items.";
+                job.CompletedAt = job.UpdatedAt = now;
+                await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
+                await _db.SaveChangesAsync(ct);
+                return new BridgeJobResultDto(true, job.Status.ToString());
+            }
+            job.Status = FeedBridgeJobStatus.Completed;
+            job.ResponseJson = JsonSerializer.Serialize(request.Data, JsonOptions);
+            job.CompletedAt = now;
+            job.UpdatedAt = now;
+            job.ErrorCode = null;
+            job.ErrorMessage = null;
+            await ReleaseAssignedAccountAsync(job, success: true, errorCode: null, errorMessage: null, ct);
+            await _db.SaveChangesAsync(ct);
+            return new BridgeJobResultDto(true, job.Status.ToString());
+        }
+        finally { SelectionGate.Release(); }
     }
 
     public async Task<BridgeJobResultDto> FailAsync(Guid id, string appId, string deviceId, FailBridgeJobRequest request, CancellationToken ct)
     {
-        var job = await FindDeviceJobAsync(id, deviceId, ct);
-        if (job is null) return new BridgeJobResultDto(false, "NotFound");
+        await SelectionGate.WaitAsync(ct);
+        try
+        {
+            var job = await FindDeviceJobAsync(id, appId, deviceId, ct);
+            if (job is null) return new BridgeJobResultDto(false, "NotFound");
 
-        var now = DateTime.UtcNow;
-        job.Status = FeedBridgeJobStatus.Failed;
-        job.ErrorCode = request.Code;
-        job.ErrorMessage = request.Message;
-        job.CompletedAt = now;
-        job.UpdatedAt = now;
-        await ReleaseAssignedAccountAsync(job, success: false, errorCode: request.Code, errorMessage: request.Message, ct);
-        await _db.SaveChangesAsync(ct);
-        return new BridgeJobResultDto(true, job.Status.ToString());
+            var now = DateTime.UtcNow;
+            job.Status = FeedBridgeJobStatus.Failed;
+            job.ErrorCode = request.Code;
+            job.ErrorMessage = request.Message;
+            job.CompletedAt = now;
+            job.UpdatedAt = now;
+            await ReleaseAssignedAccountAsync(job, success: false, errorCode: request.Code, errorMessage: request.Message, ct);
+            await _db.SaveChangesAsync(ct);
+            return new BridgeJobResultDto(true, job.Status.ToString());
+        }
+        finally { SelectionGate.Release(); }
     }
 
     public async Task SweepExpiredAsync(CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
-        var expired = await _db.FeedBridgeJobs
-            .Where(j => (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) && j.ExpiresAt <= now)
-            .ToListAsync(ct);
-
-        foreach (var job in expired)
+        await SelectionGate.WaitAsync(ct);
+        try
         {
-            job.Status = FeedBridgeJobStatus.TimedOut;
-            job.ErrorCode = "JOB_TIMEOUT";
-            job.ErrorMessage = "Bridge job expired before device completed it.";
-            job.CompletedAt = now;
-            job.UpdatedAt = now;
-            await ReleaseAssignedAccountAsync(job, success: false, errorCode: job.ErrorCode, errorMessage: job.ErrorMessage, ct);
-        }
+            var now = DateTime.UtcNow;
+            var expired = await _db.FeedBridgeJobs
+                .Where(j => (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) && j.ExpiresAt <= now)
+                .ToListAsync(ct);
 
-        if (expired.Count > 0)
-        {
-            await _db.SaveChangesAsync(ct);
-            _logger.LogInformation("Feed bridge sweep timed out {Count} job(s).", expired.Count);
+            foreach (var job in expired)
+            {
+                job.Status = FeedBridgeJobStatus.TimedOut;
+                job.ErrorCode = "JOB_TIMEOUT";
+                job.ErrorMessage = "Bridge job expired before device completed it.";
+                job.CompletedAt = now;
+                job.UpdatedAt = now;
+                await ReleaseAssignedAccountAsync(job, success: false, errorCode: job.ErrorCode, errorMessage: job.ErrorMessage, ct);
+            }
+
+            if (expired.Count > 0)
+            {
+                await _db.SaveChangesAsync(ct);
+                _logger.LogInformation("Feed bridge sweep timed out {Count} job(s).", expired.Count);
+            }
         }
+        finally { SelectionGate.Release(); }
     }
 
-    private async Task<FeedBridgeAccountState?> SelectAccountAsync(CancellationToken ct)
+    private async Task<FeedBridgeAccountState?> SelectAccountAsync(CancellationToken ct, string[]? excludedDeviceIds = null)
     {
         var now = DateTime.UtcNow;
         var onlineAfter = now.Subtract(OnlineWindow);
+        var excluded = (excludedDeviceIds ?? Array.Empty<string>()).ToList();
 
         // Require a recent heartbeat and capacity to execute, without moving
         // account sessions between devices or installations.
         var onlineDevices = _db.FeedBridgeDeviceStates.AsNoTracking()
-            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter &&
+            .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && !excluded.Contains(d.DeviceId) &&
                 (d.CooldownUntil == null || d.CooldownUntil <= now) &&
                 !_db.FeedBridgeJobs.Any(j =>
                     j.AssignedDeviceId == d.DeviceId &&
@@ -419,15 +485,20 @@ public class FeedBridgeService : IFeedBridgeService
 
     private async Task MarkTimedOutAsync(FeedBridgeJob job, CancellationToken ct)
     {
-        await _db.Entry(job).ReloadAsync(ct);
-        if (job.Status is FeedBridgeJobStatus.Completed or FeedBridgeJobStatus.Failed) return;
-        job.Status = FeedBridgeJobStatus.TimedOut;
-        job.ErrorCode = "JOB_TIMEOUT";
-        job.ErrorMessage = "Android device did not complete the feed job before timeout.";
-        job.CompletedAt = DateTime.UtcNow;
-        job.UpdatedAt = DateTime.UtcNow;
-        await ReleaseAssignedAccountAsync(job, success: false, errorCode: job.ErrorCode, errorMessage: job.ErrorMessage, ct);
-        await _db.SaveChangesAsync(ct);
+        await SelectionGate.WaitAsync(ct);
+        try
+        {
+            await _db.Entry(job).ReloadAsync(ct);
+            if (job.Status is not (FeedBridgeJobStatus.Assigned or FeedBridgeJobStatus.Running)) return;
+            job.Status = FeedBridgeJobStatus.TimedOut;
+            job.ErrorCode = "JOB_TIMEOUT";
+            job.ErrorMessage = "Android device did not complete the feed job before timeout.";
+            job.CompletedAt = DateTime.UtcNow;
+            job.UpdatedAt = DateTime.UtcNow;
+            await ReleaseAssignedAccountAsync(job, success: false, errorCode: job.ErrorCode, errorMessage: job.ErrorMessage, ct);
+            await _db.SaveChangesAsync(ct);
+        }
+        finally { SelectionGate.Release(); }
     }
 
     private async Task ReleaseAssignedAccountAsync(FeedBridgeJob job, bool success, string? errorCode, string? errorMessage, CancellationToken ct)
@@ -479,8 +550,11 @@ public class FeedBridgeService : IFeedBridgeService
         }
     }
 
-    private async Task<FeedBridgeJob?> FindDeviceJobAsync(Guid id, string deviceId, CancellationToken ct) =>
-        await _db.FeedBridgeJobs.FirstOrDefaultAsync(j => j.Id == id && j.AssignedDeviceId == deviceId, ct);
+    private async Task<FeedBridgeJob?> FindDeviceJobAsync(Guid id, string appId, string deviceId, CancellationToken ct) =>
+        await _db.FeedBridgeJobs.FirstOrDefaultAsync(j => j.Id == id && j.AssignedDeviceId == deviceId &&
+            (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+            j.ExpiresAt > DateTime.UtcNow &&
+            _db.FeedBridgeAccountStates.Any(a => a.Id == j.AssignedAccountStateId && a.AppId == appId), ct);
 
     private static BridgeFeedResponse Fail(string code, string message, Guid? jobId = null) =>
         new(false, "android-device", jobId, Code: code, Message: message);

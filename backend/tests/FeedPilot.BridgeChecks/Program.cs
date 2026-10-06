@@ -65,12 +65,13 @@ await service.HeartbeatAsync(null, "app", new BridgeHeartbeatRequest(
 Check(await Select() is null, "removed account sessions become unavailable immediately");
 Check(active.Status == AccountStatus.SessionExpired, "removed session is marked expired");
 Console.WriteLine("All 9 bridge selection checks passed.");
+await FailoverChecks.RunAsync();
 
 async Task<FeedBridgeAccountState?> Select()
 {
     var method = typeof(FeedBridgeService).GetMethod("SelectAccountAsync",
         BindingFlags.Instance | BindingFlags.NonPublic)!;
-    return await (Task<FeedBridgeAccountState?>)method.Invoke(service, new object[] { CancellationToken.None })!;
+    return await (Task<FeedBridgeAccountState?>)method.Invoke(service, new object?[] { CancellationToken.None, null })!;
 }
 
 static void Check(bool condition, string message)
