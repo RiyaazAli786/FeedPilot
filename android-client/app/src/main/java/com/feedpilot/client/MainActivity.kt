@@ -499,7 +499,7 @@ private fun MainScreenLayout(
                     TransferScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Routes.BRIDGE_LOGS) {
-                    if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen(onAddAccount = { navController.navigate(Routes.ADD_ACCOUNT) })
+                    if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen()
                 }
                 composable(Routes.SETTINGS) {
                     SettingsScreen(

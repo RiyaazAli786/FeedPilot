@@ -12,9 +12,9 @@
                 android:type="linear"
                 android:startX="0" android:startY="0"
                 android:endX="108" android:endY="108"
-                android:startColor="#222934"
-                android:centerColor="#141A23"
-                android:endColor="#090C12" />
+                android:startColor="#071E68"
+                android:centerColor="#040B2B"
+                android:endColor="#080322" />
         </aapt:attr>
     </path>
 
@@ -22,10 +22,10 @@
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="50" android:centerY="38"
+                android:centerX="18" android:centerY="14"
                 android:gradientRadius="52"
-                android:startColor="#18F5D98B"
-                android:centerColor="#109C7732"
+                android:startColor="#660087FF"
+                android:centerColor="#220055FF"
                 android:endColor="#00000000" />
         </aapt:attr>
     </path>
@@ -34,9 +34,9 @@
         <aapt:attr name="android:fillColor">
             <gradient
                 android:type="radial"
-                android:centerX="77" android:centerY="80"
+                android:centerX="90" android:centerY="94"
                 android:gradientRadius="42"
-                android:startColor="#00000000"
+                android:startColor="#773E0CFF"
                 android:endColor="#00000000" />
         </aapt:attr>
     </path>

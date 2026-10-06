@@ -12,23 +12,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.feedpilot.client.bridge.BridgeLogStore
-import androidx.hilt.navigation.compose.hiltViewModel
-import com.feedpilot.client.feature.tasks.TasksViewModel
-import com.feedpilot.client.feature.tasks.ProfileUpdateDialog
-import com.feedpilot.client.data.local.AccountEntity
 import kotlinx.coroutines.launch
 
 @Composable
-fun BridgeLogsScreen(onAddAccount: () -> Unit, viewModel: TasksViewModel = hiltViewModel()) {
-    val accountState by viewModel.state.collectAsStateWithLifecycle()
-    val profileProgress by viewModel.profileUpdateState.collectAsStateWithLifecycle()
+fun BridgeLogsScreen() {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var selectedAccountId by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedAccount = accountState.accounts.firstOrNull { it.id == selectedAccountId }
-        ?: accountState.accounts.firstOrNull()
-    var expanded by remember { mutableStateOf(false) }
-    var accountToEdit by remember { mutableStateOf<AccountEntity?>(null) }
-    var accountToRemove by remember { mutableStateOf<AccountEntity?>(null) }
     val entries by BridgeLogStore.entries.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var requestedPage by rememberSaveable { mutableIntStateOf(0) }
@@ -49,35 +37,6 @@ fun BridgeLogsScreen(onAddAccount: () -> Unit, viewModel: TasksViewModel = hiltV
             if (selectedTab == 1) {
                 ExceptionUsersPanel(Modifier.weight(1f).fillMaxWidth())
             } else {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Accounts (${accountState.accounts.size})", modifier = Modifier.padding(top = 12.dp))
-                        TextButton(onClick = onAddAccount) { Text("Add account") }
-                    }
-                    if (selectedAccount == null) {
-                        Text("Add an Instagram account to use bridge mode.")
-                    } else {
-                        Row(Modifier.fillMaxWidth()) {
-                            Box(Modifier.weight(1f)) {
-                                TextButton(onClick = { expanded = true }) {
-                                    Text("@${selectedAccount.username} ▾", maxLines = 1)
-                                }
-                                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                    accountState.accounts.forEach { account ->
-                                        DropdownMenuItem(text = { Text("@${account.username}") }, onClick = {
-                                            selectedAccountId = account.id
-                                            expanded = false
-                                        })
-                                    }
-                                }
-                            }
-                            TextButton(onClick = { accountToEdit = selectedAccount }, enabled = !profileProgress.running) { Text("Edit") }
-                            TextButton(onClick = { accountToRemove = selectedAccount }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
-                        }
-                    }
-                }
-            }
             OutlinedTextField(query, onValueChange = { query = it; requestedPage = 0 }, label = { Text("Search account, target, job or message") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${filtered.size} logs", modifier = Modifier.padding(top = 12.dp))
@@ -116,25 +75,5 @@ fun BridgeLogsScreen(onAddAccount: () -> Unit, viewModel: TasksViewModel = hiltV
             }
             }
         }
-    }
-    accountToEdit?.let { account ->
-        ProfileUpdateDialog(account, profileProgress, onDismiss = {
-            if (!profileProgress.running) {
-                viewModel.clearProfileUpdateMessage()
-                accountToEdit = null
-            }
-        }, onSubmit = { bio, profile, story, feed, caption ->
-            viewModel.runProfileUpdate(account.id, bio, profile, story, feed, caption)
-        })
-    }
-    accountToRemove?.let { account ->
-        AlertDialog(onDismissRequest = { accountToRemove = null },
-            title = { Text("Remove account?") },
-            text = { Text("Remove @${account.username} from this device? You can add it back anytime.") },
-            confirmButton = { TextButton(onClick = {
-                viewModel.removeAccount(account.id)
-                accountToRemove = null
-            }) { Text("Remove", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { accountToRemove = null }) { Text("Cancel") } })
     }
 }

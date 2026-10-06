@@ -26,8 +26,6 @@ internal fun ExceptionUsersPanel(
     val actionsEnabled = !state.loading && !state.saving
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Saved on feed.reelsflow.io", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("These usernames use the device bridge first, with pool fallback.",
             style = MaterialTheme.typography.bodySmall)
         OutlinedTextField(

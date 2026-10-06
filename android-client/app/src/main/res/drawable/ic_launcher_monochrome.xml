@@ -1,5 +1,8 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M32,33 L75,33 L71,42 L43,42 L43,51 L63,51 L59,60 L43,60 L43,76 L32,76 Z M48,68 L76,47 L66,77 L60,66 Z" />
+    <!-- Flight ribbons, speed lines and paper plane for Android themed icons. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M36,43 C40,29 48,27 59,27 L79,27 C76,38 73,39 63,39 C51,39 42,40 36,43 Z M38,78 C42,65 45,60 56,59 L70,59 C67,68 61,68 54,68 C51,75 47,78 38,78 Z M50,47 L76,40 L60,58 L56,54 L53,58 L53,51 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M29,47 L45,47 M33,52 L47,52 M37,57 L47,57" />
 </vector>
