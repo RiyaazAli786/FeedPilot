@@ -153,110 +153,131 @@ public class FeedBridgeService : IFeedBridgeService
 
     public async Task<BridgeHeartbeatResponse> HeartbeatAsync(Guid? userId, string appId, BridgeHeartbeatRequest request, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
-        var deviceId = CleanRequired(request.DeviceId);
-        var installationId = CleanRequired(request.InstallationId);
-
-        var device = await _db.FeedBridgeDeviceStates.FirstOrDefaultAsync(d =>
-            d.AppId == appId &&
-            d.DeviceId == deviceId &&
-            d.InstallationId == installationId, ct);
-
-        if (device is null)
+        await SelectionGate.WaitAsync(ct);
+        try
         {
-            device = new FeedBridgeDeviceState
+            var now = DateTime.UtcNow;
+            var deviceId = CleanRequired(request.DeviceId);
+            var installationId = CleanRequired(request.InstallationId);
+
+            var device = await _db.FeedBridgeDeviceStates.FirstOrDefaultAsync(d =>
+                d.AppId == appId &&
+                d.DeviceId == deviceId &&
+                d.InstallationId == installationId, ct);
+
+            if (device is null)
             {
-                AppId = appId,
-                DeviceId = deviceId,
-                InstallationId = installationId,
-                CreatedAt = now
-            };
-            _db.FeedBridgeDeviceStates.Add(device);
-        }
-
-        device.UserId = userId ?? device.UserId;
-        device.AppInstanceId = request.AppInstanceId;
-        device.DeviceModel = request.DeviceModel;
-        device.AndroidVersion = request.AndroidVersion;
-        device.AppVersion = request.AppVersion;
-        device.LastSeenAt = now;
-        device.BridgeEnabled = request.BridgeEnabled;
-        device.BatteryLevel = request.BatteryLevel;
-        device.NetworkType = request.NetworkType;
-        device.ActiveAccountUsername = NormalizeUsername(request.ActiveAccountUsername);
-        device.LoggedInAccountsJson = request.LoggedInAccounts is null ? device.LoggedInAccountsJson : JsonSerializer.Serialize(request.LoggedInAccounts, JsonOptions);
-        device.CapabilitiesJson = request.Capabilities is null ? device.CapabilitiesJson : JsonSerializer.Serialize(request.Capabilities, JsonOptions);
-        device.UpdatedAt = now;
-
-        var existingDevice = await _db.Devices.FirstOrDefaultAsync(d =>
-            d.AppId == appId && d.DeviceId == deviceId && d.InstallationId == installationId, ct);
-        if (existingDevice is not null)
-        {
-            existingDevice.LastSeenAt = now;
-            existingDevice.ActiveAccount = request.ActiveAccountUsername ?? existingDevice.ActiveAccount;
-            if (request.LoggedInAccounts is not null)
-                existingDevice.LoggedInAccountsJson = JsonSerializer.Serialize(request.LoggedInAccounts, JsonOptions);
-        }
-
-        // An explicit snapshot removes availability for sessions no longer on this device.
-        if (request.Accounts is not null)
-        {
-            var loggedIn = request.Accounts.Where(a => a.IsLoggedIn)
-                .Select(a => NormalizeUsername(a.Username)).ToHashSet();
-            var previousAccounts = await _db.FeedBridgeAccountStates.Where(a =>
-                a.AppId == appId && a.DeviceId == deviceId && a.InstallationId == installationId).ToListAsync(ct);
-            foreach (var previous in previousAccounts.Where(a => !loggedIn.Contains(a.InstagramUsername)))
-            {
-                previous.Status = AccountStatus.SessionExpired;
-                previous.UpdatedAt = now;
-            }
-        }
-
-        foreach (var reported in request.Accounts ?? new List<BridgeHeartbeatAccountDto>())
-        {
-            var username = NormalizeUsername(reported.Username);
-            if (string.IsNullOrWhiteSpace(username) || !reported.IsLoggedIn) continue;
-            var accountId = Guid.TryParse(reported.AccountId, out var parsedId) ? parsedId : (Guid?)null;
-            var account = await _db.FeedBridgeAccountStates.FirstOrDefaultAsync(a =>
-                a.AppId == appId &&
-                a.DeviceId == deviceId &&
-                a.InstallationId == installationId &&
-                a.InstagramUsername == username, ct);
-
-            if (account is null)
-            {
-                account = new FeedBridgeAccountState
+                device = new FeedBridgeDeviceState
                 {
                     AppId = appId,
                     DeviceId = deviceId,
                     InstallationId = installationId,
-                    InstagramUsername = username,
                     CreatedAt = now
                 };
-                _db.FeedBridgeAccountStates.Add(account);
+                _db.FeedBridgeDeviceStates.Add(device);
             }
 
-            account.AccountId = accountId ?? account.AccountId;
-            account.UserId = userId ?? account.UserId;
-            account.InstagramUserId = reported.InstagramUserId ?? account.InstagramUserId;
-            account.Status = ParseAccountStatus(reported.Status);
-            account.LastValidatedAt = now;
-            account.UpdatedAt = now;
-            if (account.Status == AccountStatus.Active)
+            device.UserId = userId ?? device.UserId;
+            device.AppInstanceId = request.AppInstanceId;
+            device.DeviceModel = request.DeviceModel;
+            device.AndroidVersion = request.AndroidVersion;
+            device.AppVersion = request.AppVersion;
+            device.LastSeenAt = now;
+            device.BridgeEnabled = request.BridgeEnabled;
+            device.BatteryLevel = request.BatteryLevel;
+            device.NetworkType = request.NetworkType;
+            device.ActiveAccountUsername = NormalizeUsername(request.ActiveAccountUsername);
+            device.LoggedInAccountsJson = request.LoggedInAccounts is null ? device.LoggedInAccountsJson : JsonSerializer.Serialize(request.LoggedInAccounts, JsonOptions);
+            device.CapabilitiesJson = request.Capabilities is null ? device.CapabilitiesJson : JsonSerializer.Serialize(request.Capabilities, JsonOptions);
+            device.UpdatedAt = now;
+
+            var existingDevice = await _db.Devices.FirstOrDefaultAsync(d =>
+                d.AppId == appId && d.DeviceId == deviceId && d.InstallationId == installationId, ct);
+            if (existingDevice is not null)
             {
-                account.LastErrorCode = null;
-                account.LastErrorMessage = null;
+                existingDevice.LastSeenAt = now;
+                existingDevice.ActiveAccount = request.ActiveAccountUsername ?? existingDevice.ActiveAccount;
+                if (request.LoggedInAccounts is not null)
+                    existingDevice.LoggedInAccountsJson = JsonSerializer.Serialize(request.LoggedInAccounts, JsonOptions);
             }
+
+            // An explicit snapshot removes availability for sessions no longer on this device.
+            if (request.Accounts is not null)
+            {
+                var loggedIn = request.Accounts.Where(a => a.IsLoggedIn)
+                    .Select(a => NormalizeUsername(a.Username)).ToHashSet();
+                var previousAccounts = await _db.FeedBridgeAccountStates.Where(a =>
+                    a.AppId == appId && a.DeviceId == deviceId && a.InstallationId == installationId).ToListAsync(ct);
+                foreach (var previous in previousAccounts.Where(a => !loggedIn.Contains(a.InstagramUsername)))
+                {
+                    previous.Status = AccountStatus.SessionExpired;
+                    previous.UpdatedAt = now;
+                }
+            }
+
+            foreach (var reported in request.Accounts ?? new List<BridgeHeartbeatAccountDto>())
+            {
+                var username = NormalizeUsername(reported.Username);
+                if (string.IsNullOrWhiteSpace(username) || !reported.IsLoggedIn) continue;
+                var accountId = Guid.TryParse(reported.AccountId, out var parsedId) ? parsedId : (Guid?)null;
+                var account = await _db.FeedBridgeAccountStates.FirstOrDefaultAsync(a =>
+                    a.AppId == appId &&
+                    a.DeviceId == deviceId &&
+                    a.InstallationId == installationId &&
+                    a.InstagramUsername == username, ct);
+
+                if (account is null)
+                {
+                    account = new FeedBridgeAccountState
+                    {
+                        AppId = appId,
+                        DeviceId = deviceId,
+                        InstallationId = installationId,
+                        InstagramUsername = username,
+                        CreatedAt = now
+                    };
+                    _db.FeedBridgeAccountStates.Add(account);
+                }
+
+                account.AccountId = accountId ?? account.AccountId;
+                account.UserId = userId ?? account.UserId;
+                account.InstagramUserId = reported.InstagramUserId ?? account.InstagramUserId;
+                account.Status = ParseAccountStatus(reported.Status);
+                account.LastValidatedAt = now;
+                account.UpdatedAt = now;
+                if (account.Status == AccountStatus.Active)
+                {
+                    account.LastErrorCode = null;
+                    account.LastErrorMessage = null;
+                }
+            }
+
+            if (!request.BridgeEnabled)
+            {
+                var assignedJobs = await _db.FeedBridgeJobs.Where(j =>
+                    j.AssignedDeviceId == deviceId && j.AssignedInstallationId == installationId &&
+                    (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+                    _db.FeedBridgeAccountStates.Any(a => a.Id == j.AssignedAccountStateId && a.AppId == appId)).ToListAsync(ct);
+                foreach (var job in assignedJobs)
+                {
+                    job.Status = FeedBridgeJobStatus.Cancelled;
+                    job.ErrorCode = "DEVICE_OFFLINE";
+                    job.ErrorMessage = "Bridge mode was disabled on the assigned device.";
+                    job.CompletedAt = job.UpdatedAt = now;
+                    await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
+                }
+            }
+
+            await _db.SaveChangesAsync(ct);
+
+            var pendingJobs = await _db.FeedBridgeJobs.CountAsync(j =>
+                j.AssignedDeviceId == deviceId &&
+                j.AssignedInstallationId == installationId &&
+                (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running), ct);
+
+            return new BridgeHeartbeatResponse(true, now, pendingJobs);
         }
-
-        await _db.SaveChangesAsync(ct);
-
-        var pendingJobs = await _db.FeedBridgeJobs.CountAsync(j =>
-            j.AssignedDeviceId == deviceId &&
-            j.AssignedInstallationId == installationId &&
-            (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running), ct);
-
-        return new BridgeHeartbeatResponse(true, now, pendingJobs);
+        finally { SelectionGate.Release(); }
     }
 
     public async Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, CancellationToken ct)
@@ -271,6 +292,8 @@ public class FeedBridgeService : IFeedBridgeService
                     j.AssignedInstallationId == installationId &&
                     j.Status == FeedBridgeJobStatus.Assigned &&
                     _db.FeedBridgeAccountStates.Any(a => a.Id == j.AssignedAccountStateId && a.AppId == appId) &&
+                    _db.FeedBridgeDeviceStates.Any(d => d.AppId == appId && d.DeviceId == deviceId &&
+                        d.InstallationId == installationId && d.BridgeEnabled) &&
                     j.ExpiresAt > now)
                 .OrderBy(j => j.CreatedAt)
                 .FirstOrDefaultAsync(ct);
@@ -519,6 +542,7 @@ public class FeedBridgeService : IFeedBridgeService
 
         account.LastErrorCode = errorCode;
         account.LastErrorMessage = errorMessage;
+        if (errorCode == "DEVICE_OFFLINE") return; // Turning the switch off is not a session failure.
         if (errorCode is "IG_SESSION_EXPIRED")
         {
             account.FailureCount += 1;
@@ -554,6 +578,8 @@ public class FeedBridgeService : IFeedBridgeService
         await _db.FeedBridgeJobs.FirstOrDefaultAsync(j => j.Id == id && j.AssignedDeviceId == deviceId &&
             (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
             j.ExpiresAt > DateTime.UtcNow &&
+            _db.FeedBridgeDeviceStates.Any(d => d.AppId == appId && d.DeviceId == deviceId &&
+                d.InstallationId == j.AssignedInstallationId && d.BridgeEnabled) &&
             _db.FeedBridgeAccountStates.Any(a => a.Id == j.AssignedAccountStateId && a.AppId == appId), ct);
 
     private static BridgeFeedResponse Fail(string code, string message, Guid? jobId = null) =>

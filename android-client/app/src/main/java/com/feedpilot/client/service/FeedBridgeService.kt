@@ -27,6 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -62,12 +63,16 @@ class FeedBridgeService : Service() {
         super.onTaskRemoved(rootIntent)
         // Keep the bridge alive when the user only clears Recents. Android still stops this
         // after a real force-stop, which is the intended hard off switch.
-        start(this)
+        scope.launch { if (runner.isBridgeEnabled()) start(this@FeedBridgeService) }
     }
 
     private suspend fun loop() {
         while (scope.isActive) {
             try {
+                if (!runner.isBridgeEnabled()) {
+                    stopSelf()
+                    return
+                }
                 if (!hasInternetConnection()) {
                     BridgeStatusStore.offline()
                     delay(ERROR_DELAY_MS)
@@ -75,9 +80,9 @@ class FeedBridgeService : Service() {
                 }
 
                 val ranJob = runner.runOneJob()
-                val text = if (ranJob) "Completed bridge feed request" else "Waiting for bridge requests"
-                if (!ranJob) BridgeStatusStore.online(text)
                 delay(if (ranJob) ACTIVE_DELAY_MS else IDLE_DELAY_MS)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Feed bridge loop failed", e)
                 BridgeStatusStore.error("Bridge retrying after network error")

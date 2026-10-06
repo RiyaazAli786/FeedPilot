@@ -107,6 +107,10 @@ Offline backend selection checks: `dotnet run --project backend/tests/FeedPilot.
 
 The Android bridge pill shows running target, finished/returning result, and backend-acknowledged result or failure. Outcomes stay visible for four seconds, then idle heartbeats restore "Bridge mode on". The foreground service and background worker share a mutex to prevent simultaneous execution.
 
+Settings includes a device-local `bridgeEnabled` preference (default true to preserve existing behavior). `BridgeModeController` reapplies it on app launch, starts/stops the foreground service, and schedules/cancels bridge work. Disabled mode sends an offline heartbeat, retries delivery if offline, and prevents polling/result submission locally. The backend cancels this device's unfinished assignments without penalizing its account session and can fail over to another device. Re-enabling registers availability through a fresh heartbeat; a saved Instagram session is required for readiness. The pill and details show the actual fetching account separately from the target handle.
+
+Android's Bridge tab is available only while the saved bridge setting is enabled, including swipe navigation. `BridgeLogStore` records status transitions with timestamp, fetching account, target and job ID into device-local `bridge-history.tsv`; it retains the newest 1,000 entries and suppresses repeated identical heartbeat statuses. `BridgeLogsScreen` searches all retained entries, displays 25 per page, and copies individual entries or all search matches. Disabling hides the tab while retaining history for the next enable.
+
 ### Watched handles and upgrades
 
 Watched handles/posts have backend persistence, Android repositories/screens, and `FeedWatcherWorker`. Watched post uniqueness is enforced locally by handle/post ID. The iOS starter supports device auth and watched handles/posts.

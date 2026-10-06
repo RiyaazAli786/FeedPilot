@@ -20,6 +20,8 @@ import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.first
+import com.feedpilot.client.data.repository.SettingsRepository
 
 @Singleton
 class FeedBridgeRunner @Inject constructor(
@@ -27,10 +29,15 @@ class FeedBridgeRunner @Inject constructor(
     private val accounts: AccountDao,
     private val instagram: InstagramRepository,
     private val targets: TargetRepository,
-    private val identity: DeviceIdentity
+    private val identity: DeviceIdentity,
+    private val settings: SettingsRepository
 ) {
     private val executionLock = Mutex()
-    suspend fun heartbeat(): Boolean {
+    private val heartbeatLock = Mutex()
+    suspend fun isBridgeEnabled(): Boolean = settings.settings.first().bridgeEnabled
+
+    suspend fun heartbeat(): Boolean = heartbeatLock.withLock {
+        val enabled = isBridgeEnabled()
         val localAccounts = accounts.getAll().filter { it.sessionCookies.isNotBlank() }
         val active = localAccounts.firstOrNull { it.isLoggedIn } ?: localAccounts.firstOrNull()
         val body = BridgeHeartbeatRequest(
@@ -39,6 +46,7 @@ class FeedBridgeRunner @Inject constructor(
             appInstanceId = identity.appInstanceId,
             deviceModel = identity.deviceLabel,
             androidVersion = identity.androidVersion,
+            bridgeEnabled = enabled && localAccounts.isNotEmpty(),
             activeAccountUsername = active?.username,
             loggedInAccounts = localAccounts.map { it.username },
             accounts = localAccounts.map {
@@ -50,16 +58,21 @@ class FeedBridgeRunner @Inject constructor(
                 )
             }
         )
-        return runCatching { api.sendBridgeHeartbeat(body).accepted }
+        runCatching { api.sendBridgeHeartbeat(body).accepted }
             .onSuccess { accepted ->
-                if (accepted) BridgeStatusStore.online()
+                if (accepted && isBridgeEnabled()) {
+                    if (localAccounts.isNotEmpty()) BridgeStatusStore.online()
+                    else BridgeStatusStore.error("Add an Instagram account with a saved session to enable bridge actions.")
+                }
             }
             .onFailure { Log.w(TAG, "Bridge heartbeat failed", it) }
             .getOrDefault(false)
     }
 
     suspend fun runOneJob(): Boolean = executionLock.withLock {
+        if (!isBridgeEnabled()) return@withLock false
         check(heartbeat()) { "Bridge heartbeat was not accepted" }
+        if (!isBridgeEnabled()) return@withLock false
         val job = runCatching {
             val response = api.pollBridgeJob(
                 deviceId = identity.stableAppInstallationId,
@@ -70,17 +83,20 @@ class FeedBridgeRunner @Inject constructor(
             }
         }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return@withLock false
 
+        if (!isBridgeEnabled()) return@withLock false
         execute(job)
         true
     }
 
     private suspend fun execute(job: BridgeJobDto) {
-        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id)
+        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, job.accountUsername)
         val account = resolveAccount(job)
         if (account == null) {
             fail(job, "NO_LOCAL_SESSION", "Assigned Instagram account is not available on this device.")
             return
         }
+        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, account.username)
+        if (!isBridgeEnabled()) return
 
         val target = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId
         if (target.isNullOrBlank()) {
@@ -162,6 +178,7 @@ class FeedBridgeRunner @Inject constructor(
             }
 
             val data = feed.toBridgeResultData(job.limit, stories, highlights)
+            if (!isBridgeEnabled()) return
             BridgeStatusStore.finished(feed.items.size)
             BridgeStatusStore.sendingResult()
             returningResult = true

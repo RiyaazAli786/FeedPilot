@@ -17,6 +17,7 @@ object Routes {
     const val HANDLES = "handles"
     const val ORDERS = "orders"
     const val TASKS = "tasks"
+    const val BRIDGE_LOGS = "bridge_logs"
 
     const val LOGIN = "login"
     const val SETTINGS = "settings"
@@ -46,5 +47,6 @@ enum class BottomTab(val route: String, val label: String, val icon: ImageVector
     Followers(Routes.FOLLOWERS, "Followers", Icons.Filled.People),
     Posts(Routes.POSTS, "Posts", Icons.Filled.Favorite),
     Handles(Routes.HANDLES, "Handle", Icons.Filled.Visibility),
-    Orders(Routes.ORDERS, "Orders", Icons.Filled.ShoppingCart)
+    Orders(Routes.ORDERS, "Orders", Icons.Filled.ShoppingCart),
+    Bridge(Routes.BRIDGE_LOGS, "Bridge", Icons.AutoMirrored.Filled.Assignment)
 }

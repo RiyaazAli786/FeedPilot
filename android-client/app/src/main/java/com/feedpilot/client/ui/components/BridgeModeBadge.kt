@@ -32,6 +32,7 @@ fun BridgeModeBadge() {
     val color = when (status.state) {
         BridgeConnectionState.Starting, BridgeConnectionState.RunningJob,
         BridgeConnectionState.Finished, BridgeConnectionState.SendingResult -> AppTheme.brand.orange
+        BridgeConnectionState.Disabled -> MaterialTheme.colorScheme.onSurfaceVariant
         BridgeConnectionState.JobFailed, BridgeConnectionState.ResultFailed,
         BridgeConnectionState.Error, BridgeConnectionState.Offline -> MaterialTheme.colorScheme.error
         else -> Color(0xFF18B26B)
@@ -53,7 +54,8 @@ fun BridgeModeBadge() {
         AlertDialog(
             onDismissRequest = { showDetails = false },
             title = { Text("Bridge mode") },
-            text = { Text(status.message + (status.jobId?.let { "\nJob: $it" } ?: "") +
+            text = { Text(status.message + (status.accountUsername?.let { "\nFetching account: @$it" } ?: "") +
+                (status.currentUsername?.let { "\nTarget: @$it" } ?: "") + (status.jobId?.let { "\nJob: $it" } ?: "") +
                 "\n\nTo hide the bridge notification while it keeps running, turn off the Feed bridge notification in Android settings.") },
             confirmButton = {
                 TextButton(onClick = {

@@ -50,6 +50,10 @@ class RootViewModel @Inject constructor(
             .map { it.theme }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.LIGHT)
 
+    val bridgeEnabled: StateFlow<Boolean> = settingsRepository.settings
+        .map { it.bridgeEnabled }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val accounts: StateFlow<List<AccountEntity>> =
         accountRepository.accounts
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

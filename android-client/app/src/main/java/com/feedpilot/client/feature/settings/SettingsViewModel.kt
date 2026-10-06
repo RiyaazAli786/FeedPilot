@@ -83,6 +83,7 @@ class SettingsViewModel @Inject constructor(
     fun setNotifications(v: Boolean) = viewModelScope.launch { settingsRepository.setNotifications(v) }
     fun setAutoUpdate(enabled: Boolean) = viewModelScope.launch { settingsRepository.setAutoUpdate(enabled) }
     fun setBackgroundSync(enabled: Boolean) = viewModelScope.launch { settingsRepository.setBackgroundSync(enabled) }
+    fun setBridgeEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setBridgeEnabled(enabled) }
     fun setAutoPartialCancelledTasks(enabled: Boolean) = viewModelScope.launch { settingsRepository.setAutoPartialCancelledTasks(enabled) }
     fun setActionDelayRange(minMs: Long, maxMs: Long) = viewModelScope.launch { settingsRepository.setActionDelayRange(minMs, maxMs) }
     fun setFetchDelay(ms: Long) = viewModelScope.launch { settingsRepository.setFetchDelay(ms) }

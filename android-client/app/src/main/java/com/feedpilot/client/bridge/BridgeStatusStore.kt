@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class BridgeConnectionState {
-    Starting, Online, Offline, RunningJob, Finished, SendingResult, ResultReturned, ResultFailed, JobFailed, Error
+    Starting, Disabled, Online, Offline, RunningJob, Finished, SendingResult, ResultReturned, ResultFailed, JobFailed, Error
 }
 
 data class BridgeStatus(
@@ -13,20 +13,25 @@ data class BridgeStatus(
     val isOnline: Boolean = false,
     val message: String = "Bridge starting",
     val currentUsername: String? = null,
-    val jobId: String? = null
+    val jobId: String? = null,
+    val accountUsername: String? = null
 ) {
     val pillLabel: String get() = when (state) {
+        BridgeConnectionState.Disabled -> "Bridge mode off"
         BridgeConnectionState.Starting -> "Bridge starting"
         BridgeConnectionState.Online -> "Bridge mode on"
         BridgeConnectionState.Offline -> "Bridge offline"
-        BridgeConnectionState.RunningJob -> currentUsername?.let { "Running: @$it" } ?: "Bridge job running"
+        BridgeConnectionState.RunningJob -> accountUsername?.let { "Fetching: @$it" }
+            ?: currentUsername?.let { "Running: @$it" } ?: "Bridge job running"
         BridgeConnectionState.Finished -> "Bridge job finished"
         BridgeConnectionState.SendingResult -> "Finished · returning result"
         BridgeConnectionState.ResultReturned -> "Bridge result returned"
         BridgeConnectionState.ResultFailed -> "Bridge result failed"
         BridgeConnectionState.JobFailed -> "Bridge job failed"
         BridgeConnectionState.Error -> "Bridge needs attention"
-    }
+    } + if (accountUsername != null && state in setOf(BridgeConnectionState.Finished, BridgeConnectionState.SendingResult,
+            BridgeConnectionState.ResultReturned, BridgeConnectionState.ResultFailed, BridgeConnectionState.JobFailed))
+        " · @$accountUsername" else ""
 }
 
 /** Retain the last outcome briefly; heartbeats must not erase an in-progress job. */
@@ -34,58 +39,81 @@ open class BridgeStatusTracker(private val now: () -> Long = { System.nanoTime()
     private val _status = MutableStateFlow(BridgeStatus())
     val status: StateFlow<BridgeStatus> = _status.asStateFlow()
     private var showOutcomeUntil = 0L
+    private var enabled = true
 
-    @Synchronized fun starting() { _status.value = BridgeStatus() }
+    private fun publish(status: BridgeStatus) {
+        _status.value = status
+        BridgeLogStore.record(status)
+    }
+
+    @Synchronized fun setEnabled(value: Boolean) {
+        enabled = value
+        showOutcomeUntil = 0L
+        if (!value) publish(BridgeStatus(BridgeConnectionState.Disabled, false,
+            "Bridge mode is disabled. This device will not accept bridge feed requests."))
+        else publish(BridgeStatus())
+    }
+
+    @Synchronized fun starting() { if (enabled) publish(BridgeStatus()) }
 
     @Synchronized fun offline(message: String = "No internet connection") {
-        _status.value = BridgeStatus(BridgeConnectionState.Offline, false, message)
+        if (!enabled) return
+        publish(BridgeStatus(BridgeConnectionState.Offline, false, message))
     }
 
     @Synchronized fun online(message: String = "Waiting for bridge requests") {
+        if (!enabled) return
         if (_status.value.state in setOf(BridgeConnectionState.RunningJob,
                 BridgeConnectionState.Finished, BridgeConnectionState.SendingResult) ||
             now() < showOutcomeUntil) return
-        _status.value = BridgeStatus(BridgeConnectionState.Online, true, message)
+        publish(BridgeStatus(BridgeConnectionState.Online, true, message))
     }
 
-    @Synchronized fun resolving(username: String?, jobId: String? = null) {
+    @Synchronized fun resolving(username: String?, jobId: String? = null, accountUsername: String? = null) {
+        if (!enabled) return
         showOutcomeUntil = 0L
         val label = username?.takeIf { it.isNotBlank() }
-        _status.value = BridgeStatus(BridgeConnectionState.RunningJob, true,
-            label?.let { "Collecting feed for @$it" } ?: "Collecting bridge feed", label, jobId)
+        publish(BridgeStatus(BridgeConnectionState.RunningJob, true,
+            label?.let { "Collecting feed for @$it" } ?: "Collecting bridge feed", label, jobId, accountUsername))
     }
 
     @Synchronized fun finished(postCount: Int) {
-        _status.value = _status.value.copy(state = BridgeConnectionState.Finished,
-            message = "Feed collection finished: $postCount posts.")
+        if (!enabled) return
+        publish(_status.value.copy(state = BridgeConnectionState.Finished,
+            message = "Feed collection finished: $postCount posts."))
     }
 
     @Synchronized fun sendingResult() {
-        _status.value = _status.value.copy(state = BridgeConnectionState.SendingResult,
-            message = "Feed collection finished. Returning the result to FeedPilot.")
+        if (!enabled) return
+        publish(_status.value.copy(state = BridgeConnectionState.SendingResult,
+            message = "Feed collection finished. Returning the result to FeedPilot."))
     }
 
     @Synchronized fun resultReturned() {
+        if (!enabled) return
         showOutcomeUntil = now() + 4_000
-        _status.value = _status.value.copy(state = BridgeConnectionState.ResultReturned,
-            isOnline = true, message = "FeedPilot accepted the returned feed result.")
+        publish(_status.value.copy(state = BridgeConnectionState.ResultReturned,
+            isOnline = true, message = "FeedPilot accepted the returned feed result."))
     }
 
     @Synchronized fun jobFailed(message: String) {
+        if (!enabled) return
         showOutcomeUntil = now() + 4_000
-        _status.value = _status.value.copy(state = BridgeConnectionState.JobFailed,
-            isOnline = true, message = message)
+        publish(_status.value.copy(state = BridgeConnectionState.JobFailed,
+            isOnline = true, message = message))
     }
 
     @Synchronized fun resultFailed(message: String) {
+        if (!enabled) return
         showOutcomeUntil = now() + 4_000
-        _status.value = _status.value.copy(state = BridgeConnectionState.ResultFailed,
-            isOnline = true, message = message)
+        publish(_status.value.copy(state = BridgeConnectionState.ResultFailed,
+            isOnline = true, message = message))
     }
 
     @Synchronized fun error(message: String) {
+        if (!enabled) return
         showOutcomeUntil = 0L
-        _status.value = BridgeStatus(BridgeConnectionState.Error, false, message)
+        publish(BridgeStatus(BridgeConnectionState.Error, false, message))
     }
 }
 

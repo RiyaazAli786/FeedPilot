@@ -132,6 +132,7 @@ private fun FeedPilotRoot(
     rootViewModel: RootViewModel = hiltViewModel()
 ) {
     val themeMode by rootViewModel.themeMode.collectAsStateWithLifecycle()
+    val bridgeEnabled by rootViewModel.bridgeEnabled.collectAsStateWithLifecycle()
 
     val darkTheme = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -159,6 +160,7 @@ private fun FeedPilotRoot(
         when (gate) {
             AuthGate.Ready -> MainScreenLayout(
                 hasAccounts = hasAccounts,
+                bridgeEnabled = bridgeEnabled,
                 launchDestination = launchDestination,
                 onLaunchDestinationConsumed = onLaunchDestinationConsumed
             )
@@ -322,6 +324,7 @@ private val LOGIN_ROUTES = setOf(
 @Composable
 private fun MainScreenLayout(
     hasAccounts: Boolean?,
+    bridgeEnabled: Boolean,
     launchDestination: String?,
     onLaunchDestinationConsumed: () -> Unit
 ) {
@@ -329,8 +332,14 @@ private fun MainScreenLayout(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination
 
+    val tabs = BottomTab.entries.filter { it != BottomTab.Bridge || bridgeEnabled }
+    LaunchedEffect(bridgeEnabled, currentRoute?.route) {
+        if (!bridgeEnabled && currentRoute?.route == Routes.BRIDGE_LOGS) {
+            navController.navigate(Routes.TASKS) { popUpTo(Routes.TASKS); launchSingleTop = true }
+        }
+    }
     val onTab = currentRoute?.hierarchy?.any { dest ->
-        BottomTab.entries.any { it.route == dest.route }
+        tabs.any { it.route == dest.route }
     } == true
 
     LaunchedEffect(hasAccounts, currentRoute?.route) {
@@ -366,7 +375,7 @@ private fun MainScreenLayout(
             Modifier
                 .weight(1f)
                 .then(if (onTab) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)
-                .swipeBetweenBottomTabs(navController, currentRoute?.route)
+                .swipeBetweenBottomTabs(navController, currentRoute?.route, tabs)
         ) {
             NavHost(navController = navController, startDestination = Routes.SPLASH) {
                 composable(Routes.SPLASH) {
@@ -468,6 +477,9 @@ private fun MainScreenLayout(
                 composable(Routes.TRANSFER) {
                     TransferScreen(onBack = { navController.popBackStack() })
                 }
+                composable(Routes.BRIDGE_LOGS) {
+                    if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen()
+                }
                 composable(Routes.SETTINGS) {
                     SettingsScreen(
                         onBack = { navController.popBackStack() },
@@ -564,13 +576,13 @@ private fun MainScreenLayout(
         }
 
         if (onTab) {
-            BottomNavBar(navController, currentRoute?.route)
+            BottomNavBar(navController, currentRoute?.route, tabs)
         }
     }
 }
 
 @Composable
-private fun BottomNavBar(navController: NavHostController, currentRoute: String?) {
+private fun BottomNavBar(navController: NavHostController, currentRoute: String?, tabs: List<BottomTab>) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -579,7 +591,7 @@ private fun BottomNavBar(navController: NavHostController, currentRoute: String?
             .navigationBarsPadding()
             .padding(vertical = 10.dp)
     ) {
-        BottomTab.entries.forEach { tab ->
+        tabs.forEach { tab ->
             val selected = currentRoute == tab.route
             val color = if (selected) AppTheme.brand.onNavSelected else AppTheme.brand.onNavUnselected
             Column(
@@ -627,12 +639,13 @@ private fun Modifier.clickableTab(onClick: () -> Unit): Modifier =
 
 private fun Modifier.swipeBetweenBottomTabs(
     navController: NavHostController,
-    currentRoute: String?
+    currentRoute: String?,
+    tabs: List<BottomTab>
 ): Modifier {
-    val tabIndex = BottomTab.entries.indexOfFirst { it.route == currentRoute }
+    val tabIndex = tabs.indexOfFirst { it.route == currentRoute }
     if (tabIndex == -1) return this
 
-    return this.pointerInput(currentRoute) {
+    return this.pointerInput(currentRoute, tabs) {
         var totalDrag = 0f
         detectHorizontalDragGestures(
             onDragStart = { totalDrag = 0f },
@@ -645,7 +658,7 @@ private fun Modifier.swipeBetweenBottomTabs(
                 if (abs(totalDrag) <= threshold) return@detectHorizontalDragGestures
 
                 val targetIndex = if (totalDrag < 0f) tabIndex + 1 else tabIndex - 1
-                BottomTab.entries.getOrNull(targetIndex)?.let { tab ->
+                tabs.getOrNull(targetIndex)?.let { tab ->
                     navController.navigate(tab.route) {
                         popUpTo(Routes.TASKS) { saveState = true }
                         launchSingleTop = true

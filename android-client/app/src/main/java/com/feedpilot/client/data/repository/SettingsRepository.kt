@@ -38,6 +38,7 @@ data class AppSettings(
     val notificationsEnabled: Boolean = true,
     val autoUpdate: Boolean = true,
     val backgroundSync: Boolean = true,
+    val bridgeEnabled: Boolean = true,
     val smmApiUrl: String = "https://hanumansmm.in/api/v2",
     val smmApiKey: String = "",
     val selectedProvider: String = "Hanuman SMM Panel",
@@ -135,6 +136,7 @@ class SettingsRepository @Inject constructor(
         val NOTIFICATIONS = booleanPreferencesKey("notifications")
         val AUTO_UPDATE = booleanPreferencesKey("auto_update")
         val BACKGROUND_SYNC = booleanPreferencesKey("background_sync")
+        val BRIDGE_ENABLED = booleanPreferencesKey("bridge_enabled")
         val SMM_API_URL = stringPreferencesKey("smm_api_url")
         val SMM_API_KEY = stringPreferencesKey("smm_api_key")
         val SELECTED_PROVIDER = stringPreferencesKey("selected_provider")
@@ -193,6 +195,7 @@ class SettingsRepository @Inject constructor(
             notificationsEnabled = p[Keys.NOTIFICATIONS] ?: true,
             autoUpdate = p[Keys.AUTO_UPDATE] ?: true,
             backgroundSync = p[Keys.BACKGROUND_SYNC] ?: true,
+            bridgeEnabled = p[Keys.BRIDGE_ENABLED] ?: true,
             smmApiUrl = p[Keys.SMM_API_URL] ?: "https://hanumansmm.in/api/v2",
             smmApiKey = p[Keys.SMM_API_KEY] ?: "",
             selectedProvider = p[Keys.SELECTED_PROVIDER] ?: "Hanuman SMM Panel",
@@ -250,6 +253,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setNotifications(enabled: Boolean) = edit { it[Keys.NOTIFICATIONS] = enabled }
     suspend fun setAutoUpdate(enabled: Boolean) = edit { it[Keys.AUTO_UPDATE] = enabled }
     suspend fun setBackgroundSync(enabled: Boolean) = edit { it[Keys.BACKGROUND_SYNC] = enabled }
+    suspend fun setBridgeEnabled(enabled: Boolean) = edit { it[Keys.BRIDGE_ENABLED] = enabled }
     suspend fun setSmmApiUrl(url: String) = edit { it[Keys.SMM_API_URL] = url }
     suspend fun setSmmApiKey(key: String) = edit { it[Keys.SMM_API_KEY] = key }
     suspend fun setSelectedProvider(provider: String) = edit { it[Keys.SELECTED_PROVIDER] = provider }

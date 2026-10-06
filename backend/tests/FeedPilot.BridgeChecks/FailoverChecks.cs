@@ -16,6 +16,8 @@ internal static class FailoverChecks
         await ScenarioAsync("timeout", "TIMEOUT");
         await ScenarioAsync("all devices fail", "ALL_FAIL");
         await ScenarioAsync("relational failure", "IG_EMPTY_FEED", sqlite: true);
+        await ScenarioAsync("disabled device", "DISABLED");
+        await DisableEnableAsync();
         await CancellationAsync();
     }
 
@@ -53,7 +55,10 @@ internal static class FailoverChecks
                 {
                     Assert(await worker.PollAsync("app", "first", "install", limit.Token) is null,
                         "running job is not claimed twice");
-                    if (firstFailure == "EMPTY")
+                    if (firstFailure == "DISABLED")
+                        await worker.HeartbeatAsync(null, "app", new BridgeHeartbeatRequest(
+                            "first", "install", BridgeEnabled: false), limit.Token);
+                    else if (firstFailure == "EMPTY")
                         await worker.CompleteAsync(firstJob.Id, "app", "first",
                             new CompleteBridgeJobRequest(JsonSerializer.SerializeToElement(new { items = Array.Empty<object>() })), limit.Token);
                     else
@@ -106,6 +111,47 @@ internal static class FailoverChecks
         Assert((await db.FeedBridgeJobs.SingleAsync()).Status == FeedBridgeJobStatus.Cancelled,
             "cancellation retires pending job");
         Console.WriteLine("PASS: caller cancellation");
+    }
+
+    private static async Task DisableEnableAsync()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+        using var db = new AppDbContext(options);
+        var service = Service(db);
+        await Heartbeat(service, "first");
+        var account = await db.FeedBridgeAccountStates.SingleAsync();
+        var job = new FeedBridgeJob {
+            AssignedDeviceId = "first", AssignedInstallationId = "install",
+            AssignedAccountStateId = account.Id, ExpiresAt = DateTime.UtcNow.AddSeconds(30),
+            Status = FeedBridgeJobStatus.Assigned
+        };
+        account.IsBusy = true;
+        db.Add(job);
+        await db.SaveChangesAsync();
+        await service.HeartbeatAsync(null, "app",
+            new BridgeHeartbeatRequest("first", "install", BridgeEnabled: false), CancellationToken.None);
+        Assert(await service.PollAsync("app", "first", "install", CancellationToken.None) is null,
+            "disabled device cannot claim work");
+        Assert(job.Status == FeedBridgeJobStatus.Cancelled && !account.IsBusy,
+            "disabling cancels pending assignments and frees the account");
+        Assert(account.CooldownUntil is null && account.FailureCount == 0,
+            "disabling does not penalize the session");
+        Assert(!(await service.CompleteAsync(job.Id, "app", "first", Feed(), CancellationToken.None)).Accepted,
+            "disabled device's late result is rejected");
+        var unavailable = await service.ExecuteFeedAsync(new BridgeFeedRequest(null, "target", null), CancellationToken.None);
+        Assert(!unavailable.Success && unavailable.Code == "NO_ACTIVE_SESSION", "disabled device is not selected");
+        await Heartbeat(service, "first");
+        var next = new FeedBridgeJob {
+            AssignedDeviceId = "first", AssignedInstallationId = "install",
+            AssignedAccountStateId = account.Id, ExpiresAt = DateTime.UtcNow.AddSeconds(30),
+            Status = FeedBridgeJobStatus.Assigned
+        };
+        db.Add(next);
+        await db.SaveChangesAsync();
+        Assert((await service.PollAsync("app", "first", "install", CancellationToken.None))?.Id == next.Id,
+            "re-enabled device can claim a new job");
+        Console.WriteLine("PASS: disable, reject work, and re-enable");
     }
 
     private static FeedBridgeService Service(AppDbContext db) => new(db, NullLogger<FeedBridgeService>.Instance);

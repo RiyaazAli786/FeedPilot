@@ -144,6 +144,11 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            com.feedpilot.client.ui.components.BridgeModeSettingsCard(
+                enabled = settings.bridgeEnabled,
+                onChanged = viewModel::setBridgeEnabled
+            )
+
             // Read-only account identity. Sign-in is automatic and passwordless (each install
             // and clone gets its own account via device auth), so there is no sign-in or
             // sign-out here — a device account is bound to the install for support/dashboard.
