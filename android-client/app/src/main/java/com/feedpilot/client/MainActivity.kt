@@ -365,7 +365,7 @@ private fun MainScreenLayout(
             hasAccounts == false && route !in LOGIN_ROUTES ->
                 navController.navigate(Routes.START) { popUpTo(0) { inclusive = true } }
 
-            // The account can also show up after the splash already handed off to Start — the
+            // The account can also show up after the splash already handed off to Start ï¿½ the
             // rows are read off disk asynchronously. Move on instead of stranding the user on a
             // login screen for an account that is linked.
             hasAccounts == true && route == Routes.START ->
@@ -404,7 +404,7 @@ private fun MainScreenLayout(
 
                     // Hold the splash until the account list is actually known, otherwise the
                     // hand-off races the disk read and sends a signed-in user to Start. If the
-                    // read stalls, fall through to Start rather than sitting here forever — the
+                    // read stalls, fall through to Start rather than sitting here forever ï¿½ the
                     // effect re-runs the moment the real value lands.
                     LaunchedEffect(splashComplete, hasAccounts) {
                         if (!splashComplete) return@LaunchedEffect
@@ -499,7 +499,7 @@ private fun MainScreenLayout(
                     TransferScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Routes.BRIDGE_LOGS) {
-                    if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen()
+                    if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen(onAddAccount = { navController.navigate(Routes.ADD_ACCOUNT) })
                 }
                 composable(Routes.SETTINGS) {
                     SettingsScreen(
@@ -625,13 +625,13 @@ private fun BottomNavBar(navController: NavHostController, currentRoute: String?
                                 // The graph's *technical* start destination is Splash, but Splash
                                 // is removed from the back stack (popUpTo(SPLASH){inclusive=true})
                                 // the moment it hands off. Once that happens, popUpTo(startDestination)
-                                // references a destination that no longer exists on the stack —
+                                // references a destination that no longer exists on the stack ï¿½
                                 // Navigation Compose treats that as a no-op rather than an error, so
                                 // every tab switch was just appending to the stack forever instead of
                                 // trimming it. That's what made back navigation walk through the
                                 // entire tab-switch history (and every pushed screen along the way)
                                 // instead of just exiting once back at the home tab. Tasks is the
-                                // real, permanent home for the bottom nav — it's never removed once
+                                // real, permanent home for the bottom nav ï¿½ it's never removed once
                                 // reached, so anchoring here actually works.
                                 popUpTo(Routes.TASKS) { saveState = true }
                                 launchSingleTop = true

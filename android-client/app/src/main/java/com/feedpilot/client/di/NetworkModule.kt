@@ -47,6 +47,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideExceptionUsersApi(json: Json): com.feedpilot.client.data.remote.ExceptionUsersApi =
+        com.feedpilot.client.data.remote.createExceptionUsersApi(json)
+
+    @Provides
+    @Singleton
     fun provideJson(): Json = Json {
         ignoreUnknownKeys = true
         isLenient = true

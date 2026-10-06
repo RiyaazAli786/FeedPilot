@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,17 +37,24 @@ fun BridgeModeBadge() {
         BridgeConnectionState.Disabled -> MaterialTheme.colorScheme.onSurfaceVariant
         BridgeConnectionState.JobFailed, BridgeConnectionState.ResultFailed,
         BridgeConnectionState.Error, BridgeConnectionState.Offline -> MaterialTheme.colorScheme.error
-        else -> Color(0xFF18B26B)
+        else -> if (MaterialTheme.colorScheme.surface.luminance() < 0.5f)
+            Color(0xFF70E3AB) else Color(0xFF087747)
     }
     Row(
         Modifier.fillMaxWidth().background(AppTheme.brand.headerGradient)
             .statusBarsPadding().padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.End
     ) {
-        Surface(onClick = { showDetails = true }, shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)) {
+        Surface(
+            onClick = { showDetails = true },
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = color,
+            border = BorderStroke(1.dp, color.copy(alpha = 0.45f))
+        ) {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-                Text(status.pillLabel, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                Text(status.pillLabel, color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

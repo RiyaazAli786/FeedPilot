@@ -744,7 +744,7 @@ private fun AccountActionButton(
 }
 
 @Composable
-private fun ProfileUpdateDialog(
+internal fun ProfileUpdateDialog(
     account: AccountEntity,
     progress: ProfileUpdateState,
     onDismiss: () -> Unit,
