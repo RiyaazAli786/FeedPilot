@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
 
     private fun captureLaunchDestination(intent: Intent?) {
         launchDestination.value = when (intent?.action) {
+            com.feedpilot.client.bridge.BridgeJobNotifier.ACTION_OPEN_LOGS -> Routes.BRIDGE_LOGS
             CsvAccountImportService.ACTION_OPEN_CSV_IMPORT_STATUS -> Routes.CSV_IMPORT_STATUS
             else -> null
         }
@@ -145,6 +146,20 @@ private fun FeedPilotRoot(
 
     FeedPilotTheme(darkTheme = darkTheme) {
         val context = LocalContext.current
+        val notificationPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+        ) { }
+        LaunchedEffect(bridgeEnabled) {
+            if (bridgeEnabled && Build.VERSION.SDK_INT >= 33 &&
+                androidx.core.content.ContextCompat.checkSelfPermission(context,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                val preferences = context.getSharedPreferences("bridge_runtime", android.content.Context.MODE_PRIVATE)
+                if (!preferences.getBoolean("notification_permission_requested", false)) {
+                    preferences.edit().putBoolean("notification_permission_requested", true).apply()
+                    notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
         val background = MaterialTheme.colorScheme.background
         LaunchedEffect(darkTheme, background) {
             val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
@@ -358,8 +373,14 @@ private fun MainScreenLayout(
         }
     }
 
-    LaunchedEffect(launchDestination) {
+    LaunchedEffect(launchDestination, bridgeEnabled) {
         when (launchDestination) {
+            Routes.BRIDGE_LOGS -> {
+                if (bridgeEnabled) {
+                    navController.navigate(Routes.BRIDGE_LOGS) { launchSingleTop = true }
+                    onLaunchDestinationConsumed()
+                }
+            }
             Routes.CSV_IMPORT_STATUS -> {
                 navController.navigate(Routes.ADD_ACCOUNT_CSV_IMPORT) {
                     launchSingleTop = true

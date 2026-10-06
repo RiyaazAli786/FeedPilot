@@ -111,6 +111,8 @@ Settings includes a device-local `bridgeEnabled` preference (default true to pre
 
 Android's Bridge tab is available only while the saved bridge setting is enabled, including swipe navigation. `BridgeLogStore` records status transitions with timestamp, fetching account, target and job ID into device-local `bridge-history.tsv`; it retains the newest 1,000 entries and suppresses repeated identical heartbeat statuses. `BridgeLogsScreen` searches all retained entries, displays 25 per page, and copies individual entries or all search matches. Disabling hides the tab while retaining history for the next enable.
 
+`BridgeJobNotifier` alerts when the shared runner starts resolving a request (service or worker), displays the fetching account and target, and updates the same notification with the outcome. Tapping opens Bridge logs. It honors notification and bridge settings plus Android notification permission; disabling bridge cancels the request notification. Android 13+ receives a one-time permission prompt when bridge mode is enabled.
+
 ### Watched handles and upgrades
 
 Watched handles/posts have backend persistence, Android repositories/screens, and `FeedWatcherWorker`. Watched post uniqueness is enforced locally by handle/post ID. The iOS starter supports device auth and watched handles/posts.

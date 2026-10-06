@@ -30,7 +30,8 @@ class FeedBridgeRunner @Inject constructor(
     private val instagram: InstagramRepository,
     private val targets: TargetRepository,
     private val identity: DeviceIdentity,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val notifications: BridgeJobNotifier
 ) {
     private val executionLock = Mutex()
     private val heartbeatLock = Mutex()
@@ -84,7 +85,14 @@ class FeedBridgeRunner @Inject constructor(
         }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return@withLock false
 
         if (!isBridgeEnabled()) return@withLock false
-        execute(job)
+        BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, job.accountUsername)
+        notifications.show(BridgeStatusStore.status.value, newRequest = true)
+        try {
+            execute(job)
+        } finally {
+            if (isBridgeEnabled()) notifications.show(BridgeStatusStore.status.value)
+            else notifications.cancel()
+        }
         true
     }
 
@@ -97,6 +105,7 @@ class FeedBridgeRunner @Inject constructor(
         }
         BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, account.username)
         if (!isBridgeEnabled()) return
+        notifications.show(BridgeStatusStore.status.value)
 
         val target = job.targetUsername?.takeIf { it.isNotBlank() } ?: job.targetUserId
         if (target.isNullOrBlank()) {

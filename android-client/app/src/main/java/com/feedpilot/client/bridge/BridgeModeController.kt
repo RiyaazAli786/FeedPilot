@@ -19,7 +19,8 @@ import javax.inject.Singleton
 class BridgeModeController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsRepository,
-    private val runner: FeedBridgeRunner
+    private val runner: FeedBridgeRunner,
+    private val notifications: BridgeJobNotifier
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observation: Job? = null
@@ -37,6 +38,7 @@ class BridgeModeController @Inject constructor(
                     work.enqueueUniquePeriodicWork(WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
                     FeedBridgeService.start(context)
                 } else {
+                    notifications.cancel()
                     context.stopService(Intent(context, FeedBridgeService::class.java))
                     work.cancelUniqueWork(WORK_NAME)
                     // Notify the backend even if the foreground runner was never started.
