@@ -2,7 +2,7 @@ package com.feedpilot.client.common
 
 object ReferralShareTemplate {
 
-    const val DEFAULT_APK_URL = "https://feedpilot-api-ount-kooq.onrender.com/api/apk/latest"
+    const val DEFAULT_APK_URL = "https://bridge.reelsflow.io/api/apk/latest"
 
     fun buildShareText(
         referralCode: String = "",

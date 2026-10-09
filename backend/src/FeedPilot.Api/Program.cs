@@ -267,8 +267,12 @@ app.UseCors();
 // no-store: the dashboard ships as one unversioned index.html, so without this a mobile
 // browser's normal heuristic caching can keep serving yesterday's build after a deploy —
 // it looks like a UI bug (or a fix that "didn't take") when it is really just a stale copy.
+// .apk is not in ASP.NET's default MIME map, and unmapped extensions 404 — register it so /apk/*.apk downloads.
+var staticContentTypes = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+staticContentTypes.Mappings[".apk"] = "application/vnd.android.package-archive";
 app.UseStaticFiles(new StaticFileOptions
 {
+    ContentTypeProvider = staticContentTypes,
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers.CacheControl = "no-store, must-revalidate";

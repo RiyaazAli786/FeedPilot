@@ -1,5 +1,5 @@
 param(
-    [string]$BackendUrl = "https://feedpilot-api-ount-kooq.onrender.com",
+    [string]$BackendUrl = "https://bridge.reelsflow.io",
     [string]$AdminKey = "",
     [string]$ReleaseNotes = "",
     [string]$ForceUpdate = ""

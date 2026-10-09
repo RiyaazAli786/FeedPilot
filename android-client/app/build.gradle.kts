@@ -76,7 +76,7 @@ android {
         manifestPlaceholders["appLabel"] = "FeedPilot"
 
         // Backend base URL - override per build type below.
-        buildConfigField("String", "API_BASE_URL", "\"https://feedpilot-api-ount-kooq.onrender.com/\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://bridge.reelsflow.io/\"")
 
         // Note: the X-App-Id that identifies a clone is no longer a build constant. It is read
         // at runtime from the package name (see DeviceIdentity.appId), so a cloner tool that
@@ -88,7 +88,7 @@ android {
         buildConfigField(
             "String",
             "INSTAGRAM_REDIRECT_URI",
-            "\"https://feedpilot-api-ount-kooq.onrender.com/oauth/instagram/callback\""
+            "\"https://bridge.reelsflow.io/oauth/instagram/callback\""
         )
         buildConfigField("String", "INSTAGRAM_SCOPES", "\"user_profile,user_media\"")
 
@@ -125,7 +125,7 @@ android {
             // 10.0.2.2 is the stock-emulator alias for the host loopback; it does not route
             // on Genymotion/VirtualBox devices. 192.168.56.1 is the host on the VirtualBox
             // host-only network. Switch back to 10.0.2.2 when using the stock emulator.
-            buildConfigField("String", "API_BASE_URL", "\"https://feedpilot-api-ount-kooq.onrender.com/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://bridge.reelsflow.io/\"")
             buildConfigField("boolean", "LOG_HTTP_BODY", (logHttpResponsesEnv ?: true).toString())
         }
         create("staging") {
@@ -134,7 +134,7 @@ android {
             versionNameSuffix = "-staging"
             manifestPlaceholders["appLabel"] = "FeedPilot Staging"
             matchingFallbacks += listOf("debug")
-            buildConfigField("String", "API_BASE_URL", "\"https://feedpilot-api-ount-kooq.onrender.com/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://bridge.reelsflow.io/\"")
             buildConfigField("boolean", "LOG_HTTP_BODY", (logHttpResponsesEnv ?: true).toString())
         }
         release {
@@ -142,8 +142,8 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             manifestPlaceholders["appLabel"] = "FeedPilot"
             signingConfig = signingConfigs.getByName("release")
-            // Production backend on feedpilot-api-ount-kooq.onrender.com.
-            buildConfigField("String", "API_BASE_URL", "\"https://feedpilot-api-ount-kooq.onrender.com/\"")
+            // Production backend on bridge.reelsflow.io.
+            buildConfigField("String", "API_BASE_URL", "\"https://bridge.reelsflow.io/\"")
             // Off by default in release: full request/response bodies can carry session tokens
             // and PII. Set LOG_HTTP_RESPONSES=true for this build only when actively diagnosing a
             // field issue, not left on for a shipped build.
@@ -239,7 +239,7 @@ val bumpVersion by tasks.registering {
 }
 
 val updateBaseApkUrl = providers.gradleProperty("updateBaseApkUrl")
-    .orElse(releaseUpdateProperties.getProperty("baseApkUrl", "https://feedpilot-api-ount-kooq.onrender.com/apk"))
+    .orElse(releaseUpdateProperties.getProperty("baseApkUrl", "https://bridge.reelsflow.io/apk"))
 val updateForce = providers.gradleProperty("updateForce")
     .orElse(releaseUpdateProperties.getProperty("forceUpdate", "false"))
 val updateReleaseNotes = providers.gradleProperty("updateReleaseNotes")

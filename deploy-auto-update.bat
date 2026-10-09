@@ -5,7 +5,7 @@ set "ROOT=%~dp0"
 set "ANDROID_DIR=%ROOT%android-client"
 set "UPDATE_OUT=%ANDROID_DIR%\app\build\outputs\update\release"
 set "BACKEND_APK_DIR=%ROOT%backend\src\FeedPilot.Api\wwwroot\apk"
-set "BASE_APK_URL=https://feedpilot-api-ount-kooq.onrender.com/apk"
+set "BASE_APK_URL=https://bridge.reelsflow.io/apk"
 
 echo =======================================================
 echo FeedPilot - Render Auto Update Deploy File
@@ -71,7 +71,7 @@ echo   git commit -m "Prepare FeedPilot auto update release"
 echo   git push origin main
 echo.
 echo Render will redeploy the backend, serve /apk/*.apk, and seed /api/version from update-metadata.json.
-echo Latest version endpoint: https://feedpilot-api-ount-kooq.onrender.com/api/version
-echo Latest APK redirect    : https://feedpilot-api-ount-kooq.onrender.com/api/apk/latest
+echo Latest version endpoint: https://bridge.reelsflow.io/api/version
+echo Latest APK redirect    : https://bridge.reelsflow.io/api/apk/latest
 echo.
 endlocal

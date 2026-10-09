@@ -26,6 +26,7 @@
     "https://www.instagram.com/*",
     "https://*.instagram.com/*",
     "https://*.onrender.com/*",
+    "https://bridge.reelsflow.io/*",
     "http://localhost:*/*",
     "http://127.0.0.1:*/*"
   ],
@@ -36,6 +37,7 @@
     {
       "matches": [
         "https://*.onrender.com/*",
+        "https://bridge.reelsflow.io/*",
         "http://localhost:*/*",
         "http://127.0.0.1:*/*"
       ],

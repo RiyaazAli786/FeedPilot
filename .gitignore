@@ -81,3 +81,10 @@ docs/order_improvements.md
 
 # Legacy one-off scripts and captured responses
 scripts/
+
+# Deployment secrets / env files
+deploy/.deploy-secrets.env
+*.env
+!deploy/config.env
+!.env.example
+!deploy/.deploy-secrets.env.example
