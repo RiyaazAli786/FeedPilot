@@ -97,8 +97,9 @@ builder.Services.AddHostedService<StaleClaimSweepService>();
 builder.Services.AddHostedService<FeedBridgeJobSweepService>();
 
 // Optional Telegram request logging — see TelegramSettings for the on/off env vars.
-builder.Services.AddHttpClient("Telegram");
+builder.Services.AddHttpClient("Telegram", c => c.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddSingleton<TelegramRequestLogger>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TelegramRequestLogger>());
 builder.Services.AddHttpClient("B2");
 builder.Services.AddHttpClient("Instagram");
 builder.Services.AddSignalR();

@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace FeedPilot.Api.Services;
@@ -30,11 +32,18 @@ public class TelegramSettings
 /// caught and logged locally instead of surfacing to the caller. Disabled unless Enabled is true
 /// and both BotToken and ChatId are set.
 /// </summary>
-public class TelegramRequestLogger
+public class TelegramRequestLogger : BackgroundService
 {
     private readonly TelegramSettings _settings;
     private readonly IHttpClientFactory _http;
     private readonly ILogger<TelegramRequestLogger> _logger;
+    private readonly Channel<string> _channel = Channel.CreateBounded<string>(
+        new BoundedChannelOptions(500)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false
+        });
 
     public TelegramRequestLogger(
         IOptions<TelegramSettings> settings,
@@ -247,29 +256,146 @@ public class TelegramRequestLogger
         return SendAsync(string.Join("\n", lines));
     }
 
-    /// <summary>Fire-and-forget from the caller's point of view — always returns, never throws.</summary>
-    private async Task SendAsync(string text)
+    /// <summary>Fire-and-forget from the caller's point of view — enqueues and always returns immediately.</summary>
+    private Task SendAsync(string text)
+    {
+        if (!IsEnabled) return Task.CompletedTask;
+        _channel.Writer.TryWrite(text);
+        return Task.CompletedTask;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!IsEnabled) return;
 
-        try
-        {
-            var client = _http.CreateClient("Telegram");
-            var body = JsonSerializer.Serialize(new { chat_id = _settings.ChatId, text, parse_mode = "HTML" });
-            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        string? pending = null;
 
-            var response = await client.PostAsync($"https://api.telegram.org/bot{_settings.BotToken}/sendMessage", content);
-            if (!response.IsSuccessStatusCode)
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
             {
-                _logger.LogWarning(
-                    "Telegram log post failed: {Status} {Body}",
-                    response.StatusCode, await response.Content.ReadAsStringAsync());
+                string current;
+                if (pending != null)
+                {
+                    current = pending;
+                    pending = null;
+                }
+                else
+                {
+                    current = await _channel.Reader.ReadAsync(stoppingToken);
+                }
+
+                // Batch items up to ~3500 chars to stay safely within Telegram's 4096 char limit
+                // and minimize the number of API calls made to Telegram.
+                var batch = new StringBuilder(current);
+                while (_channel.Reader.TryRead(out var next))
+                {
+                    if (batch.Length + next.Length + 25 > 3800)
+                    {
+                        pending = next;
+                        break;
+                    }
+                    batch.Append("\n\n────────────────\n\n");
+                    batch.Append(next);
+                }
+
+                await SendWithThrottlingAndRetryAsync(batch.ToString(), stoppingToken);
+
+                // Telegram strictly enforces ~1 message per second to a chat.
+                await Task.Delay(1100, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Unexpected error in Telegram log background processor");
+                await Task.Delay(2000, stoppingToken);
             }
         }
-        catch (Exception ex)
+    }
+
+    private async Task SendWithThrottlingAndRetryAsync(string text, CancellationToken stoppingToken)
+    {
+        const int maxRetries = 3;
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
-            _logger.LogWarning(ex, "Telegram log post threw");
+            try
+            {
+                var client = _http.CreateClient("Telegram");
+                var body = JsonSerializer.Serialize(new
+                {
+                    chat_id = _settings.ChatId,
+                    text,
+                    parse_mode = "HTML",
+                    disable_web_page_preview = true
+                });
+                using var content = new StringContent(body, Encoding.UTF8, "application/json");
+
+                var response = await client.PostAsync(
+                    $"https://api.telegram.org/bot{_settings.BotToken}/sendMessage",
+                    content,
+                    stoppingToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return;
+                }
+
+                var responseBody = await response.Content.ReadAsStringAsync(stoppingToken);
+
+                // Handle HTTP 429 Too Many Requests with dynamic backoff
+                if ((int)response.StatusCode == 429)
+                {
+                    var retryAfter = ExtractRetryAfter(responseBody);
+                    _logger.LogWarning(
+                        "Telegram rate limit hit (429). Retrying after {Seconds}s (attempt {Attempt}/{Max})",
+                        retryAfter, attempt, maxRetries);
+
+                    await Task.Delay(TimeSpan.FromSeconds(retryAfter + 1), stoppingToken);
+                    continue;
+                }
+
+                // For permanent errors (e.g. 400 Bad Request if HTML syntax failed), don't loop endlessly
+                _logger.LogWarning(
+                    "Telegram log post failed: {Status} {Body}",
+                    response.StatusCode, responseBody);
+                return;
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex) when (attempt < maxRetries)
+            {
+                _logger.LogWarning(ex, "Telegram post attempt {Attempt} failed, retrying in 2s", attempt);
+                await Task.Delay(2000, stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Telegram log post failed after {Max} attempts", maxRetries);
+            }
         }
+    }
+
+    private static int ExtractRetryAfter(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("parameters", out var pars) &&
+                pars.TryGetProperty("retry_after", out var val) &&
+                val.TryGetInt32(out var sec))
+            {
+                return Math.Clamp(sec, 1, 120);
+            }
+        }
+        catch
+        {
+            // fallback
+        }
+        return 15;
     }
 }
 
@@ -353,6 +479,7 @@ public static class TelegramLoggingMiddlewareExtensions
     /// <summary>Applies to every /api/** request, including /api/admin/** — see TelegramSettings.</summary>
     public static IApplicationBuilder UseTelegramRequestLogging(this IApplicationBuilder app) =>
         app.UseWhen(
-            ctx => ctx.Request.Path.StartsWithSegments("/api"),
+            ctx => ctx.Request.Path.StartsWithSegments("/api") &&
+                   !ctx.Request.Path.StartsWithSegments("/api/log"),
             branch => branch.UseMiddleware<TelegramLoggingMiddleware>());
 }
