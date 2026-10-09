@@ -20,15 +20,18 @@ public class AdminAppReleasesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _http;
     private readonly UpgradeAssetStorageSettings _settings;
+    private readonly IWebHostEnvironment _env;
 
     public AdminAppReleasesController(
         AppDbContext db,
         IHttpClientFactory http,
-        IOptions<UpgradeAssetStorageSettings> settings)
+        IOptions<UpgradeAssetStorageSettings> settings,
+        IWebHostEnvironment env)
     {
         _db = db;
         _http = http;
         _settings = settings.Value;
+        _env = env;
     }
 
     [HttpPost("upload")]
@@ -46,20 +49,30 @@ public class AdminAppReleasesController : ControllerBase
             return BadRequest(new ApiError("APK file is required.", "APK_REQUIRED"));
         if (versionCode <= 0 || string.IsNullOrWhiteSpace(versionName))
             return BadRequest(new ApiError("Version code and version name are required.", "INVALID_VERSION"));
-        if (!UseB2())
-            return StatusCode(StatusCodes.Status503ServiceUnavailable,
-                new ApiError("B2 asset storage is not configured on this backend.", "B2_NOT_CONFIGURED"));
-
         await using var input = apk.OpenReadStream();
         using var ms = new MemoryStream();
         await input.CopyToAsync(ms, ct);
         var bytes = ms.ToArray();
 
         var fileName = $"feedpilot-{versionName.Trim()}-{versionCode}.apk";
-        var objectName = $"{Prefix()}/apk/{fileName}";
-        await UploadB2Async(objectName, bytes, "application/vnd.android.package-archive", ct);
-
-        var apkUrl = await PublicB2UrlAsync(objectName, ct);
+        string apkUrl;
+        if (UseB2())
+        {
+            var objectName = $"{Prefix()}/apk/{fileName}";
+            await UploadB2Async(objectName, bytes, "application/vnd.android.package-archive", ct);
+            apkUrl = await PublicB2UrlAsync(objectName, ct);
+        }
+        else
+        {
+            // Local storage: keep the APK on this server under wwwroot/apk (served at /apk/<file>).
+            var webRoot = string.IsNullOrWhiteSpace(_env.WebRootPath)
+                ? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot")
+                : _env.WebRootPath;
+            var apkDir = Path.Combine(webRoot, "apk");
+            Directory.CreateDirectory(apkDir);
+            await System.IO.File.WriteAllBytesAsync(Path.Combine(apkDir, fileName), bytes, ct);
+            apkUrl = $"{Request.Scheme}://{Request.Host}/apk/{Uri.EscapeDataString(fileName)}";
+        }
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
         var release = await _db.AppReleases.FirstOrDefaultAsync(r => r.VersionCode == versionCode, ct);

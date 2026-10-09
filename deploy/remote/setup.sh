@@ -43,7 +43,7 @@ grep -vE '^(DATABASE_URL|AssetStorage__|ASPNETCORE_URLS|PORT)=' .env.base > .env
 chmod 600 .env
 
 echo "[server] building image (this takes a few minutes the first time)"
-mkdir -p src apk
+mkdir -p src apk storage/upgrade storage/comments storage/generator
 rm -rf src/* && tar -xzf backend.tar.gz -C src && rm -f backend.tar.gz
 docker build -t "$APP_NAME:latest" src
 
@@ -53,6 +53,9 @@ docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$APP_NAME" --restart unless-stopped --network host \
   --env-file .env \
   -v "$APP_DIR/apk:/app/wwwroot/apk" \
+  -v "$APP_DIR/storage/upgrade:/app/wwwroot/upgrade" \
+  -v "$APP_DIR/storage/comments:/app/wwwroot/comments" \
+  -v "$APP_DIR/storage/generator:/app/wwwroot/generator" \
   "$APP_NAME:latest" >/dev/null
 
 echo "[server] nginx vhost for $DOMAIN"
