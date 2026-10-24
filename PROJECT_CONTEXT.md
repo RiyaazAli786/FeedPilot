@@ -1,7 +1,7 @@
-﻿# FeedPilot Project Context
+# FeedPilot Project Context
 
-Reviewed against repository source: 2026-10-06.
-Baseline commit: `095db62` (merge of V-development into main).
+Reviewed against repository source: 2026-10-24.
+Baseline commit: `4836680` (Store APKs and assets on the server instead of B2).
 This is a source inspection, not a successful build or production health report.
 
 ## Purpose and scope
@@ -15,13 +15,13 @@ The repository also includes a backend-hosted admin dashboard, a SwiftUI iOS sta
 | Path | Responsibility |
 | --- | --- |
 | `backend/src/FeedPilot.Api/Program.cs` | Service registration, database selection, auth, middleware, endpoints, startup schema handling |
-| `backend/src/FeedPilot.Api/Controllers/` | App, device, bridge, and administrative HTTP APIs |
-| `backend/src/FeedPilot.Api/Services/` | Wallet/order logic, identity, signing, feed bridge, storage, hosted workers |
+| `backend/src/FeedPilot.Api/Controllers/` | App, device, bridge, and administrative HTTP APIs (42 controllers) |
+| `backend/src/FeedPilot.Api/Services/` | Wallet/order logic, identity, signing, feed bridge, storage, Telegram logging, hosted workers |
 | `backend/src/FeedPilot.Api/Domain/` and `Dtos/` | Persisted entities, enums, request/response contracts |
 | `backend/src/FeedPilot.Api/Data/` | EF context and custom schema migrator |
 | `backend/src/FeedPilot.Api/wwwroot/dashboard/` | Admin UI, update UI, backup UI |
 | `android-client/app/src/main/java/com/feedpilot/client/` | Kotlin app source |
-| Android `feature/`, `ui/`, `RootViewModel.kt`, `MainActivity.kt` | Compose screens, navigation, application UI state |
+| Android `feature/`, `ui/`, `RootViewModel.kt`, `MainActivity.kt` | Compose screens, navigation, application UI state, Exception Users panel |
 | Android `data/`, `di/` | Room models/DAOs, API clients, repositories, Hilt wiring |
 | Android `task/`, `service/`, `worker/`, `bridge/` | Engagement execution, foreground services, scheduled work, bridge runner |
 | Android `identity/`, `security/`, `common/` | Installation identity, guards, secure storage, session/crypto utilities |
@@ -29,8 +29,9 @@ The repository also includes a backend-hosted admin dashboard, a SwiftUI iOS sta
 | `ios-client/FeedPilot/` | SwiftUI views, models, session, URLSession API client |
 | `chrome-extension/` | Manifest V3 Instagram session opener |
 | `chrome-extension/feedpilot-instagram-session/` | Second unpacked extension copy; check which users install before changing either |
-| `render.yaml`, `backend/Dockerfile` | Backend deployment blueprint and container |
-| `deploy-auto-update-b2.ps1` | APK publishing/update workflow |
+| `deploy/` | Production deployment suite for `bridge.reelsflow.io` (Docker, Nginx, TLS, Postgres, APK distribution) |
+| `render.yaml`, `backend/Dockerfile` | Secondary / staging deployment blueprint and container |
+| `deploy-bridgefeed.bat` | One-click VPS deployment pipeline |
 | `docs/` | Architecture, API, build, deployment, bridge design, performance plan |
 
 ## Actual build configuration
@@ -46,7 +47,7 @@ The repository also includes a backend-hosted admin dashboard, a SwiftUI iOS sta
 | Android local DB | Room schema version 21; schema export disabled |
 | iOS | SwiftUI source starter; requires creation/integration of an Xcode target on macOS |
 
-Debug, staging, and release Android variants all currently point to `https://feedpilot-api-ount-kooq.onrender.com/`. Debug and staging have distinct package suffixes and enable HTTP body logging by default; release disables it by default. `LOG_HTTP_RESPONSES` can override this at build time. Do not assume a debug build connects to localhost.
+Debug, staging, and release Android variants all currently point to `https://bridge.reelsflow.io/`. Debug and staging have distinct package suffixes and enable HTTP body logging by default; release disables it by default. `LOG_HTTP_RESPONSES` can override this at build time. Do not assume a debug build connects to localhost.
 
 ## Main execution flows
 

@@ -13,15 +13,16 @@ import com.feedpilot.client.data.remote.dto.BridgeJobDto
 import com.feedpilot.client.data.remote.dto.BridgeStoryItemDto
 import com.feedpilot.client.data.remote.dto.CompleteBridgeJobRequest
 import com.feedpilot.client.data.remote.dto.FailBridgeJobRequest
+import com.feedpilot.client.data.repository.AuthRepository
 import com.feedpilot.client.data.repository.InstagramRepository
+import com.feedpilot.client.data.repository.SettingsRepository
 import com.feedpilot.client.data.repository.TargetRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.flow.first
-import com.feedpilot.client.data.repository.SettingsRepository
 
 @Singleton
 class FeedBridgeRunner @Inject constructor(
@@ -31,15 +32,27 @@ class FeedBridgeRunner @Inject constructor(
     private val targets: TargetRepository,
     private val identity: DeviceIdentity,
     private val settings: SettingsRepository,
-    private val notifications: BridgeJobNotifier
+    private val notifications: BridgeJobNotifier,
+    private val authRepository: dagger.Lazy<AuthRepository>
 ) {
     private val executionLock = Mutex()
     private val heartbeatLock = Mutex()
+    @Volatile private var lastHeartbeatTimeMs: Long = 0L
+
     suspend fun isBridgeEnabled(): Boolean = settings.settings.first().bridgeEnabled
 
     suspend fun heartbeat(): Boolean = heartbeatLock.withLock {
         val enabled = isBridgeEnabled()
-        val localAccounts = accounts.getAll().filter { it.sessionCookies.isNotBlank() }
+        if (!authRepository.get().isLoggedIn.value) {
+            runCatching {
+                authRepository.get().ensureDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
+            }
+        }
+
+        val allAccounts = accounts.getAll()
+        val localAccounts = allAccounts.filter {
+            it.sessionCookies.isNotBlank() || (it.lastLogin?.contains("sessionid") == true)
+        }
         val active = localAccounts.firstOrNull { it.isLoggedIn } ?: localAccounts.firstOrNull()
         val body = BridgeHeartbeatRequest(
             deviceId = identity.stableAppInstallationId,
@@ -51,16 +64,23 @@ class FeedBridgeRunner @Inject constructor(
             activeAccountUsername = active?.username,
             loggedInAccounts = localAccounts.map { it.username },
             accounts = localAccounts.map {
+                val hasCookies = it.sessionCookies.isNotBlank() || (it.lastLogin?.contains("sessionid") == true)
+                val isExpired = it.status.equals("SessionExpired", ignoreCase = true) ||
+                    it.status.equals("Suspended", ignoreCase = true)
+                val status = if (hasCookies && !isExpired) "Active" else it.status
                 BridgeHeartbeatAccountDto(
                     accountId = it.id,
                     username = it.username,
-                    status = if (it.isLoggedIn || it.status.equals("Active", ignoreCase = true)) "Active" else it.status,
-                    isLoggedIn = it.sessionCookies.isNotBlank()
+                    status = status,
+                    isLoggedIn = hasCookies && !isExpired
                 )
             }
         )
         runCatching { api.sendBridgeHeartbeat(body).accepted }
             .onSuccess { accepted ->
+                if (accepted) {
+                    lastHeartbeatTimeMs = System.currentTimeMillis()
+                }
                 if (accepted && isBridgeEnabled()) {
                     if (localAccounts.isNotEmpty()) BridgeStatusStore.online()
                     else BridgeStatusStore.error("Add an Instagram account with a saved session to enable bridge actions.")
@@ -72,7 +92,18 @@ class FeedBridgeRunner @Inject constructor(
 
     suspend fun runOneJob(): Boolean = executionLock.withLock {
         if (!isBridgeEnabled()) return@withLock false
-        check(heartbeat()) { "Bridge heartbeat was not accepted" }
+
+        if (!authRepository.get().isLoggedIn.value) {
+            runCatching {
+                authRepository.get().ensureDeviceSession(com.feedpilot.client.BuildConfig.VERSION_NAME)
+            }
+        }
+
+        val now = System.currentTimeMillis()
+        if (now - lastHeartbeatTimeMs >= HEARTBEAT_INTERVAL_MS || lastHeartbeatTimeMs == 0L) {
+            heartbeat()
+        }
+
         if (!isBridgeEnabled()) return@withLock false
         val job = runCatching {
             val response = api.pollBridgeJob(
@@ -82,7 +113,7 @@ class FeedBridgeRunner @Inject constructor(
             if (response.isSuccessful) response.body() else {
                 error("Bridge poll failed HTTP ${response.code()}")
             }
-        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrThrow() ?: return@withLock false
+        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrNull() ?: return@withLock false
 
         if (!isBridgeEnabled()) return@withLock false
         BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, job.accountUsername)
@@ -208,15 +239,20 @@ class FeedBridgeRunner @Inject constructor(
     }
 
     private suspend fun resolveAccount(job: BridgeJobDto): AccountEntity? {
-        job.assignedAccountId?.let { id ->
-            accounts.getById(id)?.takeIf { it.sessionCookies.isNotBlank() }?.let { return it }
+        val all = accounts.getAll()
+        val match = job.assignedAccountId?.let { id -> all.firstOrNull { it.id == id } }
+            ?: job.accountUsername?.let { username -> all.firstOrNull { it.username.equals(username, ignoreCase = true) } }
+            ?: all.firstOrNull { it.isLoggedIn }
+            ?: all.firstOrNull()
+
+        return match?.let {
+            val effectiveCookies = if (it.sessionCookies.isNotBlank()) {
+                it.sessionCookies
+            } else if (it.lastLogin?.contains("sessionid") == true) {
+                it.lastLogin
+            } else ""
+            if (effectiveCookies.isNotBlank()) it.copy(sessionCookies = effectiveCookies) else null
         }
-        job.accountUsername?.let { username ->
-            accounts.getAll().firstOrNull {
-                it.sessionCookies.isNotBlank() && it.username.equals(username, ignoreCase = true)
-            }?.let { return it }
-        }
-        return null
     }
 
     private suspend fun fail(job: BridgeJobDto, code: String, message: String) {
@@ -245,5 +281,6 @@ class FeedBridgeRunner @Inject constructor(
 
     private companion object {
         const val TAG = "FeedBridgeRunner"
+        const val HEARTBEAT_INTERVAL_MS = 5_000L
     }
 }

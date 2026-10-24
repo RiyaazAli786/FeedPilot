@@ -249,6 +249,28 @@ public class FeedBridgeService : IFeedBridgeService
                 {
                     account.LastErrorCode = null;
                     account.LastErrorMessage = null;
+                    account.CooldownUntil = null;
+                    var hasActiveJob = await _db.FeedBridgeJobs.AnyAsync(j =>
+                        j.AssignedAccountStateId == account.Id &&
+                        (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+                        j.ExpiresAt > now, ct);
+                    if (!hasActiveJob)
+                    {
+                        account.IsBusy = false;
+                    }
+                }
+            }
+
+            if (device.BridgeEnabled)
+            {
+                var hasActiveDeviceJob = await _db.FeedBridgeJobs.AnyAsync(j =>
+                    j.AssignedDeviceId == deviceId &&
+                    j.AssignedInstallationId == installationId &&
+                    (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+                    j.ExpiresAt > now, ct);
+                if (!hasActiveDeviceJob)
+                {
+                    device.CooldownUntil = null;
                 }
             }
 

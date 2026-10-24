@@ -203,7 +203,7 @@ interface ApiService {
     suspend fun pollBridgeJob(
         @Query("deviceId") deviceId: String,
         @Query("installationId") installationId: String
-    ): Response<BridgeJobDto>
+    ): Response<BridgeJobDto?>
 
     @POST("api/bridge/jobs/{id}/complete")
     suspend fun completeBridgeJob(

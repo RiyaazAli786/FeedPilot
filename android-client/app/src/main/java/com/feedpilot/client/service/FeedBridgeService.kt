@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -38,12 +40,15 @@ class FeedBridgeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val notificationId by lazy { deviceIdentity.cloneScopedNotificationId(NOTIFICATION_ID_BASE) }
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
         BridgeStatusStore.starting()
         startForegroundCompat(buildNotification("Feed bridge active"))
+        acquireLocks()
         scope.launch { loop() }
     }
 
@@ -54,6 +59,7 @@ class FeedBridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        releaseLocks()
         scope.cancel()
         BridgeStatusStore.error("Bridge stopped. Reopen FeedPilot to reconnect.")
         super.onDestroy()
@@ -136,6 +142,35 @@ class FeedBridgeService : Service() {
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun acquireLocks() {
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (wakeLock?.isHeld != true) {
+            wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:FeedBridge")?.apply {
+                setReferenceCounted(false)
+                runCatching { acquire() }
+                    .onFailure { Log.w(TAG, "Could not acquire feed bridge wake lock", it) }
+            }
+        }
+        if (wifiLock?.isHeld != true) {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            @Suppress("DEPRECATION")
+            wifiLock = wm?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$packageName:FeedBridgeWifi")?.apply {
+                setReferenceCounted(false)
+                runCatching { acquire() }
+                    .onFailure { Log.w(TAG, "Could not acquire feed bridge wifi lock", it) }
+            }
+        }
+    }
+
+    private fun releaseLocks() {
+        runCatching {
+            wakeLock?.let { if (it.isHeld) it.release() }
+            wakeLock = null
+            wifiLock?.let { if (it.isHeld) it.release() }
+            wifiLock = null
+        }.onFailure { Log.w(TAG, "Could not release feed bridge locks", it) }
     }
 
     companion object {
