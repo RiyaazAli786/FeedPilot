@@ -12,7 +12,7 @@ import javax.inject.Singleton
  * Every call here runs as a signed-in account. Without one they return "nothing" instead of asking
  * Instagram anyway: a logged-out request is not just useless, it is an anonymous hit on Instagram's
  * endpoints from this device. The exceptions are [login], [submitTwoFactorCode] and
- * [getPreLoginData] — those are how an account gets signed in — and any caller that supplies
+ * [getPreLoginData] ï¿½ those are how an account gets signed in ï¿½ and any caller that supplies
  * `customCookies`, which is the session it just captured and not yet stored.
  */
 @Singleton
@@ -101,14 +101,17 @@ class InstagramRepository @Inject constructor(
         // Timeline media owners omit account totals. Enrich the first page for every consumer
         // (Posts, Handles and bridge) rather than treating those missing fields as real zeros.
         if (feed != null && maxId.isNullOrBlank()) {
+            val targetUsername = (feed.profile?.username?.takeIf { it.isNotBlank() } ?: userId).trim().removePrefix("@")
+            val targetNumericId = feed.profile?.id?.takeIf { it.isNotBlank() && it.all(Char::isDigit) }
             val profile = try {
-                instagramWebClient.fetchUserProfileDetails(feed.profile?.username ?: userId, feed.updatedCookies ?: cookies)
+                instagramWebClient.fetchUserProfileDetails(targetNumericId ?: targetUsername, feed.updatedCookies ?: cookies)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
                 null
             }
-            if (profile != null && (profile.followerCount > 0 || profile.followingCount > 0 || profile.mediaCount > 0)) {
+            if (profile != null && profile.username.equals(targetUsername, ignoreCase = true) &&
+                (profile.followerCount > 0 || profile.followingCount > 0 || profile.mediaCount > 0)) {
                 return feed.copy(profile = profile)
             }
         }

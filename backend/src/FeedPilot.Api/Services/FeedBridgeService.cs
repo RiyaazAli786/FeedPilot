@@ -38,6 +38,10 @@ public class FeedBridgeService : IFeedBridgeService
     {
         var username = NormalizeUsername(request.Username);
         var userId = request.UserId?.Trim();
+        if (string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(userId) && !userId.All(char.IsDigit))
+        {
+            username = NormalizeUsername(userId);
+        }
         if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(userId))
             return Fail("INVALID_REQUEST", "Username or userId is required.");
 
@@ -361,6 +365,27 @@ public class FeedBridgeService : IFeedBridgeService
                 await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
                 await _db.SaveChangesAsync(ct);
                 return new BridgeJobResultDto(true, job.Status.ToString());
+            }
+            if (!string.IsNullOrWhiteSpace(job.TargetUsername) &&
+                request.Data.TryGetProperty("profile", out var prof) &&
+                prof.ValueKind == JsonValueKind.Object &&
+                prof.TryGetProperty("username", out var pUser) &&
+                pUser.ValueKind == JsonValueKind.String)
+            {
+                var returnedUsername = pUser.GetString();
+                if (!string.IsNullOrWhiteSpace(returnedUsername) &&
+                    !string.Equals(returnedUsername, job.TargetUsername, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning("Bridge job {JobId} profile username mismatch: expected {Expected}, got {Got}",
+                        job.Id, job.TargetUsername, returnedUsername);
+                    job.Status = FeedBridgeJobStatus.Failed;
+                    job.ErrorCode = "IG_PROFILE_MISMATCH";
+                    job.ErrorMessage = $"Device returned profile @{returnedUsername} for target @{job.TargetUsername}.";
+                    job.CompletedAt = job.UpdatedAt = now;
+                    await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
+                    await _db.SaveChangesAsync(ct);
+                    return new BridgeJobResultDto(true, job.Status.ToString());
+                }
             }
             job.Status = FeedBridgeJobStatus.Completed;
             job.ResponseJson = JsonSerializer.Serialize(request.Data, JsonOptions);

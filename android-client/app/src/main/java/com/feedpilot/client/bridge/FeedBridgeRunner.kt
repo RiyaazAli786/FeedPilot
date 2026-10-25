@@ -217,6 +217,18 @@ class FeedBridgeRunner @Inject constructor(
                 emptyList()
             }
 
+            val targetUsername = job.targetUsername?.takeIf { it.isNotBlank() }
+                ?: target.takeIf { it.any { char -> !char.isDigit() } }
+            if (!targetUsername.isNullOrBlank()) {
+                val profile = feed.profile
+                if (profile != null && !profile.username.isNullOrBlank() &&
+                    !profile.username.equals(targetUsername, ignoreCase = true)
+                ) {
+                    Log.e(TAG, "Bridge feed profile mismatch: target is @$targetUsername but feed returned @${profile.username}")
+                    fail(job, "IG_PROFILE_MISMATCH", "Device resolved profile @${profile.username} instead of target @$targetUsername.")
+                    return
+                }
+            }
             val data = feed.toBridgeResultData(job.limit, stories, highlights)
             if (!isBridgeEnabled()) return
             val postCount = feed.items.size
