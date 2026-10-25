@@ -21,8 +21,19 @@ data class BridgeStatus(
         BridgeConnectionState.Starting -> "Bridge starting"
         BridgeConnectionState.Online -> "Bridge mode on"
         BridgeConnectionState.Offline -> "Bridge offline"
-        BridgeConnectionState.RunningJob -> accountUsername?.let { "Fetching: @$it" }
-            ?: currentUsername?.let { "Running: @$it" } ?: "Bridge job running"
+        BridgeConnectionState.RunningJob -> {
+            val target = currentUsername?.removePrefix("@")?.takeIf { it.isNotBlank() }
+            val account = accountUsername?.removePrefix("@")?.takeIf { it.isNotBlank() }
+            if (target != null && account != null) {
+                "Fetching: @$target with @$account"
+            } else if (target != null) {
+                "Fetching: @$target"
+            } else if (account != null) {
+                "Fetching with @$account"
+            } else {
+                "Bridge job running"
+            }
+        }
         BridgeConnectionState.Finished -> "Bridge job finished"
         BridgeConnectionState.SendingResult -> "Finished · returning result"
         BridgeConnectionState.ResultReturned -> "Bridge result returned"
@@ -89,11 +100,33 @@ open class BridgeStatusTracker(private val now: () -> Long = { System.nanoTime()
             message = "Feed collection finished. Returning the result to FeedPilot."))
     }
 
-    @Synchronized fun resultReturned() {
+    @Synchronized fun resultReturned(
+        postCount: Int? = null,
+        followerCount: Long? = null,
+        followingCount: Long? = null,
+        message: String? = null
+    ) {
         if (!enabled) return
         showOutcomeUntil = now() + 4_000
-        publish(_status.value.copy(state = BridgeConnectionState.ResultReturned,
-            isOnline = true, message = "FeedPilot accepted the returned feed result."))
+        val target = _status.value.currentUsername?.removePrefix("@")?.takeIf { it.isNotBlank() }
+        val targetPrefix = if (target != null) "Fetched @$target successfully" else "Fetched successfully"
+        val counts = buildList {
+            if (postCount != null) add("$postCount " + if (postCount == 1) "post" else "posts")
+            if (followerCount != null) add("$followerCount " + if (followerCount == 1L) "follower" else "followers")
+            if (followingCount != null) add("$followingCount following")
+        }
+        val detailMsg = if (message != null) {
+            message
+        } else if (counts.isNotEmpty()) {
+            "$targetPrefix with ${counts.joinToString(", ")}. FeedPilot accepted the returned feed result."
+        } else {
+            "FeedPilot accepted the returned feed result."
+        }
+        publish(_status.value.copy(
+            state = BridgeConnectionState.ResultReturned,
+            isOnline = true,
+            message = detailMsg
+        ))
     }
 
     @Synchronized fun jobFailed(message: String) {

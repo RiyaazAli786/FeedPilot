@@ -219,12 +219,19 @@ class FeedBridgeRunner @Inject constructor(
 
             val data = feed.toBridgeResultData(job.limit, stories, highlights)
             if (!isBridgeEnabled()) return
-            BridgeStatusStore.finished(feed.items.size)
+            val postCount = feed.items.size
+            val followerCount = feed.profile?.followerCount
+            val followingCount = feed.profile?.followingCount
+            BridgeStatusStore.finished(postCount)
             BridgeStatusStore.sendingResult()
             returningResult = true
             val result = api.completeBridgeJob(job.id, CompleteBridgeJobRequest(data))
             if (result.accepted && result.status.equals("Completed", ignoreCase = true)) {
-                BridgeStatusStore.resultReturned()
+                BridgeStatusStore.resultReturned(
+                    postCount = postCount,
+                    followerCount = followerCount,
+                    followingCount = followingCount
+                )
             } else {
                 BridgeStatusStore.resultFailed("Result was not accepted: ${result.status}")
             }

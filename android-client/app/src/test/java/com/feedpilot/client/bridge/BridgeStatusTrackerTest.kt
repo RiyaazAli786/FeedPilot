@@ -7,11 +7,12 @@ class BridgeStatusTrackerTest {
     @Test fun fetchingAccountIsVisibleAndRetainedThroughDelivery() {
         val tracker = BridgeStatusTracker { 0L }
         tracker.resolving("target", "job", "fetcher")
-        assertEquals("Fetching: @fetcher", tracker.status.value.pillLabel)
+        assertEquals("Fetching: @target with @fetcher", tracker.status.value.pillLabel)
         assertEquals("target", tracker.status.value.currentUsername)
         tracker.finished(12)
         tracker.sendingResult()
-        tracker.resultReturned()
+        tracker.resultReturned(postCount = 12, followerCount = 323000L, followingCount = 0L)
+        assertEquals("Fetched @target successfully with 12 posts, 323000 followers, 0 following. FeedPilot accepted the returned feed result.", tracker.status.value.message)
         assertEquals("fetcher", tracker.status.value.accountUsername)
         assertTrue(tracker.status.value.pillLabel.contains("@fetcher"))
     }
@@ -41,7 +42,7 @@ class BridgeStatusTrackerTest {
         assertEquals("Bridge mode on", tracker.status.value.pillLabel)
         tracker.resolving("target", "job-123")
         tracker.online()
-        assertEquals("Running: @target", tracker.status.value.pillLabel)
+        assertEquals("Fetching: @target", tracker.status.value.pillLabel)
         assertEquals("job-123", tracker.status.value.jobId)
         tracker.finished(12)
         assertEquals("Bridge job finished", tracker.status.value.pillLabel)
@@ -66,7 +67,7 @@ class BridgeStatusTrackerTest {
         tracker.online()
         assertEquals("Bridge result failed", tracker.status.value.pillLabel)
         tracker.resolving("second", "two")
-        assertEquals("Running: @second", tracker.status.value.pillLabel)
+        assertEquals("Fetching: @second", tracker.status.value.pillLabel)
         assertEquals("two", tracker.status.value.jobId)
     }
 }
