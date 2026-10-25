@@ -2309,12 +2309,18 @@ class InstagramWebClient @Inject constructor(
                     .header("X-IG-App-ID", "936619743392459")
                     .header("X-ASBD-ID", "129477")
                     .header("Accept", "*/*")
+                    .header("Origin", "https://www.instagram.com")
+                    .header("Referer", "https://www.instagram.com/$cleanUsername/")
                     .header("Sec-Fetch-Dest", "empty")
                     .header("Sec-Fetch-Mode", "cors")
                     .header("Sec-Fetch-Site", "same-origin")
 
+                if (!csrfToken.isNullOrBlank()) {
+                    webProfileReqBuilder.header("X-CSRFToken", csrfToken)
+                }
                 if (!sessionCookies.isNullOrBlank()) {
                     webProfileReqBuilder.header("Cookie", sessionCookies)
+                    webProfileReqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
                 }
 
                 http.newCall(webProfileReqBuilder.build()).execute().use { response ->
@@ -2597,34 +2603,30 @@ class InstagramWebClient @Inject constructor(
             }
         }
 
-        // 3. Public OpenGraph HTML fallback using Facebook Bot User-Agent
+        // 3. HTML stats fallback
         if (followers == null || following == null || followers == 0L) {
             try {
-                val pageReq = Request.Builder()
+                val pageReqBuilder = Request.Builder()
                     .url("https://www.instagram.com/$cleanUsername/")
-                    .header("User-Agent", "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)")
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                     .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                    .build()
+                if (!sessionCookies.isNullOrBlank()) {
+                    pageReqBuilder.header("Cookie", sessionCookies)
+                }
 
-                http.newCall(pageReq).execute().use { response ->
+                http.newCall(pageReqBuilder.build()).execute().use { response ->
                     val body = response.body?.string() ?: ""
                     if (response.isSuccessful && body.isNotBlank()) {
-                        val ogDesc = Regex("""<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(body)?.groupValues?.get(1)
-                            ?: Regex("""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']""", RegexOption.IGNORE_CASE).find(body)?.groupValues?.get(1)
-
-                        if (!ogDesc.isNullOrBlank()) {
-                            val followersStr = Regex("""([0-9.,KMBm]+)\s+Followers""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
-                            val followingStr = Regex("""([0-9.,KMBm]+)\s+Following""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
-                            val postsStr = Regex("""([0-9.,KMBm]+)\s+Posts""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
-
-                            if (!followersStr.isNullOrBlank()) followers = parseFormattedCount(followersStr)
-                            if (!followingStr.isNullOrBlank()) following = parseFormattedCount(followingStr)
-                            if (!postsStr.isNullOrBlank() && mediaCount <= 0L) mediaCount = parseFormattedCount(postsStr)
+                        val stats = extractProfileStatsFromHtml(body)
+                        if (stats != null) {
+                            if (followers == null || followers == 0L) followers = stats.followers
+                            if (following == null || following == 0L) following = stats.following
+                            if (mediaCount <= 0L && stats.posts > 0L) mediaCount = stats.posts
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Facebook bot HTML fallback failed for $cleanUsername", e)
+                Log.w(TAG, "HTML profile stats fallback failed for $cleanUsername", e)
             }
         }
 
@@ -2775,6 +2777,7 @@ class InstagramWebClient @Inject constructor(
         sessionCookies: String
     ): InstagramUserFeedResult? {
         var currentCookies = sessionCookies
+        var pageHtml = ""
         // Bootstrap session-bound tokens from the target page instead of reusing captured credentials.
         val pageRequest = Request.Builder()
             .url("https://www.instagram.com/$username/")
@@ -2785,6 +2788,7 @@ class InstagramWebClient @Inject constructor(
             .build()
         val tokens = http.newCall(pageRequest).execute().use { response ->
             val html = response.body?.string().orEmpty()
+            pageHtml = html
             if (!response.isSuccessful) {
                 throwInstagramFeedHttpFailure(response.code, html, "profile page")
             }
@@ -2819,7 +2823,30 @@ class InstagramWebClient @Inject constructor(
                 collectGraphqlFeedItems(json, items, mutableSetOf())
             }
             val pageInfo = findPageInfo(json)
-            val profile = findGraphqlProfile(json, username, items.size.toLong())
+            var profile = findGraphqlProfile(json, username, items.size.toLong())
+            val htmlStats = extractProfileStatsFromHtml(pageHtml)
+            if (htmlStats != null) {
+                profile = if (profile != null) {
+                    profile.copy(
+                        followerCount = if (profile.followerCount > 0) profile.followerCount else htmlStats.followers,
+                        followingCount = if (profile.followingCount > 0) profile.followingCount else htmlStats.following,
+                        mediaCount = if (htmlStats.posts > 0) htmlStats.posts else profile.mediaCount
+                    )
+                } else {
+                    InstagramUserProfileDetails(
+                        id = username,
+                        username = username,
+                        fullName = "",
+                        biography = "",
+                        profilePicUrl = "",
+                        followerCount = htmlStats.followers,
+                        followingCount = htmlStats.following,
+                        mediaCount = if (htmlStats.posts > 0) htmlStats.posts else items.size.toLong(),
+                        isPrivate = false,
+                        isVerified = false
+                    )
+                }
+            }
             val errors = json.optJSONArray("errors")
             if (errors != null && errors.length() > 0 && items.isEmpty() && profile == null) {
                 val message = errors.optJSONObject(0)?.optString("message").orEmpty()
@@ -3034,6 +3061,54 @@ class InstagramWebClient @Inject constructor(
             }
         }
         return null
+    }
+
+    private data class ProfileStats(val followers: Long, val following: Long, val posts: Long)
+
+    private fun extractProfileStatsFromHtml(html: String): ProfileStats? {
+        if (html.isBlank()) return null
+        val ogDesc = Regex("""<meta[^>]+(?:property|name)=["'](?:og:description|description)["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+            ?: Regex("""<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:description|description)["']""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+
+        var followers: Long? = null
+        var following: Long? = null
+        var posts: Long? = null
+
+        if (!ogDesc.isNullOrBlank()) {
+            val followersStr = Regex("""([0-9.,KMBm]+)\s+Followers""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
+            val followingStr = Regex("""([0-9.,KMBm]+)\s+Following""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
+            val postsStr = Regex("""([0-9.,KMBm]+)\s+Posts""", RegexOption.IGNORE_CASE).find(ogDesc)?.groupValues?.get(1)
+
+            if (!followersStr.isNullOrBlank()) followers = parseFormattedCount(followersStr)
+            if (!followingStr.isNullOrBlank()) following = parseFormattedCount(followingStr)
+            if (!postsStr.isNullOrBlank()) posts = parseFormattedCount(postsStr)
+        }
+
+        if (followers == null || following == null) {
+            val ldJsonMatch = Regex("""<script[^>]+type=["']application/ld\+json["'][^>]*>(.*?)</script>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)).find(html)
+            if (ldJsonMatch != null) {
+                try {
+                    val ldJson = JSONObject(ldJsonMatch.groupValues[1])
+                    val entity = ldJson.optJSONObject("mainEntity") ?: ldJson
+                    val stats = entity.optJSONArray("interactionStatistic")
+                    if (stats != null) {
+                        for (i in 0 until stats.length()) {
+                            val stat = stats.optJSONObject(i) ?: continue
+                            val interactionType = stat.optString("interactionType", "")
+                            val count = stat.optLong("userInteractionCount", -1L)
+                            if (count >= 0) {
+                                if (interactionType.contains("FollowAction", ignoreCase = true)) {
+                                    followers = count
+                                }
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        if (followers == null && following == null && posts == null) return null
+        return ProfileStats(followers ?: 0L, following ?: 0L, posts ?: 0L)
     }
 
     private fun findGraphqlProfile(value: Any?, username: String, itemCount: Long): InstagramUserProfileDetails? {
@@ -3298,14 +3373,28 @@ class InstagramWebClient @Inject constructor(
     ): List<InstagramSearchUser> = withContext(Dispatchers.IO) {
         val clean = query.trim().trimStart('@')
         if (clean.length < 2) return@withContext emptyList()
+        val results = mutableListOf<InstagramSearchUser>()
+        val csrfToken = if (!sessionCookies.isNullOrBlank()) extractCookie(sessionCookies, "csrftoken") else null
+
+        // 1. Try web topsearch API
         try {
-            val searchUrl = "https://www.instagram.com/web/search/topsearch/?context=blended&query=${java.net.URLEncoder.encode(clean, "UTF-8")}"
+            val searchUrl = "https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=${java.net.URLEncoder.encode(clean, "UTF-8")}"
             val reqBuilder = Request.Builder()
                 .url(searchUrl)
                 .applyDeviceHeaders()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                .header("X-ASBD-ID", "129477")
                 .header("Accept", "*/*")
+                .header("Origin", "https://www.instagram.com")
+                .header("Referer", "https://www.instagram.com/")
+                .header("Sec-Fetch-Site", "same-origin")
+                .header("Sec-Fetch-Mode", "cors")
+                .header("Sec-Fetch-Dest", "empty")
 
+            if (!csrfToken.isNullOrBlank()) {
+                reqBuilder.header("X-CSRFToken", csrfToken)
+            }
             if (!sessionCookies.isNullOrBlank()) {
                 reqBuilder.header("Cookie", sessionCookies)
                 reqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
@@ -3313,27 +3402,97 @@ class InstagramWebClient @Inject constructor(
 
             http.newCall(reqBuilder.build()).execute().use { response ->
                 val bodyText = response.body?.string() ?: ""
-                if (!response.isSuccessful || bodyText.isBlank()) return@withContext emptyList()
-                val usersArr = JSONObject(bodyText).optJSONArray("users") ?: return@withContext emptyList()
-                val results = mutableListOf<InstagramSearchUser>()
-                for (i in 0 until usersArr.length()) {
-                    val user = usersArr.optJSONObject(i)?.optJSONObject("user") ?: continue
-                    val username = user.optString("username").trim()
-                    if (username.isBlank()) continue
-                    results += InstagramSearchUser(
-                        username = username,
-                        fullName = user.optString("full_name").ifBlank { null },
-                        profilePicUrl = user.optString("profile_pic_url").ifBlank { null },
-                        isPrivate = user.optBoolean("is_private", false),
-                        isVerified = user.optBoolean("is_verified", false)
-                    )
+                if (response.isSuccessful && bodyText.isNotBlank() && !bodyText.trimStart().startsWith("<")) {
+                    val usersArr = JSONObject(bodyText).optJSONArray("users")
+                    if (usersArr != null) {
+                        for (i in 0 until usersArr.length()) {
+                            val user = usersArr.optJSONObject(i)?.optJSONObject("user") ?: continue
+                            val username = user.optString("username").trim()
+                            if (username.isBlank()) continue
+                            results += InstagramSearchUser(
+                                username = username,
+                                fullName = user.optString("full_name").ifBlank { null },
+                                profilePicUrl = user.optString("profile_pic_url").ifBlank { null },
+                                isPrivate = user.optBoolean("is_private", false),
+                                isVerified = user.optBoolean("is_verified", false)
+                            )
+                        }
+                    }
                 }
-                results.distinctBy { it.username.lowercase(Locale.US) }.take(25)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Instagram user search failed for $clean", e)
-            emptyList()
+            Log.w(TAG, "Instagram api/v1/web/search/topsearch failed for $clean", e)
         }
+
+        // 2. Fallback to fbsearch/topsearch_flat if empty
+        if (results.isEmpty()) {
+            try {
+                val flatUrl = "https://www.instagram.com/api/v1/fbsearch/topsearch_flat/?query=${java.net.URLEncoder.encode(clean, "UTF-8")}&context=blended"
+                val reqBuilder = Request.Builder()
+                    .url(flatUrl)
+                    .applyDeviceHeaders()
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                    .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                    .header("X-ASBD-ID", "129477")
+                    .header("Accept", "*/*")
+                    .header("Origin", "https://www.instagram.com")
+                    .header("Referer", "https://www.instagram.com/")
+                    .header("Sec-Fetch-Site", "same-origin")
+                    .header("Sec-Fetch-Mode", "cors")
+                    .header("Sec-Fetch-Dest", "empty")
+
+                if (!csrfToken.isNullOrBlank()) reqBuilder.header("X-CSRFToken", csrfToken)
+                if (!sessionCookies.isNullOrBlank()) {
+                    reqBuilder.header("Cookie", sessionCookies)
+                    reqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+                }
+
+                http.newCall(reqBuilder.build()).execute().use { response ->
+                    val bodyText = response.body?.string() ?: ""
+                    if (response.isSuccessful && bodyText.isNotBlank() && !bodyText.trimStart().startsWith("<")) {
+                        val json = JSONObject(bodyText)
+                        val usersArr = json.optJSONArray("users") ?: json.optJSONArray("list")
+                        if (usersArr != null) {
+                            for (i in 0 until usersArr.length()) {
+                                val user = usersArr.optJSONObject(i)?.optJSONObject("user")
+                                    ?: usersArr.optJSONObject(i) ?: continue
+                                val username = user.optString("username").trim()
+                                if (username.isBlank()) continue
+                                results += InstagramSearchUser(
+                                    username = username,
+                                    fullName = user.optString("full_name").ifBlank { null },
+                                    profilePicUrl = user.optString("profile_pic_url").ifBlank { null },
+                                    isPrivate = user.optBoolean("is_private", false),
+                                    isVerified = user.optBoolean("is_verified", false)
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Instagram api/v1/fbsearch/topsearch_flat failed for $clean", e)
+            }
+        }
+
+        // 3. Fallback to exact user profile resolution if results are empty
+        if (results.isEmpty() && clean.matches(Regex("^[A-Za-z0-9._]{1,30}$"))) {
+            try {
+                val profile = fetchUserProfileDetails(clean, sessionCookies)
+                if (profile != null && profile.username.equals(clean, ignoreCase = true)) {
+                    results += InstagramSearchUser(
+                        username = profile.username,
+                        fullName = profile.fullName.ifBlank { null },
+                        profilePicUrl = profile.profilePicUrl.ifBlank { null },
+                        isPrivate = profile.isPrivate,
+                        isVerified = profile.isVerified
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Exact profile fallback search failed for $clean", e)
+            }
+        }
+
+        results.distinctBy { it.username.lowercase(Locale.US) }.take(25)
     }
 
     suspend fun fetchSuggestedUsers(
@@ -3899,13 +4058,19 @@ class InstagramWebClient @Inject constructor(
 
         // 2. Try topsearch fallback
         try {
-            val searchUrl = "https://www.instagram.com/web/search/topsearch/?context=blended&query=${java.net.URLEncoder.encode(username, "UTF-8")}"
+            val searchUrl = "https://www.instagram.com/api/v1/web/search/topsearch/?context=blended&query=${java.net.URLEncoder.encode(username, "UTF-8")}"
             val searchReqBuilder = Request.Builder()
                 .url(searchUrl)
                 .applyDeviceHeaders()
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                .header("X-ASBD-ID", "129477")
+                .header("Origin", "https://www.instagram.com")
+                .header("Referer", "https://www.instagram.com/")
                 .header("Accept", "*/*")
-            if (!sessionCookies.isNullOrBlank()) searchReqBuilder.header("Cookie", sessionCookies)
+            if (!sessionCookies.isNullOrBlank()) {
+                searchReqBuilder.header("Cookie", sessionCookies)
+                searchReqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+            }
 
             http.newCall(searchReqBuilder.build()).execute().use { response ->
                 val bodyText = response.body?.string() ?: ""

@@ -102,17 +102,33 @@ class InstagramRepository @Inject constructor(
         // (Posts, Handles and bridge) rather than treating those missing fields as real zeros.
         if (feed != null && maxId.isNullOrBlank()) {
             val targetUsername = (feed.profile?.username?.takeIf { it.isNotBlank() } ?: userId).trim().removePrefix("@")
-            val targetNumericId = feed.profile?.id?.takeIf { it.isNotBlank() && it.all(Char::isDigit) }
-            val profile = try {
-                instagramWebClient.fetchUserProfileDetails(targetNumericId ?: targetUsername, feed.updatedCookies ?: cookies)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
-            if (profile != null && profile.username.equals(targetUsername, ignoreCase = true) &&
-                (profile.followerCount > 0 || profile.followingCount > 0 || profile.mediaCount > 0)) {
-                return feed.copy(profile = profile)
+            val currentFollowers = feed.profile?.followerCount ?: 0L
+            val currentFollowing = feed.profile?.followingCount ?: 0L
+            if (currentFollowers == 0L && currentFollowing == 0L) {
+                val profile = try {
+                    instagramWebClient.fetchUserProfileDetails(targetUsername, feed.updatedCookies ?: cookies)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                if (profile != null && profile.username.equals(targetUsername, ignoreCase = true) &&
+                    (profile.followerCount > 0 || profile.followingCount > 0 || profile.mediaCount > 0)) {
+                    val currentProfile = feed.profile
+                    val mergedProfile = if (currentProfile != null) {
+                        currentProfile.copy(
+                            followerCount = profile.followerCount,
+                            followingCount = profile.followingCount,
+                            mediaCount = if (profile.mediaCount > 0) profile.mediaCount else currentProfile.mediaCount,
+                            fullName = profile.fullName.ifBlank { currentProfile.fullName },
+                            biography = profile.biography.ifBlank { currentProfile.biography },
+                            profilePicUrl = profile.profilePicUrl.ifBlank { currentProfile.profilePicUrl }
+                        )
+                    } else {
+                        profile
+                    }
+                    return feed.copy(profile = mergedProfile)
+                }
             }
         }
         return feed

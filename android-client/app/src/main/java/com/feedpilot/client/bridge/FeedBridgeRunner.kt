@@ -229,11 +229,26 @@ class FeedBridgeRunner @Inject constructor(
                     return
                 }
             }
-            val data = feed.toBridgeResultData(job.limit, stories, highlights)
+            var resolvedFeed = feed
+            if (resolvedFeed.profile == null || ((resolvedFeed.profile?.followerCount ?: 0L) == 0L && (resolvedFeed.profile?.followingCount ?: 0L) == 0L)) {
+                val p = runCatching { instagram.getUserProfileDetails(feedTarget, account.sessionCookies) }.getOrNull()
+                if (p != null && (p.followerCount > 0 || p.followingCount > 0 || p.mediaCount > 0)) {
+                    val merged = resolvedFeed.profile?.copy(
+                        followerCount = p.followerCount,
+                        followingCount = p.followingCount,
+                        mediaCount = if (p.mediaCount > 0) p.mediaCount else resolvedFeed.profile?.mediaCount ?: 0,
+                        fullName = p.fullName.ifBlank { resolvedFeed.profile?.fullName.orEmpty() },
+                        biography = p.biography.ifBlank { resolvedFeed.profile?.biography.orEmpty() },
+                        profilePicUrl = p.profilePicUrl.ifBlank { resolvedFeed.profile?.profilePicUrl.orEmpty() }
+                    ) ?: p
+                    resolvedFeed = resolvedFeed.copy(profile = merged)
+                }
+            }
+            val data = resolvedFeed.toBridgeResultData(job.limit, stories, highlights)
             if (!isBridgeEnabled()) return
-            val postCount = feed.items.size
-            val followerCount = feed.profile?.followerCount
-            val followingCount = feed.profile?.followingCount
+            val postCount = resolvedFeed.items.size
+            val followerCount = resolvedFeed.profile?.followerCount
+            val followingCount = resolvedFeed.profile?.followingCount
             BridgeStatusStore.finished(postCount)
             BridgeStatusStore.sendingResult()
             returningResult = true

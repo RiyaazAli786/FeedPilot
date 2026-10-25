@@ -38,9 +38,9 @@ data class PostItem(
     val caption: String? = null,
     /** Numeric media id used by the like/repost mutations. */
     val mediaId: String = "",
-    /** Already liked — the Like action is hidden/disabled so it can't be repeated. */
+    /** Already liked â€” the Like action is hidden/disabled so it can't be repeated. */
     val hasLiked: Boolean = false,
-    /** Already reposted in this session — same idea as [hasLiked]. */
+    /** Already reposted in this session â€” same idea as [hasLiked]. */
     val hasReposted: Boolean = false,
     /** Instagram allows the viewer to reshare this media. */
     val canReshare: Boolean = true,
@@ -155,15 +155,27 @@ class PostsViewModel @Inject constructor(
                 is Resource.Success -> {
                     val feed = feedRes.data
                     val postsList = feed.items.map { it.toPostItem() }
-                    val profile = feed.profile?.let {
+                    var profile = feed.profile?.let {
                         TargetProfile(it.username, it.fullName, it.profilePicUrl, it.followerCount,
                             it.followingCount, it.mediaCount, it.isPrivate)
-                    } ?: (targetRepository.fetchProfile(username, cookies) as? Resource.Success)?.data?.toProfile()
-                        ?: TargetProfile(username, null, null, 0, 0, postsList.size.toLong(), false)
+                    }
+                    if (profile == null || (profile.followers == 0L && profile.following == 0L)) {
+                        val fetchedProfile = (targetRepository.fetchProfile(username, cookies) as? Resource.Success)?.data?.toProfile()
+                        if (fetchedProfile != null) {
+                            profile = profile?.copy(
+                                followers = if (fetchedProfile.followers > 0) fetchedProfile.followers else profile.followers,
+                                following = if (fetchedProfile.following > 0) fetchedProfile.following else profile.following,
+                                fullName = if (!profile.fullName.isNullOrBlank()) profile.fullName else fetchedProfile.fullName,
+                                avatarUrl = if (!profile.avatarUrl.isNullOrBlank()) profile.avatarUrl else fetchedProfile.avatarUrl,
+                                posts = maxOf(profile.posts, fetchedProfile.posts)
+                            ) ?: fetchedProfile
+                        }
+                    }
+                    val finalProfile = profile ?: TargetProfile(username, null, null, 0, 0, postsList.size.toLong(), false)
                     content.update {
                         it.copy(
                             loading = false,
-                            profile = profile.copy(posts = maxOf(profile.posts, postsList.size.toLong())),
+                            profile = finalProfile.copy(posts = maxOf(finalProfile.posts, postsList.size.toLong())),
                             posts = postsList,
                             nextMaxId = feed.maxId,
                             hasMorePosts = feed.hasMore && !feed.maxId.isNullOrBlank(),
@@ -171,8 +183,25 @@ class PostsViewModel @Inject constructor(
                         )
                     }
                 }
-                is Resource.Error -> content.update {
-                    it.copy(loading = false, profile = null, posts = emptyList(), hasMorePosts = false, message = feedRes.message)
+                is Resource.Error -> {
+                    val profileRes = targetRepository.fetchProfile(username, cookies)
+                    if (profileRes is Resource.Success) {
+                        val p = profileRes.data.toProfile()
+                        content.update {
+                            it.copy(
+                                loading = false,
+                                profile = p,
+                                posts = emptyList(),
+                                hasMorePosts = false,
+                                loadingMore = false,
+                                message = if (p.isPrivate) "This account is private." else "No posts to show."
+                            )
+                        }
+                    } else {
+                        content.update {
+                            it.copy(loading = false, profile = null, posts = emptyList(), hasMorePosts = false, message = feedRes.message ?: "No user found for @$username")
+                        }
+                    }
                 }
                 Resource.Loading -> Unit
             }
@@ -298,7 +327,7 @@ class PostsViewModel @Inject constructor(
             content.update {
                 it.copy(
                     message = if (order != null) {
-                        "Order placed — $likesCount likes (${order.coinsSpent} coins). Status: ${order.status}."
+                        "Order placed â€” $likesCount likes (${order.coinsSpent} coins). Status: ${order.status}."
                     } else {
                         errMsg ?: "Could not place the order"
                     }
@@ -329,7 +358,7 @@ class PostsViewModel @Inject constructor(
     }
 
     /**
-     * Maps a feed item to a card. The video url comes straight from the feed — resolving it
+     * Maps a feed item to a card. The video url comes straight from the feed â€” resolving it
      * later via media-info returns nothing for anonymous callers, which left reels unplayable.
      */
     private fun com.feedpilot.client.data.remote.InstagramUserFeedItem.toPostItem(): PostItem {
@@ -356,7 +385,7 @@ class PostsViewModel @Inject constructor(
         content.update { c -> c.copy(posts = c.posts.map { if (it.id == id) change(it) else it }) }
     }
 
-    /** Likes a post. Never runs for one already liked — the UI hides the action. */
+    /** Likes a post. Never runs for one already liked â€” the UI hides the action. */
     fun likePost(post: PostItem) {
         if (post.hasLiked || post.busy) return
         updatePost(post.id) { it.copy(busy = true) }
@@ -394,7 +423,7 @@ class PostsViewModel @Inject constructor(
     private val _commentSheet = MutableStateFlow<CommentSheetState?>(null)
     val commentSheet: StateFlow<CommentSheetState?> = _commentSheet.asStateFlow()
 
-    /** Opens the comment sheet — only for posts that actually allow comments. */
+    /** Opens the comment sheet â€” only for posts that actually allow comments. */
     fun openComments(post: PostItem) {
         if (post.commentsDisabled) {
             content.update { it.copy(message = "Comments are turned off for this post") }
