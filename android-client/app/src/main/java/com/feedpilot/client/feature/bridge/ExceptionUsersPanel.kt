@@ -1,15 +1,26 @@
 package com.feedpilot.client.feature.bridge
 
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -19,6 +30,10 @@ internal fun ExceptionUsersPanel(
     viewModel: ExceptionUsersViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val fetchState by viewModel.fetchDialogState.collectAsStateWithLifecycle()
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+
     var showEditor by rememberSaveable { mutableStateOf(false) }
     var editingUsername by rememberSaveable { mutableStateOf<String?>(null) }
     var username by rememberSaveable { mutableStateOf("") }
@@ -71,6 +86,9 @@ internal fun ExceptionUsersPanel(
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 TextButton(enabled = actionsEnabled, onClick = {
+                                    viewModel.fetchUser(user)
+                                }) { Text("Fetch") }
+                                TextButton(enabled = actionsEnabled, onClick = {
                                     viewModel.clearActionError()
                                     editingUsername = user
                                     username = user
@@ -112,6 +130,7 @@ internal fun ExceptionUsersPanel(
         }) { Text(if (state.saving) "Saving..." else "Save") } },
         dismissButton = { TextButton(enabled = !state.saving, onClick = { showEditor = false }) { Text("Cancel") } }
     )
+
     removingUsername?.let { user ->
         AlertDialog(onDismissRequest = { if (!state.saving) removingUsername = null },
             title = { Text("Remove exception user?") },
@@ -123,6 +142,163 @@ internal fun ExceptionUsersPanel(
                 viewModel.remove(user) { removingUsername = null }
             }) { Text(if (state.saving) "Removing..." else "Remove", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(enabled = !state.saving, onClick = { removingUsername = null }) { Text("Cancel") } }
+        )
+    }
+
+    fetchState?.let { currentFetch ->
+        AlertDialog(
+            onDismissRequest = {
+                if (!currentFetch.loading) viewModel.dismissFetchDialog()
+            },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Fetch @${currentFetch.target}",
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    currentFetch.accountUsername?.let { account ->
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = MaterialTheme.shapes.extraSmall
+                        ) {
+                            Text(
+                                text = "@$account",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    when {
+                        currentFetch.loading -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(160.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CircularProgressIndicator()
+                                    Text(
+                                        "Fetching feed for @${currentFetch.target}...",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        if (currentFetch.accountUsername != null)
+                                            "Using active account: @${currentFetch.accountUsername}"
+                                        else
+                                            "Selecting random active account...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        currentFetch.error != null -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = currentFetch.error,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                currentFetch.accountUsername?.let { account ->
+                                    Text(
+                                        "Attempted with account: @$account",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        currentFetch.formattedResponse != null -> {
+                            currentFetch.summary?.let { summary ->
+                                Text(
+                                    text = summary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 140.dp, max = 340.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .verticalScroll(rememberScrollState())
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(8.dp)
+                                ) {
+                                    SelectionContainer {
+                                        Text(
+                                            text = currentFetch.formattedResponse,
+                                            style = MaterialTheme.typography.bodySmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.sp
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (currentFetch.formattedResponse != null) {
+                        Button(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(currentFetch.formattedResponse))
+                                Toast.makeText(context, "Response copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text("Copy")
+                        }
+                    } else if (currentFetch.error != null) {
+                        Button(
+                            onClick = { viewModel.fetchUser(currentFetch.target) }
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = viewModel::dismissFetchDialog,
+                    enabled = !currentFetch.loading
+                ) {
+                    Text("Close")
+                }
+            }
         )
     }
 }

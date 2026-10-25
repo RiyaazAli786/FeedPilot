@@ -3,9 +3,15 @@ package com.feedpilot.client.feature.bridge
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.feedpilot.client.bridge.toBridgeResultData
+import com.feedpilot.client.common.Resource
+import com.feedpilot.client.data.local.AccountDao
+import com.feedpilot.client.data.local.AccountEntity
 import com.feedpilot.client.data.remote.ExceptionUsersApi
 import com.feedpilot.client.data.remote.ExceptionUsername
 import com.feedpilot.client.data.remote.ExceptionUserResult
+import com.feedpilot.client.data.remote.dto.ExceptionUserFetchResultDto
+import com.feedpilot.client.data.repository.TargetRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -15,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -34,10 +41,21 @@ data class ExceptionUsersState(
     val notice: String? = null
 )
 
+data class FetchDialogState(
+    val target: String,
+    val accountUsername: String? = null,
+    val loading: Boolean = true,
+    val error: String? = null,
+    val formattedResponse: String? = null,
+    val summary: String? = null
+)
+
 @HiltViewModel
 class ExceptionUsersViewModel @Inject constructor(
     private val api: ExceptionUsersApi,
-    private val savedState: SavedStateHandle
+    private val savedState: SavedStateHandle,
+    private val accountDao: AccountDao,
+    private val targetRepository: TargetRepository
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ExceptionUsersState(
         search = savedState["exceptionSearch"] ?: "",
@@ -45,6 +63,16 @@ class ExceptionUsersViewModel @Inject constructor(
     ))
     val state = mutableState.asStateFlow()
     private var listJob: Job? = null
+
+    private val _fetchDialogState = MutableStateFlow<FetchDialogState?>(null)
+    val fetchDialogState = _fetchDialogState.asStateFlow()
+    private var fetchJob: Job? = null
+
+    private val prettyJson = Json {
+        prettyPrint = true
+        encodeDefaults = true
+        ignoreUnknownKeys = true
+    }
 
     init { refresh() }
 
@@ -114,6 +142,111 @@ class ExceptionUsersViewModel @Inject constructor(
                 mutableState.update { it.copy(saving = false, actionError = message(error)) }
             }
         }
+    }
+
+    fun fetchUser(username: String) {
+        val cleanUsername = username.trim().removePrefix("@")
+        fetchJob?.cancel()
+        _fetchDialogState.value = FetchDialogState(
+            target = cleanUsername,
+            loading = true
+        )
+        fetchJob = viewModelScope.launch {
+            try {
+                val account = selectRandomActiveAccount()
+                if (account == null) {
+                    _fetchDialogState.update {
+                        it?.copy(
+                            loading = false,
+                            error = "No active Instagram account with a saved session was found on this device."
+                        )
+                    }
+                    return@launch
+                }
+
+                _fetchDialogState.update { it?.copy(accountUsername = account.username) }
+
+                val cookies = if (account.sessionCookies.isNotBlank()) {
+                    account.sessionCookies
+                } else {
+                    account.lastLogin.orEmpty()
+                }
+
+                when (val result = targetRepository.fetchUserFeed(cleanUsername, customCookies = cookies)) {
+                    is Resource.Success -> {
+                        val feed = result.data
+                        val bridgeData = feed.toBridgeResultData(feed.items.size)
+                        val dto = ExceptionUserFetchResultDto(
+                            target = cleanUsername,
+                            fetchedByAccount = account.username,
+                            status = "SUCCESS",
+                            postsCount = bridgeData.items.size,
+                            profile = bridgeData.profile,
+                            items = bridgeData.items,
+                            maxId = bridgeData.maxId,
+                            hasMore = bridgeData.hasMore
+                        )
+                        val formatted = prettyJson.encodeToString(dto)
+                        val summary = buildString {
+                            append("Posts: ${bridgeData.items.size}")
+                            bridgeData.profile?.let { p ->
+                                append(" | Followers: ${p.followerCount} | Following: ${p.followingCount}")
+                                if (p.isPrivate) append(" (Private)")
+                            }
+                        }
+                        _fetchDialogState.update {
+                            it?.copy(
+                                loading = false,
+                                formattedResponse = formatted,
+                                summary = summary
+                            )
+                        }
+                    }
+                    is Resource.Error -> {
+                        _fetchDialogState.update {
+                            it?.copy(
+                                loading = false,
+                                error = result.message.ifBlank { "Failed to fetch user feed for @$cleanUsername" }
+                            )
+                        }
+                    }
+                    is Resource.Loading -> Unit
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                _fetchDialogState.update {
+                    it?.copy(
+                        loading = false,
+                        error = e.message ?: "An unexpected error occurred while fetching."
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissFetchDialog() {
+        fetchJob?.cancel()
+        fetchJob = null
+        _fetchDialogState.value = null
+    }
+
+    private suspend fun selectRandomActiveAccount(): AccountEntity? {
+        val all = accountDao.getAll()
+        val activeWithCookies = all.filter { account ->
+            val cookies = account.sessionCookies.takeIf { it.isNotBlank() }
+                ?: account.lastLogin?.takeIf { it.contains("sessionid") }
+            !cookies.isNullOrBlank() && (account.isLoggedIn || account.status.equals("Active", ignoreCase = true) || account.status.isBlank())
+        }
+        if (activeWithCookies.isNotEmpty()) {
+            return activeWithCookies.random()
+        }
+        val anyWithCookies = all.filter { account ->
+            val cookies = account.sessionCookies.takeIf { it.isNotBlank() }
+                ?: account.lastLogin?.takeIf { it.contains("sessionid") }
+            !cookies.isNullOrBlank()
+        }
+        return anyWithCookies.randomOrNull()
     }
 
     private fun message(error: Exception): String {

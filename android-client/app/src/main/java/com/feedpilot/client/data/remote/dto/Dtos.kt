@@ -155,7 +155,7 @@ data class CompletedTaskDto(
 
 /**
  * One direct-to-Instagram HTTP call's outcome, relayed to the backend so it can forward it to
- * Telegram — see [com.feedpilot.client.data.remote.InstagramCallTelemetry]. Deliberately carries
+ * Telegram â€” see [com.feedpilot.client.data.remote.InstagramCallTelemetry]. Deliberately carries
  * no request headers/cookies/body: only a truncated, already-redacted response snippet.
  */
 @Serializable
@@ -331,7 +331,7 @@ data class PlaceAppOrderRequest(
     val targetUrl: String,
     val targetUsername: String? = null,
     val quantity: Int,
-    /** For a Follow order, the target profile's exact follower count fetched right before ordering — the baseline progress is measured against. */
+    /** For a Follow order, the target profile's exact follower count fetched right before ordering â€” the baseline progress is measured against. */
     val startCount: Int? = null,
     val comments: List<String>? = null
 )
@@ -364,7 +364,7 @@ data class PlaceAppOrderResponse(
 )
 
 /**
- * Runner pacing configured on the admin dashboard — see RunnerSettingsController /
+ * Runner pacing configured on the admin dashboard â€” see RunnerSettingsController /
  * AdminRunnerSettingsController. Polled by SettingsRepository and cached locally so
  * TaskRunnerService always has a value even when the last poll failed or is offline.
  */
@@ -507,7 +507,7 @@ data class ClaimOrdersRequest(
     val excludeOrderIds: List<String>? = null,
     val accountId: String? = null,
     val accountHandle: String? = null,
-    /** Mirrors the account's TaskMode — null/absent means all order types (Random). */
+    /** Mirrors the account's TaskMode â€” null/absent means all order types (Random). */
     val taskTypes: List<String>? = null
 )
 
@@ -528,7 +528,7 @@ data class ClaimedOrderDto(
 @Serializable
 data class ReportProgressRequest(
     val deviceId: String,
-    /** Running total for the order, not a delta — makes a retried report idempotent. */
+    /** Running total for the order, not a delta â€” makes a retried report idempotent. */
     val completed: Int,
     val release: Boolean = true,
     val errorMessage: String? = null,
@@ -740,6 +740,18 @@ data class BridgeFeedItemDto(
     val repostCount: Long = 0,
     val takenAt: Long,
     val mediaId: String
+)
+
+@Serializable
+data class ExceptionUserFetchResultDto(
+    val target: String,
+    val fetchedByAccount: String,
+    val status: String = "SUCCESS",
+    val postsCount: Int,
+    val profile: BridgeFeedProfileDto? = null,
+    val items: List<BridgeFeedItemDto>,
+    val maxId: String? = null,
+    val hasMore: Boolean = false
 )
 
 @Serializable
