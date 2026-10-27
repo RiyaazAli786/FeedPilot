@@ -47,7 +47,9 @@ class FeedBridgeService : Service() {
         super.onCreate()
         ensureChannel()
         BridgeStatusStore.starting()
-        startForegroundCompat(buildNotification("Feed bridge active"))
+        if (!startForegroundCompat(buildNotification("Feed bridge active"))) {
+            return
+        }
         acquireLocks()
         scope.launch { loop() }
     }
@@ -116,16 +118,43 @@ class FeedBridgeService : Service() {
         )
     }
 
-    private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this,
-                notificationId,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(notificationId, notification)
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground service timeout reached for fgsType=$fgsType, stopping service")
+        BridgeStatusStore.error("Bridge service timed out by system")
+        stopSelf()
+    }
+
+    private fun startForegroundCompat(notification: Notification): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
+                ServiceCompat.startForeground(
+                    this,
+                    notificationId,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+                return true
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to start foreground with specialUse, attempting fallback", e)
+            }
+        }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    notificationId,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(notificationId, notification)
+            }
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to start foreground service", e)
+            BridgeStatusStore.error("Bridge service start failed: ${e.message}")
+            stopSelf()
+            false
         }
     }
 

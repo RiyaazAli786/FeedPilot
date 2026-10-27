@@ -1014,15 +1014,21 @@ class TaskRunnerService : Service() {
     }
 
     private fun startForegroundCompat(notification: Notification) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            try {
                 ServiceCompat.startForeground(
                     this,
                     notificationId,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to start foreground with specialUse, attempting fallback", e)
+            }
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
                     this,
                     notificationId,

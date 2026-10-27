@@ -192,21 +192,31 @@ class CsvAccountImportService : Service() {
 
     private fun startForegroundCompat(notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+            try {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+                return
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to start foreground with specialUse, attempting fallback", e)
+            }
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to start foreground service", e)
         }
     }
 

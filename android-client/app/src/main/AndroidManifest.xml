@@ -89,7 +89,11 @@
         <service
             android:name=".service.FeedBridgeService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse|dataSync">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Continuous Low-Latency Instagram Bridge Processing" />
+        </service>
 
         <!-- FileProvider for delivering downloaded update APKs to the package installer -->
         <provider
