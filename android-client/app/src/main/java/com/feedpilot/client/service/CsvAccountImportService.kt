@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -278,6 +279,7 @@ class CsvAccountImportService : Service() {
     )
 
     companion object {
+        private const val TAG = "CsvAccountImportService"
         const val ACTION_OPEN_CSV_IMPORT_STATUS = "com.feedpilot.client.OPEN_CSV_IMPORT_STATUS"
         private const val EXTRA_FILE_PATH = "csv_file_path"
         private const val NOTIFICATION_ID = 4309
