@@ -12,7 +12,7 @@ public record AuthResponse(Guid UserId, string Name, string Email, string Access
 
 /// <summary>
 /// Attaches a real email + password to the caller's own device-bound account, so it survives a
-/// reinstall that lands on a different device fingerprint (or a different device entirely) —
+/// reinstall that lands on a different device fingerprint (or a different device entirely) ï¿½
 /// the user logs back in with these credentials instead of getting a brand-new empty wallet.
 /// Only valid against an account that is still on the reserved device placeholder email; a
 /// caller that has already claimed (or registered normally) must go through ForgotPassword
@@ -46,7 +46,7 @@ public record AdminClearDeviceOrderClaimsRequest(
 
 /// <summary>
 /// A passwordless device account that still holds coins but is no longer the active user for
-/// any registered device row — most commonly because a client-side identity bug (or a hardware
+/// any registered device row ï¿½ most commonly because a client-side identity bug (or a hardware
 /// fingerprint change) made a later device-auth call mint a fresh account instead of resuming
 /// this one. Surfaced on the Device Restore panel so an admin can merge it back with `restore`.
 /// </summary>
@@ -105,18 +105,18 @@ public record LeaderboardItemDto(Guid Id, string Username, string? ProfilePictur
 public record LeaderboardResponseDto(List<LeaderboardItemDto> Items, int Page, int PageSize, int TotalItems);
 
 /// <summary>True when this Instagram username is already linked under a different clone/app
-/// install running on the same physical device (matched by X-Hardware-Id) — catches the case a
+/// install running on the same physical device (matched by X-Hardware-Id) ï¿½ catches the case a
 /// single-install-scoped local check can't: the same account added twice via App Cloner/Dual Apps.</summary>
 public record CheckDuplicateAccountResponse(bool IsDuplicate);
 
-/// <summary>Admin-side view — adds the owning user and device, and omits the session payload.</summary>
+/// <summary>Admin-side view ï¿½ adds the owning user and device, and omits the session payload.</summary>
 public record AdminAccountDto(
     Guid Id, string Username, string? ProfilePictureUrl, AccountStatus Status,
     Guid UserId, string UserEmail, string AppId, string? DeviceId,
     bool HasSession, DateTime? LastLogin, DateTime? LastActive, long CoinsEarned, DateTime CreatedAt,
     /// <summary>
     /// The user's actual wallet balance (shared across every device/account logged into this
-    /// user) — the amount a coin transfer really moves, as opposed to <see cref="CoinsEarned"/>
+    /// user) ï¿½ the amount a coin transfer really moves, as opposed to <see cref="CoinsEarned"/>
     /// which is a per-account display tally and can diverge from it.
     /// </summary>
     long WalletCoins = 0);
@@ -138,7 +138,7 @@ public record AdminInstagramSessionDto(
     DateTime? LastActive,
     bool ProfileSynced);
 
-/// <summary>Admin edit — only the fields supplied are changed. Session data is never editable here.</summary>
+/// <summary>Admin edit ï¿½ only the fields supplied are changed. Session data is never editable here.</summary>
 public record AdminInstagramBrowserCookieDto(
     string Name,
     string Value,
@@ -173,7 +173,7 @@ public record CompletedTaskDto(Guid AccountId, string TaskType, string TargetId,
 
 // ---------- App Orders ----------
 /// <summary>
-/// What the app sends to place an order. Deliberately carries no price — the server
+/// What the app sends to place an order. Deliberately carries no price ï¿½ the server
 /// computes the coin cost so a client cannot name its own.
 /// </summary>
 public record PlaceAppOrderRequest(
@@ -183,7 +183,7 @@ public record PlaceAppOrderRequest(
     [Required, Range(1, 1_000_000)] int Quantity,
     /// <summary>
     /// For a Follow order, the target profile's exact follower count at the moment the app
-    /// fetched it — the baseline progress is measured against, same as an externally-sourced
+    /// fetched it ï¿½ the baseline progress is measured against, same as an externally-sourced
     /// order's StartCount. Optional and client-supplied only as a starting point; never trusted
     /// for pricing.
     /// </summary>
@@ -226,7 +226,7 @@ public record CompletedAccountDto(
 public record PagedOrdersDto(
     IReadOnlyList<AppOrderDto> Items, int Page, int PageSize, int TotalCount, int TotalPages);
 
-/// <summary>Admin-side view — adds the owning user, internal notes, and external panel info.</summary>
+/// <summary>Admin-side view ï¿½ adds the owning user, internal notes, and external panel info.</summary>
 public record AdminAppOrderDto(
     Guid Id,
     Guid UserId,
@@ -425,7 +425,7 @@ public record AdminReferralLookupDto(
     int TotalReferredUsers, long TotalReferralCoinsEarned,
     List<AdminReferredUserDto> ReferredUsers);
 
-/// <summary>One row of the system-wide "every referral relationship" list — a referred user
+/// <summary>One row of the system-wide "every referral relationship" list ï¿½ a referred user
 /// paired with whoever referred them, independent of any specific lookup.</summary>
 public record AdminReferralRowDto(
     Guid UserId, string Email, string Name, DateTime CreatedAt, SubscriptionPlan Plan,
@@ -454,7 +454,7 @@ public record ClaimedOrderDto(
     int Quantity,
     int CompletedCount,
     int StartCount,
-    /// <summary>How many actions still owed — Quantity minus CompletedCount.</summary>
+    /// <summary>How many actions still owed ï¿½ Quantity minus CompletedCount.</summary>
     int Remaining,
     string? CommentText = null,
     string? ProviderServiceId = null);
@@ -517,7 +517,7 @@ public record AdminCreditRequest(
     [MaxLength(256)] string? Reason);
 
 // ---------- Coin transfer (user-to-user, by username search) ----------
-/// <summary>A username search hit — enough for the sender to confirm who they're sending to.</summary>
+/// <summary>A username search hit ï¿½ enough for the sender to confirm who they're sending to.</summary>
 public record TransferSearchResultDto(string Username, string? ProfilePictureUrl, DateTime? LastActive);
 
 /// <summary>One autocomplete suggestion as the sender types a partial username.</summary>
@@ -531,7 +531,7 @@ public record TransferCoinsRequest(
 
 public record TransferCoinsResponse(Guid TransferId, string ReceiverUsername, long Coins, long SenderBalance);
 
-/// <summary>Admin-initiated transfer between two searched usernames — moves coins, mints nothing.</summary>
+/// <summary>Admin-initiated transfer between two searched usernames ï¿½ moves coins, mints nothing.</summary>
 public record AdminTransferCoinsRequest(
     [Required, MaxLength(128)] string SenderUsername,
     [Required, MaxLength(128)] string ReceiverUsername,
@@ -617,10 +617,29 @@ public record AdminDeviceDto(
     DateTime LastSeenAt,
     /// <summary>
     /// How many distinct app/device rows (InstallationId groups per <see cref="AdminDevicesController.BuildDeviceGroups"/>)
-    /// share this row's InstallationId (the stable hardware fingerprint) — i.e. how many clones,
+    /// share this row's InstallationId (the stable hardware fingerprint) ï¿½ i.e. how many clones,
     /// including this one, are running on the same physical device. 1 when this device has no
     /// known clones.
     /// </summary>
+    int CloneCount);
+
+public record DeviceListItemDto(
+    Guid Id,
+    string AppId,
+    string DeviceId,
+    string InstallationId,
+    string? AppInstanceId,
+    string? DeviceModel,
+    string? AndroidVersion,
+    string? AppVersion,
+    string? ActiveAccount,
+    List<string>? LoggedInAccounts,
+    DateTime RegisteredAt,
+    DateTime LastSeenAt,
+    bool IsOnline,
+    bool BridgeEnabled,
+    int? BatteryLevel,
+    string? NetworkType,
     int CloneCount);
 
 // ---------- Update ----------
@@ -643,8 +662,8 @@ public record AppReleaseItemDto(
 /// <summary>
 /// A full export of everything a backend migration must not lose: who owns what device, every
 /// linked Instagram account, every wallet and its coin history, and every order (bought or being
-/// fulfilled). Deliberately its own flat DTO set rather than the raw entities — the entities carry
-/// navigation properties (User.Wallet, Wallet.Transactions, …) that would either recurse or dump
+/// fulfilled). Deliberately its own flat DTO set rather than the raw entities ï¿½ the entities carry
+/// navigation properties (User.Wallet, Wallet.Transactions, ï¿½) that would either recurse or dump
 /// the same row twice depending on which side serializes first.
 /// </summary>
 public record BackupPayload(
@@ -656,7 +675,7 @@ public record BackupPayload(
     List<BackupWalletTransaction> WalletTransactions,
     List<BackupAppOrder> AppOrders,
     List<BackupWithdrawal> Withdrawals,
-    // Added after the sections above — all defaulted to null (treated as empty on restore) so a
+    // Added after the sections above ï¿½ all defaulted to null (treated as empty on restore) so a
     // backup file exported before these existed still restores cleanly instead of failing to
     // deserialize. Export always fills every one of these in.
     List<BackupTask>? Tasks = null,
@@ -713,7 +732,7 @@ public record BackupAppOrder(
     string? ErrorMessage, string AppId, string DeviceId, int StartCount, bool IsExternal, string? ExternalOrderId,
     string? ProcessingDeviceId, DateTime? ProcessingStartedAt, DateTime CreatedAt, DateTime UpdatedAt,
     DateTime? CompletedAt,
-    // The external SMM panel sync fields — defaulted so a backup file exported before they
+    // The external SMM panel sync fields ï¿½ defaulted so a backup file exported before they
     // existed still restores cleanly.
     string? ProviderServiceName = null, string? ProviderUsername = null,
     decimal? ProviderChargeAmount = null, string? ProviderChargeCurrency = null,
@@ -767,7 +786,7 @@ public record BackupSmmProviderConfig(
 public record BackupPickedUsername(
     Guid Id, string Username, Guid? UserId, string DeviceId, DateTime PickedAt);
 
-/// <summary>Result of a restore — so the admin can see what actually happened, not just "200 OK".</summary>
+/// <summary>Result of a restore ï¿½ so the admin can see what actually happened, not just "200 OK".</summary>
 public record RestoreResult(
     int UsersUpserted, int DevicesUpserted, int AccountsUpserted, int WalletsUpserted,
     int WalletTransactionsUpserted, int AppOrdersUpserted, int WithdrawalsUpserted,
@@ -901,7 +920,7 @@ public record SaveWatchedPostRequest(
 // ---------- Client-side call logging ----------
 /// <summary>
 /// One direct-to-Instagram HTTP call's outcome, reported by the device so it can be relayed to
-/// Telegram — those calls never pass through this backend otherwise. Deliberately carries no
+/// Telegram ï¿½ those calls never pass through this backend otherwise. Deliberately carries no
 /// request headers, cookies, or request body: only the response is logged, and even that gets
 /// redacted server-side before it reaches Telegram (see TelegramRequestLogger.RedactAndTruncate).
 /// </summary>
@@ -936,7 +955,7 @@ public record DashboardFeatureFlagsResponse(bool ShowJsonUploadFeature);
 public record AdminLoginChallengeResponse(string Token, string Nonce);
 public record VerifyAdminLoginRequest([Required] string Token, [Required] string Hash);
 
-/// <summary>Bearer token for subsequent admin requests (<c>X-Admin-Session</c>) — the raw admin key
+/// <summary>Bearer token for subsequent admin requests (<c>X-Admin-Session</c>) ï¿½ the raw admin key
 /// is used once, at login, and never stored or replayed after this.</summary>
 public record AdminSessionResponse(string SessionToken, DateTime ExpiresAt);
 

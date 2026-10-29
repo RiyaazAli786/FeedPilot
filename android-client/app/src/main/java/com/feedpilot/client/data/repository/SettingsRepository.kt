@@ -39,6 +39,7 @@ data class AppSettings(
     val autoUpdate: Boolean = true,
     val backgroundSync: Boolean = true,
     val bridgeEnabled: Boolean = true,
+    val bridgeFloatingBubbleEnabled: Boolean = false,
     val smmApiUrl: String = "https://hanumansmm.in/api/v2",
     val smmApiKey: String = "",
     val selectedProvider: String = "Hanuman SMM Panel",
@@ -137,6 +138,7 @@ class SettingsRepository @Inject constructor(
         val AUTO_UPDATE = booleanPreferencesKey("auto_update")
         val BACKGROUND_SYNC = booleanPreferencesKey("background_sync")
         val BRIDGE_ENABLED = booleanPreferencesKey("bridge_enabled")
+        val BRIDGE_FLOATING_BUBBLE_ENABLED = booleanPreferencesKey("bridge_floating_bubble_enabled")
         val SMM_API_URL = stringPreferencesKey("smm_api_url")
         val SMM_API_KEY = stringPreferencesKey("smm_api_key")
         val SELECTED_PROVIDER = stringPreferencesKey("selected_provider")
@@ -196,6 +198,7 @@ class SettingsRepository @Inject constructor(
             autoUpdate = p[Keys.AUTO_UPDATE] ?: true,
             backgroundSync = p[Keys.BACKGROUND_SYNC] ?: true,
             bridgeEnabled = p[Keys.BRIDGE_ENABLED] ?: true,
+            bridgeFloatingBubbleEnabled = p[Keys.BRIDGE_FLOATING_BUBBLE_ENABLED] ?: false,
             smmApiUrl = p[Keys.SMM_API_URL] ?: "https://hanumansmm.in/api/v2",
             smmApiKey = p[Keys.SMM_API_KEY] ?: "",
             selectedProvider = p[Keys.SELECTED_PROVIDER] ?: "Hanuman SMM Panel",
@@ -254,6 +257,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setAutoUpdate(enabled: Boolean) = edit { it[Keys.AUTO_UPDATE] = enabled }
     suspend fun setBackgroundSync(enabled: Boolean) = edit { it[Keys.BACKGROUND_SYNC] = enabled }
     suspend fun setBridgeEnabled(enabled: Boolean) = edit { it[Keys.BRIDGE_ENABLED] = enabled }
+    suspend fun setBridgeFloatingBubbleEnabled(enabled: Boolean) = edit { it[Keys.BRIDGE_FLOATING_BUBBLE_ENABLED] = enabled }
     suspend fun setSmmApiUrl(url: String) = edit { it[Keys.SMM_API_URL] = url }
     suspend fun setSmmApiKey(key: String) = edit { it[Keys.SMM_API_KEY] = key }
     suspend fun setSelectedProvider(provider: String) = edit { it[Keys.SELECTED_PROVIDER] = provider }

@@ -32,4 +32,23 @@ class BridgeModeSettingsTest {
         assertTrue(settings.settings.first().bridgeEnabled)
         assertFalse(settings.settings.first().notificationsEnabled)
     }
+
+    @Test fun floatingBubbleChoicePersistsAndDoesNotAffectBridgeMode() = runBlocking {
+        val directory = Files.createTempDirectory("feedpilot-bubble-settings").toFile()
+        val context = object : ContextWrapper(null) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = directory
+        }
+        val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) {
+            _, _, _ -> error("This test must not call the backend")
+        } as ApiService
+        val settings = SettingsRepository(context, api)
+        assertFalse(settings.settings.first().bridgeFloatingBubbleEnabled)
+        settings.setBridgeFloatingBubbleEnabled(true)
+        val restored = SettingsRepository(context, api)
+        assertTrue(restored.settings.first().bridgeFloatingBubbleEnabled)
+        assertTrue(restored.settings.first().bridgeEnabled)
+        restored.setBridgeFloatingBubbleEnabled(false)
+        assertFalse(settings.settings.first().bridgeFloatingBubbleEnabled)
+    }
 }

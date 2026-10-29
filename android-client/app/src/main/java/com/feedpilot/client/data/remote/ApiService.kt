@@ -195,6 +195,13 @@ interface ApiService {
     @POST("api/devices/register")
     suspend fun registerDevice(@Body body: RegisterDeviceRequest): DeviceDto
 
+    @GET("api/devices")
+    suspend fun getDevices(
+        @Query("search") search: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 20
+    ): com.feedpilot.client.data.remote.dto.PagedDevicesDto
+
     // ---------- Instagram Device Feed Bridge ----------
     @POST("api/bridge/devices/heartbeat")
     suspend fun sendBridgeHeartbeat(@Body body: BridgeHeartbeatRequest): BridgeHeartbeatResponse

@@ -501,6 +501,11 @@ private fun MainScreenLayout(
                 composable(Routes.BRIDGE_LOGS) {
                     if (bridgeEnabled) com.feedpilot.client.feature.bridge.BridgeLogsScreen()
                 }
+                composable(Routes.DEVICES) {
+                    com.feedpilot.client.feature.devices.DevicesScreen(
+                        onSettings = { navController.navigate(Routes.SETTINGS) }
+                    )
+                }
                 composable(Routes.SETTINGS) {
                     SettingsScreen(
                         onBack = { navController.popBackStack() },
@@ -647,7 +652,9 @@ private fun BottomNavBar(navController: NavHostController, currentRoute: String?
                 Text(
                     tab.label,
                     color = color,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                 )
             }

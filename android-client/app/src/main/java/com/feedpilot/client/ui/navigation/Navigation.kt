@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -18,6 +19,7 @@ object Routes {
     const val ORDERS = "orders"
     const val TASKS = "tasks"
     const val BRIDGE_LOGS = "bridge_logs"
+    const val DEVICES = "devices"
 
     const val LOGIN = "login"
     const val SETTINGS = "settings"
@@ -48,5 +50,6 @@ enum class BottomTab(val route: String, val label: String, val icon: ImageVector
     Posts(Routes.POSTS, "Posts", Icons.Filled.Favorite),
     Handles(Routes.HANDLES, "Handle", Icons.Filled.Visibility),
     Orders(Routes.ORDERS, "Orders", Icons.Filled.ShoppingCart),
-    Bridge(Routes.BRIDGE_LOGS, "Bridge", Icons.AutoMirrored.Filled.Assignment)
+    Bridge(Routes.BRIDGE_LOGS, "Bridge", Icons.AutoMirrored.Filled.Assignment),
+    Device(Routes.DEVICES, "Device", Icons.Filled.PhoneAndroid)
 }

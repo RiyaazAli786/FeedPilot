@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.work.*
 import com.feedpilot.client.data.repository.SettingsRepository
 import com.feedpilot.client.service.FeedBridgeService
+import com.feedpilot.client.service.FloatingBridgeBubbleService
 import com.feedpilot.client.worker.FeedBridgeWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
@@ -28,6 +29,17 @@ class BridgeModeController @Inject constructor(
     fun start() {
         if (observation != null) return
         observation = scope.launch {
+            launch {
+                settings.settings.map { it.bridgeFloatingBubbleEnabled }
+                    .distinctUntilChanged()
+                    .collectLatest { bubbleEnabled ->
+                        if (bubbleEnabled && FloatingBridgeBubbleService.isOverlayPermissionGranted(context)) {
+                            FloatingBridgeBubbleService.start(context)
+                        } else {
+                            FloatingBridgeBubbleService.stop(context)
+                        }
+                    }
+            }
             settings.settings.map { it.bridgeEnabled }.distinctUntilChanged().collectLatest { enabled ->
                 BridgeStatusStore.setEnabled(enabled)
                 val work = WorkManager.getInstance(context)

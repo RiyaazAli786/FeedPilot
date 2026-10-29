@@ -799,3 +799,33 @@ data class BridgeHighlightDto(
     val coverUrl: String? = null,
     val items: List<BridgeStoryItemDto> = emptyList()
 )
+
+// ---------- Devices Tab ----------
+@Serializable
+data class DeviceListItemDto(
+    val id: String,
+    val appId: String,
+    val deviceId: String,
+    val installationId: String,
+    val appInstanceId: String? = null,
+    val deviceModel: String? = null,
+    val androidVersion: String? = null,
+    val appVersion: String? = null,
+    val activeAccount: String? = null,
+    val loggedInAccounts: List<String>? = null,
+    val registeredAt: String,
+    val lastSeenAt: String,
+    val isOnline: Boolean = false,
+    val bridgeEnabled: Boolean = false,
+    val batteryLevel: Int? = null,
+    val networkType: String? = null,
+    val cloneCount: Int = 1
+)
+
+@Serializable
+data class PagedDevicesDto(
+    val items: List<DeviceListItemDto> = emptyList(),
+    val total: Int = 0,
+    val page: Int = 1,
+    val pageSize: Int = 20
+)

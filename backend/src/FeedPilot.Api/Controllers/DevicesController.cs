@@ -113,6 +113,159 @@ public class DevicesController : ControllerBase
             device.AppInstanceId, device.ActiveAccount, loggedInList, device.RegisteredAt));
     }
 
+    /// <summary>
+    /// Returns a paginated list of all registered devices with their online/offline status and bridge on/off state.
+    /// Supports text search filtering by model, device id, installation id, or accounts.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<DeviceListItemDto>>> List(
+        [FromQuery] string? search,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        try
+        {
+            var query = _db.Devices.AsNoTracking().AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var term = search.Trim();
+                query = query.Where(d =>
+                    (d.DeviceModel != null && d.DeviceModel.Contains(term)) ||
+                    (d.DeviceId != null && d.DeviceId.Contains(term)) ||
+                    (d.InstallationId != null && d.InstallationId.Contains(term)) ||
+                    (d.ActiveAccount != null && d.ActiveAccount.Contains(term)) ||
+                    (d.LoggedInAccountsJson != null && d.LoggedInAccountsJson.Contains(term)) ||
+                    (d.AndroidId != null && d.AndroidId.Contains(term)) ||
+                    (d.AppId != null && d.AppId.Contains(term)));
+            }
+
+            var allDevices = await query.ToListAsync(ct);
+            var groups = BuildDeviceGroups(allDevices)
+                .OrderByDescending(g => g.LastSeenAt)
+                .ToList();
+            var total = groups.Count;
+
+            var paged = groups
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToList();
+
+            var deviceIds = paged.Select(d => d.DeviceId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+            var bridgeStates = deviceIds.Count > 0
+                ? await _db.FeedBridgeDeviceStates.AsNoTracking()
+                    .Where(b => deviceIds.Contains(b.DeviceId))
+                    .ToListAsync(ct)
+                : new List<FeedBridgeDeviceState>();
+
+            var bridgeMap = bridgeStates
+                .GroupBy(b => b.DeviceId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(b => b.LastSeenAt).First()
+                );
+
+            var cloneCounts = groups
+                .Where(g => !string.IsNullOrWhiteSpace(g.InstallationId))
+                .GroupBy(g => g.InstallationId)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var now = DateTime.UtcNow;
+            var onlineThreshold = TimeSpan.FromMinutes(2);
+
+            var items = paged.Select(d =>
+            {
+                bridgeMap.TryGetValue(d.DeviceId, out var bridge);
+
+                var effectiveLastSeen = bridge is not null && bridge.LastSeenAt > d.LastSeenAt
+                    ? bridge.LastSeenAt
+                    : d.LastSeenAt;
+
+                var isOnline = (now - effectiveLastSeen) <= onlineThreshold;
+                var isBridgeEnabled = bridge?.BridgeEnabled ?? false;
+                var loggedInList = parseLoggedInAccounts(d.LoggedInAccountsJson);
+                var cloneCount = !string.IsNullOrWhiteSpace(d.InstallationId) &&
+                    cloneCounts.TryGetValue(d.InstallationId, out var count) ? count : 1;
+
+                return new DeviceListItemDto(
+                    d.Id,
+                    d.AppId,
+                    d.DeviceId,
+                    d.InstallationId,
+                    d.AppInstanceId,
+                    d.DeviceModel ?? bridge?.DeviceModel,
+                    d.AndroidVersion ?? bridge?.AndroidVersion,
+                    d.AppVersion ?? bridge?.AppVersion,
+                    d.ActiveAccount ?? bridge?.ActiveAccountUsername,
+                    loggedInList,
+                    d.RegisteredAt,
+                    effectiveLastSeen,
+                    isOnline,
+                    isBridgeEnabled,
+                    bridge?.BatteryLevel,
+                    bridge?.NetworkType,
+                    cloneCount
+                );
+            }).ToList();
+
+            return Ok(new PagedResult<DeviceListItemDto>(items, total, page, pageSize));
+        }
+        catch (Exception)
+        {
+            return Ok(new PagedResult<DeviceListItemDto>(new List<DeviceListItemDto>(), 0, page, pageSize));
+        }
+    }
+
+    private static IEnumerable<Device> BuildDeviceGroups(IEnumerable<Device> devices) =>
+        devices
+            .GroupBy(DeviceGroupKey)
+            .Select(group =>
+            {
+                var ordered = group
+                    .OrderByDescending(d => d.LastSeenAt)
+                    .ThenByDescending(d => d.RegisteredAt)
+                    .ToList();
+                var canonical = ordered.First();
+                var loggedInAccounts = ordered
+                    .SelectMany(d => parseLoggedInAccounts(d.LoggedInAccountsJson) ?? new List<string>())
+                    .Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                canonical.LoggedInAccountsJson = loggedInAccounts.Count > 0
+                    ? JsonSerializer.Serialize(loggedInAccounts)
+                    : ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.LoggedInAccountsJson))?.LoggedInAccountsJson;
+                canonical.ActiveAccount ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.ActiveAccount))?.ActiveAccount;
+                canonical.UserId ??= ordered.FirstOrDefault(d => d.UserId.HasValue)?.UserId;
+                canonical.DeviceModel ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.DeviceModel))?.DeviceModel;
+                canonical.AppVersion ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.AppVersion))?.AppVersion;
+                canonical.AndroidVersion ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.AndroidVersion))?.AndroidVersion;
+                canonical.AndroidId ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.AndroidId))?.AndroidId;
+                canonical.AppInstanceId ??= ordered.FirstOrDefault(d => !string.IsNullOrWhiteSpace(d.AppInstanceId))?.AppInstanceId;
+                canonical.RegisteredAt = ordered.Min(d => d.RegisteredAt);
+                canonical.LastSeenAt = ordered.Max(d => d.LastSeenAt);
+                return canonical;
+            });
+
+    private static string DeviceGroupKey(Device device)
+    {
+        var appId = string.IsNullOrWhiteSpace(device.AppId)
+            ? ClientIdentityDefaults.Unknown
+            : device.AppId.Trim().ToLowerInvariant();
+        var appInstanceId = device.AppInstanceId?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(appInstanceId)) return $"{appId}|instance|{appInstanceId}";
+
+        var deviceId = device.DeviceId?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrWhiteSpace(deviceId)) return $"{appId}|device|{deviceId}";
+
+        var installationId = device.InstallationId?.Trim().ToLowerInvariant() ?? string.Empty;
+        return $"{appId}|install|{installationId}";
+    }
+
     private static List<string>? parseLoggedInAccounts(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
