@@ -7,7 +7,7 @@
 > - [docs/ARCHITECTURE.md](file:///c:/CoreProjects/FeedPilot/docs/ARCHITECTURE.md) (subsystem architecture)
 > - [docs/API.md](file:///c:/CoreProjects/FeedPilot/docs/API.md) (core endpoint inventory)
 > - [docs/BUILD.md](file:///c:/CoreProjects/FeedPilot/docs/BUILD.md) (compilation instructions)
-> - [docs/DEPLOYMENT.md](file:///c:/CoreProjects/FeedPilot/docs/DEPLOYMENT.md) (VPS & Render deployment runbook)
+> - [docs/DEPLOYMENT.md](file:///c:/CoreProjects/FeedPilot/docs/DEPLOYMENT.md) (VPS deployment runbook)
 > - [docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md](file:///c:/CoreProjects/FeedPilot/docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md) (feed bridge deep-dive)
 > - [Implementation.md](file:///c:/CoreProjects/FeedPilot/Implementation.md) (Android Social Engagement Client specification)
 
@@ -48,7 +48,7 @@
    - App release center, database backup/restore, user wallet credit management, device telemetry, and picked username management.
 5. **Multi-Target Deployment Infrastructure**:
    - **Primary Production VPS**: Hosted at `https://bridge.reelsflow.io` (`200.234.41.82`) using Docker host networking, Nginx reverse proxy, Let's Encrypt TLS, local PostgreSQL `bridgefeed` database, and persistent directory mounts (`/app/wwwroot/apk`, `/app/wwwroot/upgrade`, `/app/wwwroot/comments`, `/app/wwwroot/generator`). One-click deployment via `deploy-bridgefeed.bat` and `deploy/`.
-   - **Secondary / Staging**: Render blueprint (`render.yaml`) with Backblaze B2 asset storage integration.
+
 6. **Auxiliary Clients**:
    - SwiftUI iOS starter (`ios-client`) for device auth and watched handle tracking.
    - Manifest V3 Chrome Extensions (`chrome-extension/`) for cookie synchronization and live Instagram session inspection.
@@ -119,7 +119,6 @@ FeedPilot/
 ├── PROJECT_CONTEXT.md                  # Operational boundaries, security snapshot & verification notes
 ├── context.md                          # Exhaustive workspace architecture and ecosystem context
 ├── Implementation.md                   # Formal specification for Android Social Engagement Client
-├── render.yaml                         # Staging blueprint for Render cloud platform
 ├── deploy-bridgefeed.bat               # One-click master deployment to bridge.reelsflow.io
 ├── deploy-auto-update.bat              # Local automated update script
 ├── deploy-auto-update-b2.ps1           # Legacy Backblaze B2 APK release pipeline
@@ -189,7 +188,7 @@ FeedPilot/
     ├── ARCHITECTURE.md                 # System architecture overview
     ├── API.md                          # Core API endpoint inventory
     ├── BUILD.md                        # Compilation instructions
-    ├── DEPLOYMENT.md                   # VPS & Render deployment guides
+    ├── DEPLOYMENT.md                   # VPS deployment guide
     ├── INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md # Exhaustive feed bridge specification
     ├── IOS.md                          # iOS client guidelines
     └── order-processing-performance-plan.md   # Order settlement concurrency design
@@ -360,10 +359,6 @@ The persistence layer is managed by [AppDbContext.cs](file:///c:/CoreProjects/Fe
   * One-Click Full Deploy: `.\deploy-bridgefeed.bat`
   * Backend Only: `pwsh deploy/deploy-backend.ps1`
   * Android Release Build & Publish: `pwsh deploy/deploy-android.ps1`
-
-### Secondary Staging (Render Cloud)
-- Configured via [render.yaml](file:///c:/CoreProjects/FeedPilot/render.yaml) targeting Docker container build.
-- Requires Backblaze B2 environment variables when local disk persistence is not available.
 
 ### Required Environment Variables:
 ```ini

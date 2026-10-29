@@ -9,7 +9,7 @@ to `com.feedpilot.client`, and add the Swift files under `FeedPilot/` to the tar
 Default API base URL:
 
 ```text
-https://feedpilot-api-ount-kooq.onrender.com/
+https://bridge.reelsflow.io/
 ```
 
 Implemented starter surface:

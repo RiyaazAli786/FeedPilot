@@ -8,11 +8,11 @@ set "BACKEND_APK_DIR=%ROOT%backend\src\FeedPilot.Api\wwwroot\apk"
 set "BASE_APK_URL=https://bridge.reelsflow.io/apk"
 
 echo =======================================================
-echo FeedPilot - Render Auto Update Deploy File
+echo FeedPilot - Server Auto Update Deploy File
 echo =======================================================
 echo This builds the next release APK, copies it into the
 echo backend /apk static folder, and writes update metadata.
-echo Render will serve it after you commit, push, and redeploy.
+echo The server will serve it after deployment.
 echo.
 
 set "RELEASE_NOTES="
@@ -60,7 +60,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Auto-update package is ready for Render.
+echo [4/4] Auto-update package is ready for server deployment.
 echo.
 echo Files prepared:
 dir /b "%BACKEND_APK_DIR%"
@@ -70,7 +70,7 @@ echo   git add android-client\release-update.properties backend\src\FeedPilot.Ap
 echo   git commit -m "Prepare FeedPilot auto update release"
 echo   git push origin main
 echo.
-echo Render will redeploy the backend, serve /apk/*.apk, and seed /api/version from update-metadata.json.
+echo Deploying the backend will, serve /apk/*.apk, and seed /api/version from update-metadata.json.
 echo Latest version endpoint: https://bridge.reelsflow.io/api/version
 echo Latest APK redirect    : https://bridge.reelsflow.io/api/apk/latest
 echo.

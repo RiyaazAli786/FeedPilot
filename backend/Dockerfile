@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Build context is this `backend/` directory (see render.yaml dockerContext).
+# Build context is this `backend/` directory 
 
 # ---- build ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
@@ -20,7 +20,7 @@ COPY --from=build /app .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false
-# Render provides $PORT at runtime; Program.cs binds to it. 8080 is only the documented default.
+# Runtime provides $PORT (or binds default); Program.cs binds to it. 8080 is only the documented default.
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "FeedPilot.Api.dll"]

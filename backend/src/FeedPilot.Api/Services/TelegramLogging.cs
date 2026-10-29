@@ -12,7 +12,7 @@ public class TelegramSettings
 {
     /// <summary>
     /// Master switch, separate from BotToken/ChatId, so an operator can pause/resume logging from
-    /// a Render env var (Telegram__Enabled) without touching the bot credentials.
+    /// an env var (Telegram__Enabled) without touching the bot credentials.
     /// </summary>
     public bool Enabled { get; set; }
 

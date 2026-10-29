@@ -47,7 +47,7 @@ if ([string]::IsNullOrWhiteSpace($AdminKey)) {
     $AdminKey = [Environment]::GetEnvironmentVariable("FEEDPILOT_ADMIN_KEY")
 }
 if ([string]::IsNullOrWhiteSpace($AdminKey)) {
-    $secure = Read-Host "Render admin key" -AsSecureString
+    $secure = Read-Host "Backend admin key" -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
     try {
         $AdminKey = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
@@ -72,7 +72,7 @@ if ([string]::IsNullOrWhiteSpace($ForceUpdate)) {
 }
 
 Write-Host "======================================================="
-Write-Host "FeedPilot - Render B2 Auto Update Deploy"
+Write-Host "FeedPilot - Server B2 Auto Update Deploy"
 Write-Host "======================================================="
 Write-Host "Backend : $BackendUrl"
 Write-Host "Force   : $ForceUpdate"
@@ -102,10 +102,10 @@ if (!(Test-Path $metadataPath)) {
 }
 $metadata = Get-Content -Raw $metadataPath | ConvertFrom-Json
 
-Write-Host "[2/4] Authenticating with Render backend admin..."
+Write-Host "[2/4] Authenticating with backend admin..."
 $session = Get-AdminSession -BaseUrl $BackendUrl -Key $AdminKey
 
-Write-Host "[3/4] Uploading APK to Render backend. Backend will place it in B2..."
+Write-Host "[3/4] Uploading APK to backend. Backend will place it in B2..."
 $client = [System.Net.Http.HttpClient]::new()
 $content = [System.Net.Http.MultipartFormDataContent]::new()
 $fileStream = [System.IO.File]::OpenRead($apk.FullName)

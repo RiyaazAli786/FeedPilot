@@ -14,7 +14,7 @@ Swagger is available in Development at `/swagger`.
 
 ## Production Configuration
 
-Set these through Render environment variables:
+Set these through environment variables:
 
 ```text
 ASPNETCORE_ENVIRONMENT=Production

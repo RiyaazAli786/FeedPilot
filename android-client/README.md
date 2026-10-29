@@ -22,7 +22,7 @@ sdk.dir=C\:\\Program Files (x86)\\Android\\android-sdk
 Current placeholder:
 
 ```text
-https://feedpilot-api-ount-kooq.onrender.com/
+https://bridge.reelsflow.io/
 ```
 
 ## Main Features

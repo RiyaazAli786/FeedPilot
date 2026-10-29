@@ -30,7 +30,7 @@ The repository also includes a backend-hosted admin dashboard, a SwiftUI iOS sta
 | `chrome-extension/` | Manifest V3 Instagram session opener |
 | `chrome-extension/feedpilot-instagram-session/` | Second unpacked extension copy; check which users install before changing either |
 | `deploy/` | Production deployment suite for `bridge.reelsflow.io` (Docker, Nginx, TLS, Postgres, APK distribution) |
-| `render.yaml`, `backend/Dockerfile` | Secondary / staging deployment blueprint and container |
+| `backend/Dockerfile` | Backend Docker container definition |
 | `deploy-bridgefeed.bat` | One-click VPS deployment pipeline |
 | `docs/` | Architecture, API, build, deployment, bridge design, performance plan |
 
@@ -118,7 +118,7 @@ Android's Bridge tab is available only while the saved bridge setting is enabled
 
 Watched handles/posts have backend persistence, Android repositories/screens, and `FeedWatcherWorker`. Watched post uniqueness is enforced locally by handle/post ID. The iOS starter supports device auth and watched handles/posts.
 
-Upgrade functionality spans Android upgrade screens/runner, backend account/subscription and dashboard endpoints, and `UpgradeAssetStorage`. Render configuration selects B2 storage; local behavior depends on configuration.
+Upgrade functionality spans Android upgrade screens/runner, backend account/subscription and dashboard endpoints, and `UpgradeAssetStorage`. Asset storage defaults to server local storage; B2 storage can also be configured.
 
 ## Persistence and startup
 
@@ -200,6 +200,6 @@ This review did not run compilation, tests, deployment, upstream Instagram calls
 | Backend/client API contract | Relevant controller, backend `Dtos/Dtos.cs`, Android `ApiService` and DTOs |
 | Admin dashboard | `wwwroot/dashboard/index.html`, corresponding admin controllers/authentication |
 | APK update/release | Android Gradle build, `release-update.properties`, release scripts, `VersionController`, `AdminAppReleasesController` |
-| Deployment/database | `Program.cs`, `DatabaseSchemaMigrator`, Dockerfile, `render.yaml` |
+| Deployment/database | `Program.cs`, `DatabaseSchemaMigrator`, Dockerfile, `deploy/` |
 
 Further references: [README](README.md), [Architecture](docs/ARCHITECTURE.md), [API](docs/API.md), [Build](docs/BUILD.md), [Deployment](docs/DEPLOYMENT.md), [Bridge design](docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md), [Performance plan](docs/order-processing-performance-plan.md), and [Extended historical context](context.md).

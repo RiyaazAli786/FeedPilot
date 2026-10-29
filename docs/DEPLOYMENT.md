@@ -1,14 +1,32 @@
 # Deployment
 
-FeedPilot backend is prepared for Render using `render.yaml`.
+FeedPilot backend is deployed to a production Linux VPS with Docker, Nginx reverse proxy, PostgreSQL, and TLS certificates managed via Let's Encrypt.
 
-## Render Setup
+## Production Setup
 
-1. Create a new Render Blueprint from this repository.
-2. Use the root `render.yaml`.
-3. Set required environment variables.
+Target: `https://bridge.reelsflow.io` (port 5081 proxied by Nginx).
 
-Required production values:
+### Automated VPS Deployment
+
+Use the deployment pipeline under `deploy/`:
+
+```powershell
+.\deploy-bridgefeed.bat
+```
+
+Or execute individual deployment stages:
+
+```powershell
+# Deploy backend Docker container and migrate database
+.\deploy\deploy-backend.ps1
+
+# Build and distribute Android release APK to server
+.\deploy\deploy-android.ps1
+```
+
+### Environment Configuration
+
+Required production environment variables:
 
 ```text
 ASPNETCORE_ENVIRONMENT=Production
@@ -16,7 +34,7 @@ Jwt__Secret=<strong random secret>
 Admin__ApiKey=<admin dashboard secret>
 Admin__DashboardPasscode=<dashboard lock passcode>
 Admin__BackupPasscode=<separate backup/restore key>
-DATABASE_URL=<Render Postgres internal URL>
+DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<database>
 ```
 
 Optional values:
@@ -29,25 +47,23 @@ Telegram__ChatId=<numeric Telegram destination chat id>
 Payments__UpiId=<UPI id>
 Payments__PayeeName=<payee name>
 SmmPanel__ApiKey=<panel key if enabled>
-AssetStorage__Provider=B2
+AssetStorage__Provider=Local
 ```
 
-Telegram logging is already wired for backend API requests, app-reported Instagram calls, and client crash reports. Add the bot to your Telegram group/channel, send one message there, then open:
+Telegram logging is wired for backend API requests, app-reported Instagram calls, and client crash reports. Add the bot to your Telegram group/channel, send one message there, then open:
 
 ```text
 https://api.telegram.org/bot<token>/getUpdates
 ```
 
-Use the numeric `chat.id` value as `Telegram__ChatId`. Group ids usually start with `-100`. Keep `Telegram__BotToken` only in Render environment variables and rotate it in BotFather if it was shared anywhere.
+Use the numeric `chat.id` value as `Telegram__ChatId`. Group ids usually start with `-100`. Keep secrets in production environment files (`deploy/.deploy-secrets.env` or server `/var/www/bridgefeed/.env`) and never commit them to source control.
 
 ## Android API URL
 
-Set `API_BASE_URL` in `android-client/app/build.gradle.kts` for debug, staging, and release.
-
-Current placeholder:
+Configured in `android-client/app/build.gradle.kts`:
 
 ```text
-https://feedpilot-api-ount-kooq.onrender.com/
+https://bridge.reelsflow.io/
 ```
 
 ## Auto Update

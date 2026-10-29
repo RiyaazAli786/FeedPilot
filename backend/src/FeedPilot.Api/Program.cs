@@ -11,13 +11,13 @@ using FeedPilot.Api.Data;
 using FeedPilot.Api.Domain;
 using FeedPilot.Api.Services;
 
-// Render's Linux instances have a low inotify watcher limit. ASP.NET Core's default
+// Linux container environments can have a low inotify watcher limit. ASP.NET Core's default
 // config reload watchers can exhaust it during startup, so keep deployed config static.
 Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Hosts like Render tell the app which port to listen on via $PORT. Honour it; locally Kestrel
+// Reverse proxies and container hosts tell the app which port to listen on via $PORT. Honour it; locally Kestrel
 // keeps its configured default.
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))
@@ -237,7 +237,7 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     p.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin()));
 
-// Render terminates TLS at its proxy and forwards over HTTP, so trust the X-Forwarded-* headers
+// Reverse proxies (such as Nginx) terminate TLS and forward over HTTP, so trust the X-Forwarded-* headers
 // to recover the real scheme and client IP.
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {

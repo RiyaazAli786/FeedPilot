@@ -3,7 +3,7 @@ namespace FeedPilot.Api.Services;
 /// <summary>
 /// Resolves the database connection string across environments.
 ///
-/// Render (and Heroku) expose the database as a single <c>DATABASE_URL</c> in the
+/// Cloud providers expose the database as a single <c>DATABASE_URL</c> in the
 /// <c>postgres://user:pass@host:port/db</c> form, which Npgsql does not accept directly — so it
 /// is converted to the key/value form here. Otherwise the configured value is used
 /// (<c>ConnectionStrings__Default</c> env var, or appsettings for local dev).
@@ -32,7 +32,7 @@ public static class ConnectionStringHelper
         var database = uri.AbsolutePath.TrimStart('/');
         var port = uri.Port > 0 ? uri.Port : 5432;
 
-        // SSL is required by Render's managed Postgres; trust the server cert (Render terminates
+        // Require SSL and trust server cert for remote managed Postgres instances.
         // it internally and does not expose a CA to pin against).
         return $"Host={uri.Host};Port={port};Database={database};Username={user};Password={password};" +
                "SSL Mode=Require;Trust Server Certificate=true";

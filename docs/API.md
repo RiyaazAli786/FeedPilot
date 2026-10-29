@@ -1,9 +1,9 @@
 # FeedPilot API
 
-Base URL for production should be your Render service URL, for example:
+Base URL for production:
 
 ```text
-https://feedpilot-api-ount-kooq.onrender.com/
+https://bridge.reelsflow.io/
 ```
 
 All normal app endpoints use bearer JWT auth after device/login auth.

@@ -2,7 +2,7 @@
 
 FeedPilot is split into independent services and clients:
 
-- `backend/src/FeedPilot.Api`: ASP.NET Core 9 API, EF Core, JWT auth, static dashboard assets, Render-ready Dockerfile.
+- `backend/src/FeedPilot.Api`: ASP.NET Core 9 API, EF Core, JWT auth, static dashboard assets, production Dockerfile.
 - `android-client`: Kotlin Android app using MVVM, Compose, Room, Retrofit, Hilt, WorkManager.
 - `ios-client`: SwiftUI starter sharing backend API contracts.
 

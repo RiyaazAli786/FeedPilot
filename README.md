@@ -8,7 +8,6 @@ The repository contains:
 - ASP.NET Core backend for auth, accounts, wallet/coins, referrals, app orders, updates, and watched Instagram handles.
 - Native Android app built with Kotlin, Jetpack Compose, Hilt, Room, Retrofit, and WorkManager.
 - SwiftUI iOS starter that targets the same backend API.
-- Render deployment blueprint for the backend.
 
 ## Key Features
 
@@ -21,7 +20,7 @@ The repository contains:
 - In-app random activity timing and switching controls.
 - Dark, light, and system theme support.
 - Watched Instagram handle cards with scheduled background feed capture.
-- Backend hosted on Render using ASP.NET Core.
+- Backend hosted using ASP.NET Core.
 
 ## Layout
 
@@ -31,7 +30,7 @@ FeedPilot/
   backend/              ASP.NET Core API and dashboard static assets
   ios-client/           SwiftUI iOS starter
   docs/                 Current FeedPilot docs
-  render.yaml           Render blueprint
+  deploy/               Production VPS deployment suite
 ```
 
 ## Build
@@ -75,5 +74,5 @@ android-client/app/build/outputs/apk/release/app-release.apk
 
 ## Security Notes
 
-Set production secrets through Render environment variables. Do not commit production
+Set production secrets through environment variables. Do not commit production
 JWT secrets, request signing secrets, SMM panel API keys, database URLs, or release keystores.

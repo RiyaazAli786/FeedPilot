@@ -81,8 +81,7 @@ GetIGFeed -> FeedPilot -> Android -> Instagram -> FeedPilot -> GetIGFeed
 Use polling first.
 
 Polling is simpler to build, easier to debug on Android, and works reliably
-across mobile networks, battery optimization, proxy networks, and Render-style
-hosting. SignalR can be added later as a latency optimization because the backend
+across mobile networks, battery optimization, proxy networks, and containerized VPS hosting. SignalR can be added later as a latency optimization because the backend
 already has SignalR configured.
 
 Recommended MVP polling cadence:
