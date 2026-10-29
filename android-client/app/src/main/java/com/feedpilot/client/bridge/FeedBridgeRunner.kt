@@ -35,6 +35,9 @@ class FeedBridgeRunner @Inject constructor(
     private val notifications: BridgeJobNotifier,
     private val authRepository: dagger.Lazy<AuthRepository>
 ) {
+    private val roundRobinCounter = java.util.concurrent.atomic.AtomicInteger(0)
+    private fun hasSession(a: AccountEntity) =
+        a.sessionCookies.isNotBlank() || a.lastLogin?.contains("sessionid") == true
     private val executionLock = Mutex()
     private val heartbeatLock = Mutex()
     @Volatile private var lastHeartbeatTimeMs: Long = 0L
@@ -272,12 +275,23 @@ class FeedBridgeRunner @Inject constructor(
         }
     }
 
+    /**
+     * Round-robin over this device's usable accounts so consecutive bridge requests are spread
+     * across every added account instead of hammering the one the server happened to assign.
+     */
     private suspend fun resolveAccount(job: BridgeJobDto): AccountEntity? {
         val all = accounts.getAll()
-        val match = job.assignedAccountId?.let { id -> all.firstOrNull { it.id == id } }
-            ?: job.accountUsername?.let { username -> all.firstOrNull { it.username.equals(username, ignoreCase = true) } }
-            ?: all.firstOrNull { it.isLoggedIn }
-            ?: all.firstOrNull()
+        val usable = all
+            .filter { hasSession(it) && !it.status.equals("SessionExpired", true) && !it.status.equals("Suspended", true) }
+            .sortedBy { it.id }
+        val match = if (usable.isNotEmpty()) {
+            usable[Math.floorMod(roundRobinCounter.getAndIncrement(), usable.size)]
+        } else {
+            job.assignedAccountId?.let { id -> all.firstOrNull { it.id == id } }
+                ?: job.accountUsername?.let { username -> all.firstOrNull { it.username.equals(username, ignoreCase = true) } }
+                ?: all.firstOrNull { it.isLoggedIn }
+                ?: all.firstOrNull()
+        }
 
         return match?.let {
             val effectiveCookies = if (it.sessionCookies.isNotBlank()) {

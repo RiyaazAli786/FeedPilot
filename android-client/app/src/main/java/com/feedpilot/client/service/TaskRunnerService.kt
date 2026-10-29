@@ -1028,7 +1028,10 @@ class TaskRunnerService : Service() {
             }
         }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // dataSync is time-limited on Android 15+; don't fall back to it there.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                throw IllegalStateException("specialUse foreground start failed; dataSync is time-limited on this Android version")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
                     this,
                     notificationId,
@@ -1041,6 +1044,11 @@ class TaskRunnerService : Service() {
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to start foreground service", e)
         }
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground service timeout for fgsType=$fgsType, stopping runner")
+        stopRunnerService()
     }
 
     private fun stopForegroundCompat() {

@@ -24,6 +24,7 @@ object CrashReporter {
     private const val TAG = "CrashReporter"
     private const val DIR = "crashes"
     private const val KEEP = 10
+    private const val BACKGROUND_LIMIT_TITLE = "Background Task Limit Reached"
 
     @Volatile private var installed = false
 
@@ -49,7 +50,11 @@ object CrashReporter {
             // Asynchronously post crash details to backend Telegram logger
             runCatching { sendCrashToTelegram(appContext, userTitle, userSummary, report) }
 
-            runCatching { CrashActivity.show(appContext, userTitle, userSummary, report, file?.absolutePath) }
+            // System-imposed foreground-service limits are not app bugs: log and report them, but
+            // do not greet the user with a crash screen.
+            if (userTitle != BACKGROUND_LIMIT_TITLE) {
+                runCatching { CrashActivity.show(appContext, userTitle, userSummary, report, file?.absolutePath) }
+            }
 
             if (previous != null) {
                 previous.uncaughtException(thread, error)
@@ -67,7 +72,7 @@ object CrashReporter {
             stack.contains("ForegroundServiceStartNotAllowedException") ||
                 stack.contains("Time limit already exhausted") ||
                 stack.contains("ForegroundService") -> {
-                "Background Task Limit Reached" to
+                BACKGROUND_LIMIT_TITLE to
                     "Android system background execution limits paused the task service. Please open FeedPilot and tap Start again to resume background processing."
             }
             stack.contains("SocketTimeoutException") ||

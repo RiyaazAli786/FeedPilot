@@ -139,7 +139,11 @@ class FeedBridgeService : Service() {
             }
         }
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 15+ caps dataSync at a few hours and then refuses to start it ("Time limit
+            // already exhausted"), so never fall back to it there - specialUse has no cap.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                throw IllegalStateException("specialUse foreground start failed; dataSync is time-limited on this Android version")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
                     this,
                     notificationId,

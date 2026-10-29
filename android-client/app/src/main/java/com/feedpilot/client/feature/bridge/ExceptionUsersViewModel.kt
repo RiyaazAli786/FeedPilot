@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.feedpilot.client.bridge.toBridgeResultData
 import com.feedpilot.client.common.Resource
+import com.feedpilot.client.common.formatPostCreatedTime
+import com.feedpilot.client.common.formatTimeAgo
 import com.feedpilot.client.data.local.AccountDao
 import com.feedpilot.client.data.local.AccountEntity
 import com.feedpilot.client.data.remote.ExceptionUsersApi
@@ -23,8 +25,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 import retrofit2.HttpException
 import java.util.Locale
 
@@ -186,12 +196,30 @@ class ExceptionUsersViewModel @Inject constructor(
                             maxId = bridgeData.maxId,
                             hasMore = bridgeData.hasMore
                         )
-                        val formatted = prettyJson.encodeToString(dto)
+                        val formatted = prettyJson.encodeToString(
+                            JsonElement.serializer(),
+                            withPostedAgo(prettyJson.encodeToJsonElement(dto))
+                        )
+                        val latest = bridgeData.items.filter { it.takenAt > 0L }.maxByOrNull { it.takenAt }
                         val summary = buildString {
                             append("Posts: ${bridgeData.items.size}")
                             bridgeData.profile?.let { p ->
                                 append(" | Followers: ${p.followerCount} | Following: ${p.followingCount}")
                                 if (p.isPrivate) append(" (Private)")
+                            }
+                            appendLine()
+                            val isPrivate = bridgeData.profile?.isPrivate == true
+                            when {
+                                latest != null -> {
+                                    append("Latest: ${latest.code} - ${formatTimeAgo(latest.takenAt)}")
+                                    appendLine()
+                                    append(formatPostCreatedTime(latest.takenAt))
+                                    appendLine()
+                                    append(if (isPrivate) "Visibility: private account - posts hidden" else "Visibility: public - post visible")
+                                }
+                                bridgeData.items.isNotEmpty() -> append("Latest post time unavailable")
+                                isPrivate -> append("Visibility: private account - posts hidden")
+                                else -> append("No posts visible")
                             }
                         }
                         _fetchDialogState.update {
@@ -229,6 +257,25 @@ class ExceptionUsersViewModel @Inject constructor(
         fetchJob?.cancel()
         fetchJob = null
         _fetchDialogState.value = null
+    }
+
+    /** Adds a human "postedAgo" next to every item's raw epoch `takenAt`. */
+    private fun withPostedAgo(root: JsonElement): JsonElement {
+        val obj = root as? JsonObject ?: return root
+        val items = obj["items"] as? JsonArray ?: return root
+        val patched = JsonArray(items.map { item ->
+            val o = item as? JsonObject ?: return@map item
+            buildJsonObject {
+                o.forEach { (key, value) ->
+                    put(key, value)
+                    if (key == "takenAt") {
+                        val ago = formatTimeAgo(value.jsonPrimitive.longOrNull ?: 0L)
+                        put("postedAgo", ago?.let { JsonPrimitive(it) } ?: JsonNull)
+                    }
+                }
+            }
+        })
+        return JsonObject(obj + ("items" to patched))
     }
 
     private suspend fun selectRandomActiveAccount(): AccountEntity? {

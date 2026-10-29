@@ -206,7 +206,10 @@ class CsvAccountImportService : Service() {
             }
         }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // dataSync is time-limited on Android 15+; don't fall back to it there.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                throw IllegalStateException("specialUse foreground start failed; dataSync is time-limited on this Android version")
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
                     this,
                     NOTIFICATION_ID,
@@ -287,7 +290,8 @@ class CsvAccountImportService : Service() {
         fun start(context: Context, csvFilePath: String) {
             val intent = Intent(context, CsvAccountImportService::class.java)
                 .putExtra(EXTRA_FILE_PATH, csvFilePath)
-            ContextCompat.startForegroundService(context, intent)
+            runCatching { ContextCompat.startForegroundService(context, intent) }
+                .onFailure { Log.w(TAG, "Could not start CsvAccountImportService", it) }
         }
     }
 }
