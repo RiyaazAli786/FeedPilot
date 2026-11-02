@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -39,6 +41,7 @@ class UpdatesViewModel @Inject constructor(
 
     private val localDownloadState = MutableStateFlow(Triple(false, 0, null as File?))
     private val localErrorState = MutableStateFlow<String?>(null)
+    private var autoInstallTriggered = false
 
     val state: StateFlow<UpdatesUiState> = combine(
         updateRepository.latestRelease,
@@ -60,7 +63,15 @@ class UpdatesViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UpdatesUiState())
 
-    init { check() }
+    init {
+        check()
+        viewModelScope.launch {
+            while (isActive) {
+                delay(15 * 60 * 1000L)
+                check()
+            }
+        }
+    }
 
     fun check() {
         viewModelScope.launch {
@@ -69,12 +80,21 @@ class UpdatesViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Resets any previous skipped state and queries for updates.
+     * Used when the user manually taps "Check for Updates" in Settings.
+     */
+    fun manualCheck() {
+        updateRepository.resetSkip()
+        check()
+    }
+
     fun skip() {
         updateRepository.skip()
     }
 
     fun download() {
-        val release = state.value.release ?: return
+        val release = state.value.release ?: updateRepository.latestRelease.value ?: return
         viewModelScope.launch {
             localErrorState.value = null
             localDownloadState.value = Triple(true, 0, null)
@@ -82,8 +102,13 @@ class UpdatesViewModel @Inject constructor(
                 when (progress) {
                     is UpdateProgress.Downloading ->
                         localDownloadState.value = Triple(true, progress.percent, null)
-                    is UpdateProgress.Verified ->
+                    is UpdateProgress.Verified -> {
                         localDownloadState.value = Triple(false, 100, progress.file)
+                        if (!autoInstallTriggered) {
+                            autoInstallTriggered = true
+                            install()
+                        }
+                    }
                     is UpdateProgress.Failed -> {
                         localDownloadState.value = Triple(false, 0, null)
                         localErrorState.value = progress.reason

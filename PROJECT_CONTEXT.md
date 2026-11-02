@@ -1,7 +1,7 @@
 # FeedPilot Project Context
 
-Reviewed against repository source: 2026-10-24.
-Baseline commit: `4836680` (Store APKs and assets on the server instead of B2).
+Reviewed against repository source: 2026-11-02.
+Baseline commit: `d459d24` (++Updated code+ - Added fleet device management and floating bridge bubble).
 This is a source inspection, not a successful build or production health report.
 
 ## Purpose and scope

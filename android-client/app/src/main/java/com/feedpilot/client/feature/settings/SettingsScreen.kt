@@ -427,7 +427,7 @@ fun SettingsScreen(
                 icon = Icons.Filled.SystemUpdate,
                 onClick = {
                     userTriggeredCheck = true
-                    updatesViewModel.check()
+                    updatesViewModel.manualCheck()
                 }
             )
             SettingsRow(

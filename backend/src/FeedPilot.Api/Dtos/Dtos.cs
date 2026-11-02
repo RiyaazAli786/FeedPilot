@@ -1049,7 +1049,8 @@ public record BridgeFeedItemDto(
     long CommentCount,
     long RepostCount,
     long TakenAt,
-    string MediaId);
+    string MediaId,
+    bool IsPinned = false);
 
 public record BridgeFeedResultDataDto(
     BridgeFeedProfileDto? Profile,

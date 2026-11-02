@@ -92,7 +92,7 @@ class FeedPilotApp : Application(), Configuration.Provider {
                 .setConstraints(networkConstraint)
                 .build()
 
-            val updateRequest = PeriodicWorkRequestBuilder<UpdateCheckWorker>(6, TimeUnit.HOURS)
+            val updateRequest = PeriodicWorkRequestBuilder<UpdateCheckWorker>(1, TimeUnit.HOURS)
                 .setConstraints(networkConstraint)
                 .build()
 
@@ -108,7 +108,7 @@ class FeedPilotApp : Application(), Configuration.Provider {
                 )
                 enqueueUniquePeriodicWork(
                     Constants.UPDATE_WORK_NAME,
-                    ExistingPeriodicWorkPolicy.KEEP,
+                    ExistingPeriodicWorkPolicy.UPDATE,
                     updateRequest
                 )
                 enqueueUniquePeriodicWork(

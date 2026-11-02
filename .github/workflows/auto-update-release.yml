@@ -1,0 +1,122 @@
+name: Auto Release APK & Update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'android-client/**'
+      - 'backend/**'
+      - 'deploy/**'
+      - '.github/workflows/auto-update-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    name: Build Signed APK & Deploy Update
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Signed Release APK & Update Metadata
+        id: build
+        run: |
+          cd android-client
+          chmod +x gradlew
+          ./gradlew clean prepareReleaseUpdate \
+            "-PupdateBaseApkUrl=https://github.com/RiyaazAli786/FeedPilot/releases/download/v{version}" \
+            "-PupdateReleaseNotes=Automated update from commit ${{ github.sha }}" \
+            "-PupdateForce=false" \
+            --no-configuration-cache --no-daemon --console=plain
+
+          UPDATE_OUT="app/build/outputs/update/release"
+          APK_FILE=$(ls $UPDATE_OUT/feedpilot-*.apk | head -n 1)
+          APK_NAME=$(basename $APK_FILE)
+          VERSION_CODE=$(grep "versionCode=" release-update.properties | cut -d'=' -f2)
+          VERSION_NAME=$(grep "versionName=" release-update.properties | cut -d'=' -f2)
+
+          echo "APK generated: $APK_NAME (v$VERSION_NAME build $VERSION_CODE)"
+          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "meta_path=$UPDATE_OUT/update-metadata.json" >> $GITHUB_OUTPUT
+
+      - name: Commit Incremented Version Properties
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add android-client/release-update.properties
+          if git diff --staged --quiet; then
+            echo "No version bump changes to commit"
+          else
+            git commit -m "chore(release): bump version to v${{ steps.build.outputs.version_name }} [skip ci]"
+            git push origin main
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.build.outputs.version_name }}"
+          name: "FeedPilot v${{ steps.build.outputs.version_name }} (Build ${{ steps.build.outputs.version_code }})"
+          body: |
+            ## Automated Release v${{ steps.build.outputs.version_name }}
+            - **Commit:** `${{ github.sha }}`
+            - **Version Code:** `${{ steps.build.outputs.version_code }}`
+            - **Download:** `${{ steps.build.outputs.apk_name }}`
+            - **Direct Download:** https://github.com/RiyaazAli786/FeedPilot/releases/latest/download/${{ steps.build.outputs.apk_name }}
+            - **Update Metadata:** https://github.com/RiyaazAli786/FeedPilot/releases/latest/download/update-metadata.json
+          files: |
+            android-client/${{ steps.build.outputs.apk_path }}
+            android-client/${{ steps.build.outputs.meta_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to Production VPS Server (bridge.reelsflow.io)
+        if: env.SSH_PASSWORD != '' || env.SSH_KEY != ''
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SERVER_IP: 200.234.41.82
+          SERVER_USER: root
+          APP_DIR: /var/www/bridgefeed
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts 2>/dev/null
+
+          if [ -n "$SSH_KEY" ]; then
+            echo "$SSH_KEY" > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            SCP_CMD="scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+            SSH_CMD="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+          else
+            sudo apt-get install -y sshpass
+            SCP_CMD="sshpass -p $SSH_PASSWORD scp -o StrictHostKeyChecking=no"
+            SSH_CMD="sshpass -p $SSH_PASSWORD ssh -o StrictHostKeyChecking=no"
+          fi
+
+          echo "Uploading APK and metadata to $SERVER_USER@$SERVER_IP:$APP_DIR/apk/..."
+          $SSH_CMD $SERVER_USER@$SERVER_IP "mkdir -p $APP_DIR/apk && rm -f $APP_DIR/apk/feedpilot-*.apk"
+          $SCP_CMD android-client/${{ steps.build.outputs.apk_path }} $SERVER_USER@$SERVER_IP:$APP_DIR/apk/
+          $SCP_CMD android-client/${{ steps.build.outputs.meta_path }} $SERVER_USER@$SERVER_IP:$APP_DIR/apk/
+          echo "Restarting bridgefeed service container to reload metadata..."
+          $SSH_CMD $SERVER_USER@$SERVER_IP "docker restart bridgefeed >/dev/null || true"
+          echo "Successfully deployed new APK to https://bridge.reelsflow.io/apk/${{ steps.build.outputs.apk_name }}"
+

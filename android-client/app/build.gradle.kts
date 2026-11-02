@@ -288,7 +288,10 @@ val prepareReleaseUpdate by tasks.registering {
         val versionCode = android.defaultConfig.versionCode
         val versionName = android.defaultConfig.versionName ?: versionCode.toString()
         val publishedApkName = "feedpilot-$versionName-$versionCode.apk"
-        val baseUrl = updateBaseApkUrl.get().trimEnd('/')
+        val rawBase = updateBaseApkUrl.get().trimEnd('/')
+        val baseUrl = rawBase
+            .replace("{version}", versionName)
+            .replace("{code}", versionCode.toString())
         val apkUrl = "$baseUrl/$publishedApkName"
         val sha256 = apk.sha256Hex()
         val sizeBytes = apk.length()

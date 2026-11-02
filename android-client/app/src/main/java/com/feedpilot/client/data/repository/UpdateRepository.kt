@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -29,6 +31,7 @@ sealed interface UpdateProgress {
 class UpdateRepository @Inject constructor(
     private val api: ApiService,
     private val okHttpClient: OkHttpClient,
+    private val json: Json,
     @ApplicationContext private val context: Context
 ) {
     private val _latestRelease = MutableStateFlow<VersionDto?>(null)
@@ -40,16 +43,39 @@ class UpdateRepository @Inject constructor(
     private val _isSkipped = MutableStateFlow(false)
     val isSkipped: StateFlow<Boolean> = _isSkipped.asStateFlow()
 
-    /** Returns the latest release if its versionCode is newer than the installed one. */
-    suspend fun checkForUpdate(currentVersionCode: Int): VersionDto? {
+    /**
+     * Checks for a newer release than [currentVersionCode].
+     * Queries GitHub Releases directly first (zero-server dependency, fast worldwide CDN).
+     * Falls back to the backend /api/version endpoint if needed.
+     */
+    suspend fun checkForUpdate(currentVersionCode: Int): VersionDto? = withContext(Dispatchers.IO) {
         _isChecking.value = true
         _isSkipped.value = false
-        val release = runCatching { api.getLatestVersion() }
+
+        val githubRelease = fetchFromGitHub()?.takeIf { it.versionCode > currentVersionCode }
+        val release = githubRelease ?: runCatching { api.getLatestVersion() }
             .getOrNull()
             ?.takeIf { it.versionCode > currentVersionCode }
+
         _latestRelease.value = release
         _isChecking.value = false
-        return release
+        release
+    }
+
+    private fun fetchFromGitHub(): VersionDto? {
+        val url = "https://github.com/RiyaazAli786/FeedPilot/releases/latest/download/update-metadata.json"
+        return runCatching {
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .header("User-Agent", "FeedPilot-Android")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                json.decodeFromString<VersionDto>(body)
+            }
+        }.getOrNull()
     }
 
     fun skip() {

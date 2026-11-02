@@ -738,6 +738,7 @@ data class BridgeFeedItemDto(
     val likeCount: Long,
     val commentCount: Long,
     val repostCount: Long = 0,
+    val isPinned: Boolean = false,
     val takenAt: Long,
     val mediaId: String
 )

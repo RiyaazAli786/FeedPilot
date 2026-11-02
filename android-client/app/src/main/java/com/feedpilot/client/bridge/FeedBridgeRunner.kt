@@ -63,6 +63,7 @@ class FeedBridgeRunner @Inject constructor(
             appInstanceId = identity.appInstanceId,
             deviceModel = identity.deviceLabel,
             androidVersion = identity.androidVersion,
+            appVersion = com.feedpilot.client.BuildConfig.VERSION_NAME,
             bridgeEnabled = enabled && localAccounts.isNotEmpty(),
             activeAccountUsername = active?.username,
             loggedInAccounts = localAccounts.map { it.username },

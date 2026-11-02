@@ -16,12 +16,12 @@ internal fun InstagramUserFeedResult.toBridgeResultData(
             mediaCount = it.mediaCount, isPrivate = it.isPrivate, isVerified = it.isVerified
         )
     },
-    items = items.take(limit).map {
+    items = items.sortedByDescending { it.takenAt }.take(limit).map {
         BridgeFeedItemDto(
             id = it.id, code = it.code, caption = it.caption, mediaType = it.mediaType,
             displayUrl = it.displayUrl, videoUrl = it.videoUrl,
             likeCount = it.likeCount, commentCount = it.commentCount, repostCount = it.repostCount,
-            takenAt = it.takenAt, mediaId = it.mediaId
+            takenAt = it.takenAt, mediaId = it.mediaId, isPinned = it.isPinned
         )
     },
     maxId = maxId,

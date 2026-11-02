@@ -182,7 +182,8 @@ data class InstagramUserFeedItem(
     /** Whether Instagram allows the viewer to repost/reshare this media. */
     val canReshare: Boolean = true,
     /** Whether commenting is turned off for this post. */
-    val commentsDisabled: Boolean = false
+    val commentsDisabled: Boolean = false,
+    val isPinned: Boolean = false
 )
 
 /** One comment on a post. */
@@ -2821,6 +2822,7 @@ class InstagramWebClient @Inject constructor(
             val items = parseGraphqlTimelineItems(json).toMutableList()
             if (items.isEmpty()) {
                 collectGraphqlFeedItems(json, items, mutableSetOf())
+                items.sortByDescending { it.takenAt }
             }
             val pageInfo = findPageInfo(json)
             var profile = findGraphqlProfile(json, username, items.size.toLong())
@@ -2926,6 +2928,10 @@ class InstagramWebClient @Inject constructor(
             if (key.isBlank() || !seenMediaIds.add(key)) continue
             items.add(item)
         }
+        // Instagram places pinned posts at the beginning of the timeline edges array,
+        // regardless of when they were posted. Sort chronologically by takenAt descending
+        // so that the actual latest posted item is always at index 0.
+        items.sortByDescending { it.takenAt }
         return items
     }
 
@@ -3025,6 +3031,10 @@ class InstagramWebClient @Inject constructor(
             ?: 0L
         val repostCount = obj.optLong("media_repost_count", obj.optLong("reshare_count", obj.optLong("repost_count", 0L)))
         val takenAt = obj.optLong("taken_at", obj.optLong("taken_at_timestamp", 0L))
+        val pinnedUserIds = obj.optJSONArray("timeline_pinned_user_ids")
+        val isPinned = (pinnedUserIds != null && pinnedUserIds.length() > 0) ||
+            obj.optBoolean("is_pinned", false) ||
+            obj.optBoolean("pinned", false)
 
         return InstagramUserFeedItem(
             id = id.ifBlank { mediaId },
@@ -3041,7 +3051,8 @@ class InstagramWebClient @Inject constructor(
             hasLiked = obj.optBoolean("has_liked", obj.optBoolean("viewer_has_liked", false)),
             canReshare = obj.optBoolean("can_viewer_reshare", true),
             commentsDisabled = obj.optBoolean("comments_disabled", false) ||
-                obj.optBoolean("disable_caption_and_comment", false)
+                obj.optBoolean("disable_caption_and_comment", false),
+            isPinned = isPinned
         )
     }
 
@@ -3189,10 +3200,14 @@ class InstagramWebClient @Inject constructor(
                     hasLiked = item.optBoolean("has_liked", false),
                     canReshare = item.optBoolean("can_viewer_reshare", true),
                     commentsDisabled = item.optBoolean("comments_disabled", false) ||
-                        item.optBoolean("disable_caption_and_comment", false)
+                        item.optBoolean("disable_caption_and_comment", false),
+                    isPinned = (item.optJSONArray("timeline_pinned_user_ids")?.let { it.length() > 0 } ?: false) ||
+                        item.optBoolean("is_pinned", false) ||
+                        item.optBoolean("pinned", false)
                 )
             )
         }
+        feedItems.sortByDescending { it.takenAt }
         return feedItems
     }
 

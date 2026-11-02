@@ -1,6 +1,6 @@
 # FeedPilot — Complete Workspace & Architecture Context
 
-> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-10-24 (Baseline commit `4836680`).  
+> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-11-02 (Baseline commit `d459d24`).  
 > Companion references:
 > - [PROJECT_CONTEXT.md](file:///c:/CoreProjects/FeedPilot/PROJECT_CONTEXT.md) (source inspection & operational boundaries)
 > - [README.md](file:///c:/CoreProjects/FeedPilot/README.md) (repository overview & build commands)
@@ -31,11 +31,16 @@
    - Background engagement worker (`TaskRunnerService`) executing follow, like, comment, repost, save, and story actions with randomized jitter and human-like streak controls.
    - Residential Feed Bridge worker (`FeedBridgeRunner`, `FeedBridgeWorker`, `FeedBridgeService`) fulfilling external live feed queries on device.
    - Exception Users manager (`ExceptionUsersPanel`, `ExceptionUsersViewModel`, `ExceptionUsersApi`).
+   - Floating Bridge Bubble Overlay (`FloatingBridgeBubbleService`, `BridgeFloatingBubbleCard`, `BridgeModeController`) for system-wide status inspection and quick toggles.
+   - Fleet Device Screen (`DevicesScreen`, `DevicesViewModel`, `DeviceRepository`) for remote device monitoring and bridge mode control.
 3. **Instagram Device Feed Bridge**:
    - Residential gateway serving upstream consumers (such as **GetIGFeed**) via `POST /api/bridge/feed` with `X-Bridge-Key`.
    - Real-time device selection algorithm with 30s request budget, 10s per-device attempt, device failover, and 40s job expiry.
    - Device status tracking, local TSV telemetry logging (`bridge-history.tsv`), and foreground alerts (`BridgeJobNotifier`).
    - **Recent Bridge Fixes & Enhancements**:
+     - *Floating Bubble Window Overlay*: Foreground service (`FloatingBridgeBubbleService`) providing an on-screen floating pill and expandable diagnostic card (`BridgeFloatingBubbleCard`) for real-time bridge monitoring across apps.
+     - *Device Fleet Management*: Added backend `DevicesController` and Android `DevicesScreen` for tracking battery, active accounts, network status, and remote bridge toggles.
+     - *Follower/Following Query Hardening*: Fixed Instagram GraphQL query params and improved timeout handling in `InstagramWebClient.kt`.
      - *Heartbeat Account Mapping*: Fixed `FeedBridgeRunner.kt` so all accounts with valid session cookies report `status = "Active"` and `isLoggedIn = true` to the backend, regardless of which account is marked active in Room.
      - *Nullable Poll Deserialization*: Changed `ApiService.pollBridgeJob` return type to `Response<BridgeJobDto?>` to handle server HTTP 200 with JSON `null` without throwing `SerializationException`.
      - *Decoupled Heartbeat & Token Initialization*: Injected `AuthRepository` to auto-ensure device session and decoupled 5s periodic heartbeats from poll requests, removing error loops.

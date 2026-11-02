@@ -15,6 +15,10 @@ class AuthInterceptor @Inject constructor(
     private val secureStorage: SecureStorage
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
+        val original = chain.request()
+        val host = original.url.host.lowercase()
+        val isBackend = host.contains("reelsflow.io") || host.contains("localhost") || host.contains("10.0.2.2")
+        if (!isBackend) return chain.proceed(original)
         val token = secureStorage.get(SecureStorage.KEY_ACCESS_TOKEN)
         val request = if (token.isNullOrBlank()) {
             chain.request()
@@ -50,6 +54,9 @@ class DeviceSigningInterceptor @Inject constructor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
+        val host = original.url.host.lowercase()
+        val isBackend = host.contains("reelsflow.io") || host.contains("localhost") || host.contains("10.0.2.2")
+        if (!isBackend) return chain.proceed(original)
         val timestamp = (System.currentTimeMillis() / 1000).toString()
         val signature = sign(original.method, original.url.encodedPath, timestamp)
         val request = original.newBuilder()

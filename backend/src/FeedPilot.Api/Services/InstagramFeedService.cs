@@ -192,7 +192,7 @@ public class InstagramFeedService : IInstagramFeedService
                     posts.Add(post);
             }
 
-            if (posts.Count > 0) return posts;
+            if (posts.Count > 0) return posts.OrderByDescending(p => p.TakenAt).Take(limit).ToList();
         }
 
         return new List<InstagramFeedPost>();
@@ -232,10 +232,10 @@ public class InstagramFeedService : IInstagramFeedService
             var post = ParseTimelineNodePost(node.Value);
             if (!string.IsNullOrWhiteSpace(post.Id) || !string.IsNullOrWhiteSpace(post.Code))
                 posts.Add(post);
-            if (posts.Count >= limit) break;
+            // Collect all edges in page before sorting chronologically
         }
 
-        return posts;
+        return posts.OrderByDescending(p => p.TakenAt).Take(limit).ToList();
     }
 
     private static HttpRequestMessage CreateInstagramGet(string url, string sessionCookies, string referer)
@@ -304,7 +304,8 @@ public class InstagramFeedService : IInstagramFeedService
             CommentCount: GetLong(item, "comment_count"),
             RepostCount: GetLong(item, "media_repost_count", GetLong(item, "reshare_count", GetLong(item, "repost_count"))),
             TakenAt: GetLong(item, "taken_at"),
-            MediaId: GetString(item, "pk") ?? (GetString(item, "id") ?? string.Empty).Split('_')[0]);
+            MediaId: GetString(item, "pk") ?? (GetString(item, "id") ?? string.Empty).Split('_')[0],
+            IsPinned: (TryGet(item, "timeline_pinned_user_ids") is { } pItem && pItem.ValueKind == JsonValueKind.Array && pItem.GetArrayLength() > 0) || GetBool(item, "is_pinned"));
     }
 
     private static InstagramFeedPost ParseTimelineNodePost(JsonElement node)
@@ -333,7 +334,8 @@ public class InstagramFeedService : IInstagramFeedService
             CommentCount: TryGet(node, "edge_media_to_comment") is { } comments ? GetLong(comments, "count") : 0L,
             RepostCount: 0L,
             TakenAt: GetLong(node, "taken_at_timestamp"),
-            MediaId: GetString(node, "id") ?? string.Empty);
+            MediaId: GetString(node, "id") ?? string.Empty,
+            IsPinned: (TryGet(node, "timeline_pinned_user_ids") is { } p && p.ValueKind == JsonValueKind.Array && p.GetArrayLength() > 0) || GetBool(node, "is_pinned"));
     }
 
     private static InstagramJsonFeedResponse BuildJsonFeed(InstagramFeedProfile profile, List<InstagramFeedPost> posts)
@@ -529,7 +531,8 @@ public sealed record InstagramFeedPost(
     long CommentCount,
     long RepostCount,
     long TakenAt,
-    string MediaId);
+    string MediaId,
+    bool IsPinned = false);
 
 public sealed record InstagramJsonFeedResponse(
     [property: JsonPropertyName("version")]

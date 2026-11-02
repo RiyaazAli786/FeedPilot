@@ -48,7 +48,8 @@ data class PostItem(
     val commentsDisabled: Boolean = false,
     /** An action (like/repost) is in flight for this post. */
     val busy: Boolean = false,
-    val takenAt: Long = 0L
+    val takenAt: Long = 0L,
+    val isPinned: Boolean = false
 )
 
 /** Comment sheet state for one post. */
@@ -377,7 +378,8 @@ class PostsViewModel @Inject constructor(
             hasLiked = hasLiked,
             canReshare = canReshare,
             commentsDisabled = commentsDisabled,
-            takenAt = takenAt
+            takenAt = takenAt,
+            isPinned = isPinned
         )
     }
 

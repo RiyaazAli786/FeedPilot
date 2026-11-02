@@ -28,12 +28,31 @@ class BridgeFeedResultMapperTest {
         assertTrue(data.getValue("hasMore").jsonPrimitive.boolean)
         assertEquals(1, data.getValue("items").jsonArray.size)
         val post = data.getValue("items").jsonArray.single().jsonObject
-        assertEquals(setOf("id", "code", "caption", "mediaType", "displayUrl", "videoUrl", "likeCount", "commentCount", "repostCount", "takenAt", "mediaId"), post.keys)
+        assertEquals(setOf("id", "code", "caption", "mediaType", "displayUrl", "videoUrl", "likeCount", "commentCount", "repostCount", "isPinned", "takenAt", "mediaId"), post.keys)
         assertEquals("456", post.getValue("mediaId").jsonPrimitive.content)
         assertEquals(1791140402L, post.getValue("takenAt").jsonPrimitive.long)
         assertEquals(99L, post.getValue("likeCount").jsonPrimitive.long)
         assertEquals("video", post.getValue("videoUrl").jsonPrimitive.content)
         assertTrue(data.getValue("stories").jsonArray.isEmpty())
         assertTrue(data.getValue("highlights").jsonArray.isEmpty())
+    }
+
+    @Test fun `pinned post with older timestamp is ordered after newer chronological post`() {
+        val pinnedOldItem = InstagramUserFeedItem(
+            id = "pinned_1", code = "DeuAt8TKU6C", caption = "Pinned post", mediaType = 2,
+            displayUrl = "img1", videoUrl = null, likeCount = 10, commentCount = 2,
+            repostCount = 0, takenAt = 1792505679, mediaId = "4012147475156127362", isPinned = true
+        )
+        val latestUnpinnedItem = InstagramUserFeedItem(
+            id = "latest_1", code = "DfNdhjQK08C", caption = "Latest post", mediaType = 2,
+            displayUrl = "img2", videoUrl = null, likeCount = 5, commentCount = 1,
+            repostCount = 0, takenAt = 1793560882, mediaId = "4020999891255512834", isPinned = false
+        )
+        val feed = InstagramUserFeedResult(listOf(pinnedOldItem, latestUnpinnedItem), null, false)
+        val data = feed.toBridgeResultData(2)
+        assertEquals("DfNdhjQK08C", data.items[0].code)
+        assertFalse(data.items[0].isPinned)
+        assertEquals("DeuAt8TKU6C", data.items[1].code)
+        assertTrue(data.items[1].isPinned)
     }
 }
