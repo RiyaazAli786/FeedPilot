@@ -6,8 +6,6 @@ on:
       - main
     paths:
       - 'android-client/**'
-      - 'backend/**'
-      - 'deploy/**'
       - '.github/workflows/auto-update-release.yml'
   workflow_dispatch:
 
