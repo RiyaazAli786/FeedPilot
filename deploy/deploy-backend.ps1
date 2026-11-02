@@ -8,7 +8,13 @@ param([string]$EnvFile = "")
 . "$PSScriptRoot\common.ps1"
 
 $cfg = Get-DeployConfig
-if ([string]::IsNullOrWhiteSpace($EnvFile)) { $EnvFile = Join-Path $script:RepoRoot "feedpilot-api-ount.env" }
+if ([string]::IsNullOrWhiteSpace($EnvFile)) {
+    if (Test-Path (Join-Path $script:DeployDir ".env.base")) {
+        $EnvFile = Join-Path $script:DeployDir ".env.base"
+    } else {
+        $EnvFile = Join-Path $script:RepoRoot "feedpilot-api-ount.env"
+    }
+}
 if (!(Test-Path $EnvFile)) { throw "Env file not found: $EnvFile" }
 
 Write-Host "=== FeedPilot backend -> https://$($cfg.DOMAIN) ($($cfg.SERVER_IP):$($cfg.APP_DIR)) ==="
