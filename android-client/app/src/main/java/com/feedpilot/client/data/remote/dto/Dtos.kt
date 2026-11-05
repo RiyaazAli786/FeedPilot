@@ -766,7 +766,7 @@ data class BridgeFeedResultDataDto(
 )
 
 @Serializable
-data class CompleteBridgeJobRequest(val data: BridgeFeedResultDataDto)
+data class CompleteBridgeJobRequest(val data: BridgeFeedResultDataDto, val resolvedAccountUsername: String? = null)
 
 @Serializable
 data class FailBridgeJobRequest(

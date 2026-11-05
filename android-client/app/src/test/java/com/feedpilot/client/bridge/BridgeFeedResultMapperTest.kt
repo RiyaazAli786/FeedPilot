@@ -20,7 +20,7 @@ class BridgeFeedResultMapperTest {
         val feed = InstagramUserFeedResult(listOf(item, item.copy(id = "789_123")), "cursor", true, profile)
         val json = Json { encodeDefaults = true }
         val payload = json.parseToJsonElement(json.encodeToString(CompleteBridgeJobRequest(feed.toBridgeResultData(1)))).jsonObject
-        assertEquals(setOf("data"), payload.keys)
+        assertEquals(setOf("data", "resolvedAccountUsername"), payload.keys)
         val data = payload.getValue("data").jsonObject
         assertEquals(setOf("profile", "items", "maxId", "hasMore", "stories", "highlights"), data.keys)
         assertEquals("example", data.getValue("profile").jsonObject.getValue("username").jsonPrimitive.content)

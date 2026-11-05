@@ -1058,7 +1058,7 @@ public record BridgeFeedResultDataDto(
     string? MaxId = null,
     bool HasMore = false);
 
-public record CompleteBridgeJobRequest(System.Text.Json.JsonElement Data);
+public record CompleteBridgeJobRequest(System.Text.Json.JsonElement Data, string? ResolvedAccountUsername = null);
 
 public record FailBridgeJobRequest(
     [Required, MaxLength(64)] string Code,
