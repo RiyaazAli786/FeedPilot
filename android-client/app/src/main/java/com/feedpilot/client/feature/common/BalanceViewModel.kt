@@ -20,7 +20,7 @@ data class BalanceUiState(
     val coins: Long = 0,
     /** Active paid tier name (e.g. "Gold"), or "Free". Shown as a badge in the header. */
     val plan: String = "Free",
-    val latestVersionName: String? = null
+    val latestVersionName: String = com.feedpilot.client.BuildConfig.VERSION_NAME
 )
 
 /** VM providing the coin balance and current plan for AppHeader. */
@@ -33,7 +33,7 @@ class BalanceViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val plan = MutableStateFlow("Free")
-    private val latestVersionName = MutableStateFlow<String?>(null)
+    private val latestVersionName = MutableStateFlow(com.feedpilot.client.BuildConfig.VERSION_NAME)
 
     val state: StateFlow<BalanceUiState> =
         combine(walletRepository.wallet, plan, latestVersionName) { wallet, planName, version ->
@@ -59,8 +59,9 @@ class BalanceViewModel @Inject constructor(
             plan.value = if (sub?.active == true) sub.name else "Free"
         }
         viewModelScope.launch {
-            val version = runCatching { api.getLatestVersion() }.getOrNull()
-            latestVersionName.value = version?.versionName
+            // App version is pinned to BuildConfig.VERSION_NAME
+            // Header badge stays pinned to installed app version
+            latestVersionName.value = com.feedpilot.client.BuildConfig.VERSION_NAME
         }
     }
 

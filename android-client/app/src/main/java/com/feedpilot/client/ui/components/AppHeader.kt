@@ -50,7 +50,7 @@ fun AppHeader(
     ) {
         val isOnline by com.feedpilot.client.common.rememberConnectivityState()
         Box(Modifier.fillMaxWidth()) {
-            if (!latestVersionName.isNullOrBlank()) {
+            val displayVersion = latestVersionName?.takeIf { it.isNotBlank() } ?: com.feedpilot.client.BuildConfig.VERSION_NAME
                 val dotColor = if (isOnline) Color(0xFF36C484) else Color(0xFFE85A5A)
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -71,14 +71,13 @@ fun AppHeader(
                                 .background(dotColor)
                         )
                         Text(
-                            text = "v$latestVersionName",
+                            text = "v$displayVersion",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp
                         )
                     }
                 }
-            }
 
             Row(
                 Modifier.align(Alignment.Center),
