@@ -1,15 +1,15 @@
 # FeedPilot — Complete Workspace & Architecture Context
 
-> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-11-05 (Baseline commit `90f6560`).  
+> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-11-07 (Baseline commit `b0e81f0`).  
 > Companion references:
-> - [PROJECT_CONTEXT.md](file:///D:/FeedPilot/PROJECT_CONTEXT.md) (source inspection & operational boundaries)
-> - [README.md](file:///D:/FeedPilot/README.md) (repository overview & build commands)
-> - [docs/ARCHITECTURE.md](file:///D:/FeedPilot/docs/ARCHITECTURE.md) (subsystem architecture)
-> - [docs/API.md](file:///D:/FeedPilot/docs/API.md) (core endpoint inventory)
-> - [docs/BUILD.md](file:///D:/FeedPilot/docs/BUILD.md) (compilation instructions)
-> - [docs/DEPLOYMENT.md](file:///D:/FeedPilot/docs/DEPLOYMENT.md) (VPS deployment runbook)
-> - [docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md](file:///D:/FeedPilot/docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md) (feed bridge deep-dive)
-> - [Implementation.md](file:///D:/FeedPilot/Implementation.md) (Android Social Engagement Client specification)
+> - [PROJECT_CONTEXT.md](file:///D:/CoreProject/FeedPilot/PROJECT_CONTEXT.md) (source inspection & operational boundaries)
+> - [README.md](file:///D:/CoreProject/FeedPilot/README.md) (repository overview & build commands)
+> - [docs/ARCHITECTURE.md](file:///D:/CoreProject/FeedPilot/docs/ARCHITECTURE.md) (subsystem architecture)
+> - [docs/API.md](file:///D:/CoreProject/FeedPilot/docs/API.md) (core endpoint inventory)
+> - [docs/BUILD.md](file:///D:/CoreProject/FeedPilot/docs/BUILD.md) (compilation instructions)
+> - [docs/DEPLOYMENT.md](file:///D:/CoreProject/FeedPilot/docs/DEPLOYMENT.md) (VPS deployment runbook)
+> - [docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md](file:///D:/CoreProject/FeedPilot/docs/INSTAGRAM_DEVICE_BRIDGE_ARCHITECTURE.md) (feed bridge deep-dive)
+> - [Implementation.md](file:///D:/CoreProject/FeedPilot/Implementation.md) (Android Social Engagement Client specification)
 
 ---
 
@@ -46,7 +46,9 @@
      - *Decoupled Heartbeat & Token Initialization*: Injected `AuthRepository` to auto-ensure device session and decoupled 5s periodic heartbeats from poll requests, removing error loops.
      - *Power & Connectivity Locks*: Added `PARTIAL_WAKE_LOCK` and high-performance `WifiLock` in `FeedBridgeService.kt` to ensure uninterrupted polling when screen is locked or in Android Doze mode.
      - *Backend Stale State Recovery*: In `FeedBridgeService.cs`, active heartbeats immediately clear stale `CooldownUntil` and `IsBusy` flags.
-     - *Release APK & CI/CD Pipeline*: Built and signed release artifact at `android-client/app/build/outputs/apk/release/app-release.apk` (current `v2.0.119`, build 121). Automated via `.github/workflows/auto-update-release.yml` and `push-and-release.bat` with in-app OTA download & install handling (`UpdateRepository.kt`, `UpdatesViewModel.kt`).
+     - *Release APK & CI/CD Pipeline*: Built and signed release artifact at `android-client/app/build/outputs/apk/release/app-release.apk` (current `v2.0.121`, build 123). Automated via `.github/workflows/auto-update-release.yml` and `push-and-release.bat` with in-app OTA download & install handling (`UpdateRepository.kt`, `UpdatesViewModel.kt`).
+     - *Header Badge & Balance Integration*: Pinned header version pill directly to `BuildConfig.VERSION_NAME` in `AppHeader.kt` and `BalanceViewModel.kt` to prevent version desync while dynamically streaming live wallet coin balances and active subscription tier.
+     - *Bridge Account Candidate Selection*: Enhanced `FeedBridgeRunner.kt` with round-robin candidate account rotation across valid sessions with fallback guarantees, accompanied by unit tests in `BridgeCandidateAccountsTest.kt`.
 4. **In-Browser Operations Suite** (`backend/src/FeedPilot.Api/wwwroot/dashboard`):
    - Cryptographic HMAC-SHA256 challenge-response authentication.
    - 60-second idle auto-lock screen.
@@ -281,7 +283,7 @@ The ASP.NET Core backend implements **42 controllers** structured around 7 opera
 
 ## 5. Database Schema & Persistence Architecture
 
-The persistence layer is managed by [AppDbContext.cs](file:///D:/FeedPilot/backend/src/FeedPilot.Api/Data/AppDbContext.cs) and updated dynamically on startup via [DatabaseSchemaMigrator.cs](file:///D:/FeedPilot/backend/src/FeedPilot.Api/Data/DatabaseSchemaMigrator.cs) without requiring conventional EF migration files.
+The persistence layer is managed by [AppDbContext.cs](file:///D:/CoreProject/FeedPilot/backend/src/FeedPilot.Api/Data/AppDbContext.cs) and updated dynamically on startup via [DatabaseSchemaMigrator.cs](file:///D:/CoreProject/FeedPilot/backend/src/FeedPilot.Api/Data/DatabaseSchemaMigrator.cs) without requiring conventional EF migration files.
 
 ### Core Database Entities:
 1. **`User`**: Base user entity. Stores username, password hash (BCrypt), subscription tier, referral code, and links to `Wallet`.

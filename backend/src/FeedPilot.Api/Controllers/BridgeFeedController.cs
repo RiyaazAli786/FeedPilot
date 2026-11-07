@@ -12,11 +12,13 @@ public class BridgeFeedController : ControllerBase
 {
     private readonly IFeedBridgeService _bridge;
     private readonly IConfiguration _config;
+    private readonly ILogger<BridgeFeedController> _logger;
 
-    public BridgeFeedController(IFeedBridgeService bridge, IConfiguration config)
+    public BridgeFeedController(IFeedBridgeService bridge, IConfiguration config, ILogger<BridgeFeedController> logger)
     {
         _bridge = bridge;
         _config = config;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -30,7 +32,17 @@ public class BridgeFeedController : ControllerBase
         }
 
         var response = await _bridge.ExecuteFeedAsync(request, ct);
-        if (response.Success) return Ok(response);
+        if (response.Success)
+        {
+            _logger.LogInformation(
+                "Bridge feed resolved for target {Target}: JobId={JobId}, Device={DeviceId}, Account=@{Account}, Duration={DurationMs}ms",
+                request.Username ?? request.UserId, response.JobId, response.DeviceId, response.AccountUsername, response.DurationMs);
+            return Ok(response);
+        }
+
+        _logger.LogWarning(
+            "Bridge feed failed for target {Target}: Code={Code}, Message={Message}, JobId={JobId}",
+            request.Username ?? request.UserId, response.Code, response.Message, response.JobId);
 
         var status = response.Code switch
         {

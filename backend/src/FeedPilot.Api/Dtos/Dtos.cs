@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using FeedPilot.Api.Domain;
 using TaskStatus = FeedPilot.Api.Domain.TaskStatus;
 
@@ -982,11 +983,11 @@ public record BridgeFeedRequest(
 
 public record BridgeFeedResponse(
     bool Success,
-    string Source,
-    Guid? JobId = null,
-    string? DeviceId = null,
-    string? AccountUsername = null,
-    long? DurationMs = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? Source = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] Guid? JobId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? DeviceId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? AccountUsername = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] long? DurationMs = null,
     object? Data = null,
     string? Code = null,
     string? Message = null);

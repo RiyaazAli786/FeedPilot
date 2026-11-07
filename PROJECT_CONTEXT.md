@@ -1,7 +1,7 @@
 # FeedPilot Project Context
 
-Reviewed against repository source: 2026-11-05.
-Baseline commit: `90f6560` (chore(release): bump version to v2.0.119 - Auto release CI/CD and update workflow).
+Reviewed against repository source: 2026-11-07.
+Baseline commit: `b0e81f0` (chore(release): bump version to v2.0.121 [skip ci]).
 This is a source inspection, not a successful build or production health report.
 
 ## Purpose and scope

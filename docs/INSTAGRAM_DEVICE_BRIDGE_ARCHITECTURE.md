@@ -136,17 +136,15 @@ Response:
 ```json
 {
   "success": true,
-  "source": "android-device",
-  "jobId": "uuid",
-  "deviceId": "device-id",
-  "accountUsername": "logged_in_account",
-  "durationMs": 1840,
   "data": {
     "profile": {},
-    "feed": {}
+    "items": []
   }
 }
 ```
+
+> **Note on Footprint & Privacy:**  
+> Operational telemetry (`source`, `jobId`, `deviceId`, `accountUsername`, `durationMs`) is recorded directly in backend server logs (`ILogger`), and is explicitly excluded from the serialized JSON response (`[JsonIgnore]`) to avoid leaking device IDs, account handles, or bridge footprints to external consumers. Upstream adapters must not attach a `feedpilot_bridge` object in public-facing responses.
 
 Failure response:
 
