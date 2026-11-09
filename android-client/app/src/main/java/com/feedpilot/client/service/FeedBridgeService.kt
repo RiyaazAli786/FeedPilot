@@ -262,8 +262,8 @@ class FeedBridgeService : Service() {
     companion object {
         private const val TAG = "FeedBridgeService"
         private const val NOTIFICATION_ID_BASE = 7300
-        private const val ACTIVE_DELAY_MS = 500L
-        private const val IDLE_DELAY_MS = 2_000L
+        private const val ACTIVE_DELAY_MS = 250L
+        private const val IDLE_DELAY_MS = 100L
         private const val ERROR_DELAY_MS = 10_000L
 
         fun start(context: Context) {

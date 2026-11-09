@@ -2772,11 +2772,43 @@ class InstagramWebClient @Inject constructor(
         }
     }
 
+    private data class CachedSessionTokens(
+        val tokens: Map<String, String>,
+        val cookies: String,
+        val timestampMs: Long
+    )
+
+    private fun getSessionKey(cookies: String): String {
+        return extractCookie(cookies, "ds_user_id")?.takeIf { it.isNotBlank() }
+            ?: cookies.hashCode().toString()
+    }
+
     private fun fetchUserFeedViaGraphql(
         username: String,
         maxId: String?,
         sessionCookies: String
     ): InstagramUserFeedResult? {
+        val sessionKey = getSessionKey(sessionCookies)
+        val cached = sessionTokensCache[sessionKey]
+        val now = System.currentTimeMillis()
+
+        if (cached != null && (now - cached.timestampMs) < TOKENS_CACHE_TTL_MS && cached.tokens.isNotEmpty()) {
+            val fastResult = runCatching {
+                executeGraphqlFeed(username, maxId, cached.cookies, cached.tokens, pageHtml = "", sessionCookies = sessionCookies)
+            }.getOrNull()
+
+            if (fastResult != null) {
+                if (fastResult.updatedCookies != null) {
+                    sessionTokensCache[sessionKey] = cached.copy(
+                        cookies = fastResult.updatedCookies,
+                        timestampMs = now
+                    )
+                }
+                return fastResult
+            }
+            sessionTokensCache.remove(sessionKey)
+        }
+
         var currentCookies = sessionCookies
         var pageHtml = ""
         // Bootstrap session-bound tokens from the target page instead of reusing captured credentials.
@@ -2801,6 +2833,22 @@ class InstagramWebClient @Inject constructor(
             currentCookies = mergeSetCookiesAndClaim(currentCookies, response) ?: currentCookies
             InstagramProfileFeedRequest.tokens(html)
         }
+
+        if (tokens.isNotEmpty()) {
+            sessionTokensCache[sessionKey] = CachedSessionTokens(tokens, currentCookies, now)
+        }
+
+        return executeGraphqlFeed(username, maxId, currentCookies, tokens, pageHtml, sessionCookies)
+    }
+
+    private fun executeGraphqlFeed(
+        username: String,
+        maxId: String?,
+        currentCookies: String,
+        tokens: Map<String, String>,
+        pageHtml: String,
+        sessionCookies: String
+    ): InstagramUserFeedResult? {
         val request = InstagramProfileFeedRequest.build(username, maxId, currentCookies, extractCookie(currentCookies, "csrftoken"), tokens)
             .newBuilder()
             .apply { if (context != null) applyDeviceHeaders() }
@@ -2826,7 +2874,7 @@ class InstagramWebClient @Inject constructor(
             }
             val pageInfo = findPageInfo(json)
             var profile = findGraphqlProfile(json, username, items.size.toLong())
-            val htmlStats = extractProfileStatsFromHtml(pageHtml)
+            val htmlStats = if (pageHtml.isNotBlank()) extractProfileStatsFromHtml(pageHtml) else null
             if (htmlStats != null) {
                 profile = if (profile != null) {
                     profile.copy(
@@ -4561,6 +4609,8 @@ class InstagramWebClient @Inject constructor(
         const val DEFAULT_LSD_TOKEN = "AdRDeaOf3ijEZn0sa3wXaPAZQ_Y"
         const val FOLLOW_VERIFY_MIN_DELAY_MS = 4_000L
         const val FOLLOW_VERIFY_MAX_DELAY_MS = 8_000L
+        const val TOKENS_CACHE_TTL_MS = 30 * 60 * 1000L // 30 minutes
+        val sessionTokensCache = java.util.concurrent.ConcurrentHashMap<String, CachedSessionTokens>()
 
     }
 }

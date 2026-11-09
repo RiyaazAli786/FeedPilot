@@ -32,6 +32,7 @@ public class BridgeJobsController : ControllerBase
     public async Task<ActionResult<BridgeJobDto?>> Poll(
         [FromQuery] string? deviceId,
         [FromQuery] string? installationId,
+        [FromQuery] int? waitSec,
         CancellationToken ct)
     {
         var identity = this.ClientIdentity();
@@ -40,7 +41,8 @@ public class BridgeJobsController : ControllerBase
         if (string.IsNullOrWhiteSpace(resolvedDeviceId) || resolvedDeviceId == ClientIdentityDefaults.Unknown)
             return BadRequest(new ApiError("Device id is required.", "MISSING_DEVICE_ID"));
 
-        var job = await _bridge.PollAsync(identity.AppId, resolvedDeviceId, resolvedInstallationId, ct);
+        var timeout = waitSec.HasValue ? TimeSpan.FromSeconds(Math.Clamp(waitSec.Value, 0, 15)) : TimeSpan.FromSeconds(8);
+        var job = await _bridge.PollAsync(identity.AppId, resolvedDeviceId, resolvedInstallationId, timeout, ct);
         return Ok(job);
     }
 

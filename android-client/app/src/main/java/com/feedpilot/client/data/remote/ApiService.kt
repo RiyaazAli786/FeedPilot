@@ -209,7 +209,8 @@ interface ApiService {
     @GET("api/bridge/jobs/poll")
     suspend fun pollBridgeJob(
         @Query("deviceId") deviceId: String,
-        @Query("installationId") installationId: String
+        @Query("installationId") installationId: String,
+        @Query("waitSec") waitSec: Int = 8
     ): Response<BridgeJobDto?>
 
     @POST("api/bridge/jobs/{id}/complete")

@@ -121,7 +121,8 @@ class FeedBridgeRunner @Inject constructor(
         val job = runCatching {
             val response = api.pollBridgeJob(
                 deviceId = identity.stableAppInstallationId,
-                installationId = identity.accountBindingInstallationId
+                installationId = identity.accountBindingInstallationId,
+                waitSec = 8
             )
             if (response.isSuccessful) response.body() else {
                 error("Bridge poll failed HTTP ${response.code()}")

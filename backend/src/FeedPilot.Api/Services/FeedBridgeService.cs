@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,7 @@ public interface IFeedBridgeService
     Task<BridgeFeedResponse> ExecuteFeedAsync(BridgeFeedRequest request, CancellationToken ct);
     Task<BridgeHeartbeatResponse> HeartbeatAsync(Guid? userId, string appId, BridgeHeartbeatRequest request, CancellationToken ct);
     Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, CancellationToken ct);
+    Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, TimeSpan? waitTimeout, CancellationToken ct);
     Task<BridgeJobResultDto> CompleteAsync(Guid id, string appId, string deviceId, CompleteBridgeJobRequest request, CancellationToken ct);
     Task<BridgeJobResultDto> FailAsync(Guid id, string appId, string deviceId, FailBridgeJobRequest request, CancellationToken ct);
     Task SweepExpiredAsync(CancellationToken ct);
@@ -24,6 +26,46 @@ public class FeedBridgeService : IFeedBridgeService
     private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan JobTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(10);
+
+    private static readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pollWaiters = new();
+    private static readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _activeJobCompletions = new();
+
+    private static string GetDeviceKey(string appId, string deviceId, string installationId) =>
+        $"{appId}:{deviceId}:{installationId}";
+
+    private static TaskCompletionSource<bool> RegisterDeviceWaiter(string appId, string deviceId, string installationId)
+    {
+        var key = GetDeviceKey(appId, deviceId, installationId);
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pollWaiters[key] = tcs;
+        return tcs;
+    }
+
+    private static void UnregisterDeviceWaiter(string appId, string deviceId, string installationId, TaskCompletionSource<bool> waiter)
+    {
+        var key = GetDeviceKey(appId, deviceId, installationId);
+        if (_pollWaiters.TryGetValue(key, out var current) && ReferenceEquals(current, waiter))
+        {
+            _pollWaiters.TryRemove(key, out _);
+        }
+    }
+
+    private static void SignalDevicePoll(string appId, string deviceId, string installationId)
+    {
+        var key = GetDeviceKey(appId, deviceId, installationId);
+        if (_pollWaiters.TryRemove(key, out var tcs))
+        {
+            tcs.TrySetResult(true);
+        }
+    }
+
+    private static void SignalJobCompletion(Guid jobId)
+    {
+        if (_activeJobCompletions.TryGetValue(jobId, out var tcs))
+        {
+            tcs.TrySetResult(true);
+        }
+    }
 
     private readonly AppDbContext _db;
     private readonly ILogger<FeedBridgeService> _logger;
@@ -111,6 +153,7 @@ public class FeedBridgeService : IFeedBridgeService
                     await _db.SaveChangesAsync(ct);
                     _logger.LogInformation("Bridge job {JobId} attempt {Attempt} assigned to device {DeviceId}.",
                         job.Id, job.Attempt, job.AssignedDeviceId);
+                    SignalDevicePoll(account.AppId, account.DeviceId, account.InstallationId);
                 }
             }
             finally { SelectionGate.Release(); }
@@ -122,36 +165,54 @@ public class FeedBridgeService : IFeedBridgeService
                 continue;
             }
 
+            var completionSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _activeJobCompletions[job.Id] = completionSource;
             try
             {
-                while (DateTime.UtcNow < job.ExpiresAt)
+                try
                 {
-                    await Task.Delay(250, ct);
-                    await _db.Entry(job).ReloadAsync(ct);
-                    if (job.Status is not (FeedBridgeJobStatus.Assigned or FeedBridgeJobStatus.Running)) break;
-                }
-                await MarkTimedOutAsync(job, ct);
-                // Timeout and completion can cross; always inspect the persisted winner.
-                await _db.Entry(job).ReloadAsync(ct);
-                if (job.Status == FeedBridgeJobStatus.Completed)
-                {
-                    object? data = string.IsNullOrWhiteSpace(job.ResponseJson) ? null
-                        : JsonSerializer.Deserialize<object>(job.ResponseJson, JsonOptions);
-                    string? returnedAccountUsername = account.InstagramUsername;
-                    if (job.AssignedAccountStateId is { } completedStateId)
+                    var remaining = job.ExpiresAt - DateTime.UtcNow;
+                    if (remaining > TimeSpan.Zero)
                     {
-                        var completedAcc = await _db.FeedBridgeAccountStates.FindAsync(new object[] { completedStateId }, ct);
-                        if (completedAcc != null && !string.IsNullOrWhiteSpace(completedAcc.InstagramUsername))
-                            returnedAccountUsername = completedAcc.InstagramUsername;
+                        using var timeoutCts = new CancellationTokenSource(remaining);
+                        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                        try
+                        {
+                            await completionSource.Task.WaitAsync(linkedCts.Token);
+                        }
+                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                        {
+                            // Deadline reached
+                        }
                     }
-                    return new BridgeFeedResponse(true, "android-device", job.Id,
-                        job.AssignedDeviceId, returnedAccountUsername, sw.ElapsedMilliseconds, data);
+
+                    await MarkTimedOutAsync(job, ct);
+                    // Timeout and completion can cross; always inspect the persisted winner.
+                    await _db.Entry(job).ReloadAsync(ct);
+                    if (job.Status == FeedBridgeJobStatus.Completed)
+                    {
+                        object? data = string.IsNullOrWhiteSpace(job.ResponseJson) ? null
+                            : JsonSerializer.Deserialize<object>(job.ResponseJson, JsonOptions);
+                        string? returnedAccountUsername = account.InstagramUsername;
+                        if (job.AssignedAccountStateId is { } completedStateId)
+                        {
+                            var completedAcc = await _db.FeedBridgeAccountStates.FindAsync(new object[] { completedStateId }, ct);
+                            if (completedAcc != null && !string.IsNullOrWhiteSpace(completedAcc.InstagramUsername))
+                                returnedAccountUsername = completedAcc.InstagramUsername;
+                        }
+                        return new BridgeFeedResponse(true, "android-device", job.Id,
+                            job.AssignedDeviceId, returnedAccountUsername, sw.ElapsedMilliseconds, data);
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    await CancelJobAsync(job);
+                    throw;
                 }
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            finally
             {
-                await CancelJobAsync(job);
-                throw;
+                _activeJobCompletions.TryRemove(job.Id, out _);
             }
 
             lastFailure = Fail(job.ErrorCode ?? "JOB_FAILED",
@@ -334,7 +395,40 @@ public class FeedBridgeService : IFeedBridgeService
         finally { SelectionGate.Release(); }
     }
 
-    public async Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, CancellationToken ct)
+    public Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, CancellationToken ct) =>
+        PollAsync(appId, deviceId, installationId, null, ct);
+
+    public async Task<BridgeJobDto?> PollAsync(string appId, string deviceId, string installationId, TimeSpan? waitTimeout, CancellationToken ct)
+    {
+        var job = await TryFetchAssignedJobAsync(appId, deviceId, installationId, ct);
+        if (job != null || waitTimeout == null || waitTimeout <= TimeSpan.Zero)
+        {
+            return job;
+        }
+
+        var waiter = RegisterDeviceWaiter(appId, deviceId, installationId);
+        try
+        {
+            using var timeoutCts = new CancellationTokenSource(waitTimeout.Value);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            try
+            {
+                await waiter.Task.WaitAsync(linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+        finally
+        {
+            UnregisterDeviceWaiter(appId, deviceId, installationId, waiter);
+        }
+
+        return await TryFetchAssignedJobAsync(appId, deviceId, installationId, ct);
+    }
+
+    private async Task<BridgeJobDto?> TryFetchAssignedJobAsync(string appId, string deviceId, string installationId, CancellationToken ct)
     {
         await SelectionGate.WaitAsync(ct);
         try
@@ -410,6 +504,7 @@ public class FeedBridgeService : IFeedBridgeService
                 job.CompletedAt = job.UpdatedAt = now;
                 await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
                 await _db.SaveChangesAsync(ct);
+                SignalJobCompletion(job.Id);
                 return new BridgeJobResultDto(true, job.Status.ToString());
             }
             if (!string.IsNullOrWhiteSpace(job.TargetUsername) &&
@@ -430,6 +525,7 @@ public class FeedBridgeService : IFeedBridgeService
                     job.CompletedAt = job.UpdatedAt = now;
                     await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
                     await _db.SaveChangesAsync(ct);
+                    SignalJobCompletion(job.Id);
                     return new BridgeJobResultDto(true, job.Status.ToString());
                 }
             }
@@ -452,6 +548,7 @@ public class FeedBridgeService : IFeedBridgeService
             job.ErrorMessage = null;
             await ReleaseAssignedAccountAsync(job, success: true, errorCode: null, errorMessage: null, ct);
             await _db.SaveChangesAsync(ct);
+            SignalJobCompletion(job.Id);
             return new BridgeJobResultDto(true, job.Status.ToString());
         }
         finally { SelectionGate.Release(); }
@@ -484,6 +581,7 @@ public class FeedBridgeService : IFeedBridgeService
             job.UpdatedAt = now;
             await ReleaseAssignedAccountAsync(job, success: false, errorCode: request.Code, errorMessage: request.Message, ct);
             await _db.SaveChangesAsync(ct);
+            SignalJobCompletion(job.Id);
             return new BridgeJobResultDto(true, job.Status.ToString());
         }
         finally { SelectionGate.Release(); }
