@@ -186,8 +186,9 @@ public class DevicesController : ControllerBase
                     ? bridge.LastSeenAt
                     : d.LastSeenAt;
 
-                var isOnline = (now - effectiveLastSeen) <= onlineThreshold;
                 var isBridgeEnabled = bridge?.BridgeEnabled ?? false;
+                var effectiveThreshold = isBridgeEnabled ? TimeSpan.FromSeconds(30) : onlineThreshold;
+                var isOnline = (now - effectiveLastSeen) <= effectiveThreshold;
                 var loggedInList = parseLoggedInAccounts(d.LoggedInAccountsJson);
                 var cloneCount = !string.IsNullOrWhiteSpace(d.InstallationId) &&
                     cloneCounts.TryGetValue(d.InstallationId, out var count) ? count : 1;

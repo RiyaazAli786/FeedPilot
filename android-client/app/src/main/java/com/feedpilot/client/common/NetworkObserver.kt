@@ -9,10 +9,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 
 fun Context.hasInternetConnection(): Boolean {
-    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
     val active = connectivityManager.activeNetwork ?: return false
     val caps = connectivityManager.getNetworkCapabilities(active) ?: return false
-    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    val hasInternet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    if (!hasInternet) return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
 /**
@@ -29,7 +31,8 @@ fun rememberConnectivityState(): State<Boolean> {
     val isOnlineState = remember {
         val initialIsOnline = connectivityManager.activeNetwork?.let { network ->
             val caps = connectivityManager.getNetworkCapabilities(network)
-            caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         } ?: false
         mutableStateOf(initialIsOnline)
     }
@@ -37,17 +40,25 @@ fun rememberConnectivityState(): State<Boolean> {
     DisposableEffect(connectivityManager) {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                isOnlineState.value = true
+                val caps = connectivityManager.getNetworkCapabilities(network)
+                isOnlineState.value = caps?.let {
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                } == true
             }
 
             override fun onLost(network: Network) {
                 val active = connectivityManager.activeNetwork
                 val caps = active?.let { connectivityManager.getNetworkCapabilities(it) }
-                isOnlineState.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                isOnlineState.value = caps?.let {
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                } == true
             }
 
             override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-                val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 isOnlineState.value = hasInternet
             }
         }

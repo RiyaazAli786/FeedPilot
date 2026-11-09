@@ -6,10 +6,14 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.net.wifi.WifiManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -30,6 +34,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -42,6 +48,8 @@ class FeedBridgeService : Service() {
     private val notificationId by lazy { deviceIdentity.cloneScopedNotificationId(NOTIFICATION_ID_BASE) }
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val networkSignal = Channel<Unit>(Channel.CONFLATED)
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +59,7 @@ class FeedBridgeService : Service() {
             return
         }
         acquireLocks()
+        registerNetworkCallback()
         scope.launch { loop() }
     }
 
@@ -61,6 +70,7 @@ class FeedBridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        unregisterNetworkCallback()
         releaseLocks()
         scope.cancel()
         BridgeStatusStore.error("Bridge stopped. Reopen FeedPilot to reconnect.")
@@ -83,20 +93,63 @@ class FeedBridgeService : Service() {
                 }
                 if (!hasInternetConnection()) {
                     BridgeStatusStore.offline()
-                    delay(ERROR_DELAY_MS)
+                    withTimeoutOrNull(3_000L) { networkSignal.receive() }
                     continue
                 }
 
                 val ranJob = runner.runOneJob()
-                delay(if (ranJob) ACTIVE_DELAY_MS else IDLE_DELAY_MS)
+                val waitTime = if (ranJob) ACTIVE_DELAY_MS else IDLE_DELAY_MS
+                withTimeoutOrNull(waitTime) { networkSignal.receive() }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Feed bridge loop failed", e)
                 BridgeStatusStore.error("Bridge retrying after network error")
-                delay(ERROR_DELAY_MS)
+                withTimeoutOrNull(ERROR_DELAY_MS) { networkSignal.receive() }
             }
         }
+    }
+
+    private fun registerNetworkCallback() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                runner.onNetworkReconnected()
+                networkSignal.trySend(Unit)
+            }
+
+            override fun onLost(network: Network) {
+                BridgeStatusStore.offline("No internet connection")
+            }
+
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                if (hasInternet) {
+                    runner.onNetworkReconnected()
+                    networkSignal.trySend(Unit)
+                } else {
+                    BridgeStatusStore.offline("No internet connection")
+                }
+            }
+        }
+        networkCallback = callback
+        runCatching {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm.registerNetworkCallback(request, callback)
+        }.onFailure { Log.w(TAG, "Could not register network callback", it) }
+    }
+
+    private fun unregisterNetworkCallback() {
+        networkCallback?.let { cb ->
+            runCatching {
+                val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                cm?.unregisterNetworkCallback(cb)
+            }
+        }
+        networkCallback = null
     }
 
     private fun ensureChannel() {

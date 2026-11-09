@@ -89,3 +89,4 @@ deploy/.deploy-secrets.env
 !.env.example
 !deploy/.deploy-secrets.env.example
 testsession.json
+testsession.json

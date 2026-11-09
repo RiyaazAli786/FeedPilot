@@ -90,8 +90,17 @@ class FeedBridgeRunner @Inject constructor(
                     else BridgeStatusStore.error("Add an Instagram account with a saved session to enable bridge actions.")
                 }
             }
-            .onFailure { Log.w(TAG, "Bridge heartbeat failed", it) }
+            .onFailure {
+                Log.w(TAG, "Bridge heartbeat failed", it)
+                if (it is java.io.IOException) {
+                    BridgeStatusStore.offline("Cannot reach bridge server")
+                }
+            }
             .getOrDefault(false)
+    }
+
+    fun onNetworkReconnected() {
+        lastHeartbeatTimeMs = 0L
     }
 
     suspend fun runOneJob(): Boolean = executionLock.withLock {
@@ -117,7 +126,12 @@ class FeedBridgeRunner @Inject constructor(
             if (response.isSuccessful) response.body() else {
                 error("Bridge poll failed HTTP ${response.code()}")
             }
-        }.onFailure { Log.w(TAG, "Bridge poll failed", it) }.getOrNull() ?: return@withLock false
+        }.onFailure {
+            Log.w(TAG, "Bridge poll failed", it)
+            if (it is java.io.IOException) {
+                BridgeStatusStore.offline("Cannot reach bridge server")
+            }
+        }.getOrNull() ?: return@withLock false
 
         if (!isBridgeEnabled()) return@withLock false
         BridgeStatusStore.resolving(job.targetUsername ?: job.targetUserId, job.id, job.accountUsername)
