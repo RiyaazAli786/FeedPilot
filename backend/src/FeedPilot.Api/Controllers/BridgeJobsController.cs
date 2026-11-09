@@ -52,7 +52,10 @@ public class BridgeJobsController : ControllerBase
     {
         var identity = this.ClientIdentity();
         var result = await _bridge.CompleteAsync(id, identity.AppId, identity.DeviceId, request, ct);
-        return result.Accepted ? Ok(result) : NotFound(result);
+        if (result.Accepted) return Ok(result);
+        if (string.Equals(result.Status, "NotFound", StringComparison.OrdinalIgnoreCase))
+            return NotFound(result);
+        return Ok(result);
     }
 
     [HttpPost("jobs/{id:guid}/fail")]
@@ -63,6 +66,9 @@ public class BridgeJobsController : ControllerBase
     {
         var identity = this.ClientIdentity();
         var result = await _bridge.FailAsync(id, identity.AppId, identity.DeviceId, request, ct);
-        return result.Accepted ? Ok(result) : NotFound(result);
+        if (result.Accepted) return Ok(result);
+        if (string.Equals(result.Status, "NotFound", StringComparison.OrdinalIgnoreCase))
+            return NotFound(result);
+        return Ok(result);
     }
 }

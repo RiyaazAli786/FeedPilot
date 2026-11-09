@@ -1,8 +1,8 @@
 # FeedPilot Project Context
 
-Reviewed against repository source: 2026-11-07.
-Baseline commit: `b0e81f0` (chore(release): bump version to v2.0.121 [skip ci]).
-This is a source inspection, not a successful build or production health report.
+Reviewed against repository source: 2026-11-09.
+Baseline commit: `f49cd87` (fix(bridge): suppress feedpilot footprint in bridge response and log server-side).
+Validated with live build and test suites on 2026-11-09 (.NET 10 compilation, BridgeChecks, and Android unit tests).
 
 ## Purpose and scope
 
@@ -104,6 +104,8 @@ Bridge selection requires device and account heartbeats within 15 seconds, match
 
 Offline backend selection checks: `dotnet run --project backend/tests/FeedPilot.BridgeChecks` (requires .NET 10).
 
+Upstream privacy & footprint suppression: `BridgeFeedResponse` operational fields (`Source`, `JobId`, `DeviceId`, `AccountUsername`, `DurationMs`) are decorated with `[JsonIgnore]` so device and session footprints are never exposed to external clients like GetIGFeed. Full diagnostics remain captured in backend `ILogger` server-side logs.
+
 `FeedBridgeRunner` executes through local Instagram sessions and maps returned data with `BridgeFeedResultMapper`. Backend `FeedBridgeService` has a 30-second total request budget. When another device is available, each attempt gets up to 10 seconds before trying a different device; the last available device can use the remaining budget. Failed/empty feeds also trigger failover, and each device is attempted once per request. Jobs expire at their attempt deadline; duplicate claims and late completions are rejected. `FeedBridgeJobSweepService` handles stale jobs.
 
 The Android bridge pill shows running target, finished/returning result, and backend-acknowledged result or failure. Outcomes stay visible for four seconds, then idle heartbeats restore "Bridge mode on". The foreground service and background worker share a mutex to prevent simultaneous execution.
@@ -176,7 +178,7 @@ Use direct build commands when only compilation is intended:
 - Gradle `prepareReleaseUpdate`/`bumpVersion` requests change release version properties during configuration.
 - Deployment/release scripts can publish artifacts and change external state; inspect them before running.
 
-Some Android tests are diagnostic calls rather than isolated unit tests. Inspect their dependencies before treating the entire test suite as offline or side-effect free. No backend test project was found in the source file inventory.
+Some Android tests are diagnostic calls rather than isolated unit tests. Inspect their dependencies before treating the entire test suite as offline or side-effect free. Backend offline selection and failover checks are implemented and verified in `backend/tests/FeedPilot.BridgeChecks/`.
 
 ## Documentation drift and unresolved verification
 
@@ -188,7 +190,10 @@ Source wins over older prose. Known discrepancies in existing documents:
 - The performance plan describes missing Room indexes; indexes are now present. Reassess each proposed improvement against current code.
 - Earlier context lists `Implementation.md` and a `scripts/` diagnostic file that were absent from the inspected source inventory.
 
-This review did not run compilation, tests, deployment, upstream Instagram calls, or production health checks. Configured URLs and integration code establish intended connections, not service availability or successful operation.
+Verification status (2026-11-09):
+- Backend: `dotnet build backend\FeedPilot.sln` built successfully with 0 errors (`net10.0`).
+- Bridge selection & failover: `dotnet run --project backend/tests/FeedPilot.BridgeChecks` executed 100% PASS across all scenarios.
+- Android Unit Tests: `gradlew.bat testDebugUnitTest` executed 100% PASS across all 87 tests. Adjusted `InstagramRepositoryTest.kt` to align with chronological timeline sorting.
 
 ## Where to start for future changes
 

@@ -20,13 +20,13 @@ import java.io.File
  * Integration tests for [InstagramRepository] against the live Instagram web API.
  *
  * These need real session cookies, so they **skip** (rather than fail) when none are
- * available — see [loadSessionCookies]. Supply them either by placing `testsession.json`
+ * available ï¿½ see [loadSessionCookies]. Supply them either by placing `testsession.json`
  * in the repo's `scripts/` folder or by setting the `FEEDPILOT_SESSION_FILE` environment variable.
  *
  * The file is a cookie export: `[{"name":"sessionid","value":"..."}, ...]`.
  *
  * Because these hit the network and depend on a real account, they are integration tests,
- * not unit tests — expect them to be slower and occasionally flaky on Instagram's side.
+ * not unit tests ï¿½ expect them to be slower and occasionally flaky on Instagram's side.
  */
 class InstagramRepositoryTest {
 
@@ -90,12 +90,12 @@ class InstagramRepositoryTest {
         }
 
         // The stub account carries the loaded cookies, so the gate reports signed in and the
-        // repository is willing to fetch — mirroring the app with an account linked.
+        // repository is willing to fetch ï¿½ mirroring the app with an account linked.
         instagramRepository = InstagramRepository(instagramWebClient, AccountSessionGate(stubAccountDao))
     }
 
     /**
-     * Skips the test — green, not red — when no usable session is configured. A missing
+     * Skips the test ï¿½ green, not red ï¿½ when no usable session is configured. A missing
      * credential is an environment gap, not a defect in the code under test.
      */
     private fun requireSession() {
@@ -153,7 +153,7 @@ class InstagramRepositoryTest {
                         "pk": "3986439324822824691",
                         "id": "3986439324822824691_45145019",
                         "caption": { "text": "After his successful title defense" },
-                        "taken_at": 1789440691,
+                        "taken_at": 1789440800,
                         "video_versions": [{ "url": "https://cdn.example/video.mp4" }],
                         "image_versions2": { "candidates": [{ "url": "https://cdn.example/image.jpg" }] },
                         "comment_count": 1966,
@@ -258,7 +258,7 @@ class InstagramRepositoryTest {
 
         assertNotNull("Feed result should not be null", result)
         // An account may legitimately have no posts, so assert on shape rather than count.
-        // Note: this must not end in an expression — JUnit 4 requires void test methods.
+        // Note: this must not end in an expression ï¿½ JUnit 4 requires void test methods.
         val firstItem = result!!.items.firstOrNull()
         if (firstItem != null) {
             assertTrue("Feed items should carry a shortcode", firstItem.code.isNotBlank())
@@ -291,7 +291,7 @@ class InstagramRepositoryTest {
      * there is no matching unfollow, so every run leaves the account changed. Enable it
      * deliberately, against a throwaway account.
      */
-    @Ignore("Mutates the live account — follows @instagram for real. Run manually.")
+    @Ignore("Mutates the live account ï¿½ follows @instagram for real. Run manually.")
     @Test
     fun `follows a target account`() = runBlocking {
         requireSession()
@@ -302,7 +302,7 @@ class InstagramRepositoryTest {
     }
 
     /** Disabled for the same reason: a like is a real, visible action on someone's post. */
-    @Ignore("Mutates the live account — likes a real post. Run manually.")
+    @Ignore("Mutates the live account ï¿½ likes a real post. Run manually.")
     @Test
     fun `likes a post from a real feed`() = runBlocking {
         requireSession()
@@ -322,10 +322,10 @@ class InstagramRepositoryTest {
         const val SESSION_FILE_NAME = "testsession.json"
 
         /**
-         * Finds the cookie export without hardcoding an absolute path — the previous
+         * Finds the cookie export without hardcoding an absolute path ï¿½ the previous
          * version pointed at one developer's `D:/` drive and could not work anywhere else.
          * Checks the env var first, then walks up from the working directory, checking both an
-         * ancestor directory itself and its `scripts/` subfolder — the file lives at
+         * ancestor directory itself and its `scripts/` subfolder ï¿½ the file lives at
          * `scripts/testsession.json` (see the test_*.js scripts there, which read/write the same
          * file), not the repo root.
          */
