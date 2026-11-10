@@ -236,6 +236,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.AppId, x.DeviceId });
             e.HasIndex(x => x.InstallationId);
             e.HasIndex(x => x.LastSeenAt);
+            e.HasIndex(x => x.LastUsedAt);
             e.HasIndex(x => new { x.BridgeEnabled, x.LastSeenAt });
             e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
             e.Property(x => x.DeviceId).HasMaxLength(128).IsRequired();
@@ -250,6 +251,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.AppId, x.DeviceId });
             e.HasIndex(x => x.AccountId);
             e.HasIndex(x => x.InstagramUsername);
+            e.HasIndex(x => x.LastUsedAt);
             e.Property(x => x.AppId).HasMaxLength(128).IsRequired();
             e.Property(x => x.DeviceId).HasMaxLength(128).IsRequired();
             e.Property(x => x.InstallationId).HasMaxLength(128).IsRequired();

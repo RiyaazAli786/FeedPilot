@@ -375,6 +375,7 @@ public class FeedBridgeDeviceState
     public string? CapabilitiesJson { get; set; }
     public int FailureCount { get; set; }
     public DateTime? CooldownUntil { get; set; }
+    public DateTime? LastUsedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

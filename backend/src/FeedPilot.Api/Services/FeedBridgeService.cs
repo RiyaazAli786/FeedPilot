@@ -129,6 +129,22 @@ public class FeedBridgeService : IFeedBridgeService
                     account.LastUsedAt = now;
                     account.UpdatedAt = now;
 
+                    if (_db.Entry(account).State == EntityState.Detached)
+                    {
+                        _db.FeedBridgeAccountStates.Attach(account);
+                    }
+                    _db.Entry(account).Property(a => a.IsBusy).IsModified = true;
+                    _db.Entry(account).Property(a => a.LastUsedAt).IsModified = true;
+                    _db.Entry(account).Property(a => a.UpdatedAt).IsModified = true;
+
+                    var dev = await _db.FeedBridgeDeviceStates.FirstOrDefaultAsync(d =>
+                        d.AppId == account.AppId && d.DeviceId == account.DeviceId && d.InstallationId == account.InstallationId, ct);
+                    if (dev is not null)
+                    {
+                        dev.LastUsedAt = now;
+                        dev.UpdatedAt = now;
+                    }
+
                     job = new FeedBridgeJob
                     {
                         ExternalRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? null : request.RequestId.Trim(),
@@ -538,6 +554,8 @@ public class FeedBridgeService : IFeedBridgeService
                 {
                     job.AssignedAccountId = resolvedAccount.AccountId;
                     job.AssignedAccountStateId = resolvedAccount.Id;
+                    resolvedAccount.LastUsedAt = now;
+                    resolvedAccount.UpdatedAt = now;
                 }
             }
             job.Status = FeedBridgeJobStatus.Completed;
@@ -624,7 +642,7 @@ public class FeedBridgeService : IFeedBridgeService
 
         // Require a recent heartbeat and capacity to execute, without moving
         // account sessions between devices or installations.
-        var onlineDevices = _db.FeedBridgeDeviceStates.AsNoTracking()
+        var onlineDevices = _db.FeedBridgeDeviceStates
             .Where(d => d.BridgeEnabled && d.LastSeenAt >= onlineAfter && !excluded.Contains(d.DeviceId) &&
                 (d.CooldownUntil == null || d.CooldownUntil <= now) &&
                 !_db.FeedBridgeJobs.Any(j =>
@@ -644,7 +662,7 @@ public class FeedBridgeService : IFeedBridgeService
             // Rotate devices independently of how many accounts they hold, then
             // rotate accounts on the selected device. Assignment updates LastUsedAt
             // under SelectionGate, so failures also advance both rotations.
-            .OrderBy(x => _db.FeedBridgeAccountStates
+            .OrderBy(x => x.Device.LastUsedAt ?? _db.FeedBridgeAccountStates
                 .Where(a => a.AppId == x.Device.AppId && a.DeviceId == x.Device.DeviceId &&
                     a.InstallationId == x.Device.InstallationId)
                 .Max(a => a.LastUsedAt) ?? DateTime.MinValue)

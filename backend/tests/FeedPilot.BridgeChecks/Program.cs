@@ -90,7 +90,56 @@ await service.HeartbeatAsync(null, "app", new BridgeHeartbeatRequest(
 Check(await Select() is null, "removed account sessions become unavailable immediately");
 Check(active.Status == AccountStatus.SessionExpired, "removed session is marked expired");
 Console.WriteLine("All bridge selection checks passed.");
+await TestStrictAlternatingRoundRobinAsync();
 await FailoverChecks.RunAsync();
+
+async Task TestStrictAlternatingRoundRobinAsync()
+{
+    using var rrDb = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    var rrService = new FeedBridgeService(rrDb, NullLogger<FeedBridgeService>.Instance);
+    var t0 = DateTime.UtcNow;
+
+    var devA = new FeedBridgeDeviceState { AppId = "app", DeviceId = "devA", InstallationId = "instA", LastSeenAt = t0, CreatedAt = t0.AddMinutes(-10) };
+    var devB = new FeedBridgeDeviceState { AppId = "app", DeviceId = "devB", InstallationId = "instB", LastSeenAt = t0, CreatedAt = t0.AddMinutes(-9) };
+    var accA1 = new FeedBridgeAccountState { AppId = "app", DeviceId = "devA", InstallationId = "instA", InstagramUsername = "accA1", LastValidatedAt = t0, CreatedAt = t0.AddMinutes(-10) };
+    var accA2 = new FeedBridgeAccountState { AppId = "app", DeviceId = "devA", InstallationId = "instA", InstagramUsername = "accA2", LastValidatedAt = t0, CreatedAt = t0.AddMinutes(-9) };
+    var accB1 = new FeedBridgeAccountState { AppId = "app", DeviceId = "devB", InstallationId = "instB", InstagramUsername = "accB1", LastValidatedAt = t0, CreatedAt = t0.AddMinutes(-8) };
+    var accB2 = new FeedBridgeAccountState { AppId = "app", DeviceId = "devB", InstallationId = "instB", InstagramUsername = "accB2", LastValidatedAt = t0, CreatedAt = t0.AddMinutes(-7) };
+
+    rrDb.AddRange(devA, devB, accA1, accA2, accB1, accB2);
+    await rrDb.SaveChangesAsync();
+
+    var selectMethod = typeof(FeedBridgeService).GetMethod("SelectAccountAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    async Task<FeedBridgeAccountState> PickAndAssign(DateTime time)
+    {
+        var picked = (await (Task<FeedBridgeAccountState?>)selectMethod.Invoke(rrService, new object?[] { CancellationToken.None, null })!)!;
+        picked.LastUsedAt = time;
+        var d = await rrDb.FeedBridgeDeviceStates.FirstAsync(x => x.DeviceId == picked.DeviceId);
+        d.LastUsedAt = time;
+        await rrDb.SaveChangesAsync();
+        return picked;
+    }
+
+    var p1 = await PickAndAssign(t0.AddSeconds(1));
+    Check(p1.DeviceId == "devA" && p1.InstagramUsername == "accA1", "Round-robin 1 selects devA / accA1");
+
+    var p2 = await PickAndAssign(t0.AddSeconds(2));
+    Check(p2.DeviceId == "devB" && p2.InstagramUsername == "accB1", "Round-robin 2 alternates to devB / accB1");
+
+    var p3 = await PickAndAssign(t0.AddSeconds(3));
+    Check(p3.DeviceId == "devA" && p3.InstagramUsername == "accA2", "Round-robin 3 alternates back to devA / accA2");
+
+    var p4 = await PickAndAssign(t0.AddSeconds(4));
+    Check(p4.DeviceId == "devB" && p4.InstagramUsername == "accB2", "Round-robin 4 alternates back to devB / accB2");
+
+    var p5 = await PickAndAssign(t0.AddSeconds(5));
+    Check(p5.DeviceId == "devA" && p5.InstagramUsername == "accA1", "Round-robin 5 wraps around on devA to accA1");
+
+    var p6 = await PickAndAssign(t0.AddSeconds(6));
+    Check(p6.DeviceId == "devB" && p6.InstagramUsername == "accB1", "Round-robin 6 wraps around on devB to accB1");
+    Console.WriteLine("All multi-device round-robin checks passed.");
+}
 
 async Task<FeedBridgeAccountState?> Select()
 {

@@ -464,12 +464,17 @@ public static class DatabaseSchemaMigrator
                 "    \"CapabilitiesJson\" text," +
                 "    \"FailureCount\" integer NOT NULL DEFAULT 0," +
                 "    \"CooldownUntil\" timestamp with time zone," +
+                "    \"LastUsedAt\" timestamp with time zone," +
                 "    \"CreatedAt\" timestamp with time zone NOT NULL," +
                 "    \"UpdatedAt\" timestamp with time zone NOT NULL" +
                 ");",
+                "ALTER TABLE \"FeedBridgeDeviceStates\" ADD COLUMN IF NOT EXISTS \"LastUsedAt\" timestamp with time zone;",
+                "ALTER TABLE \"FeedBridgeAccountStates\" ADD COLUMN IF NOT EXISTS \"LastUsedAt\" timestamp with time zone;",
+                "ALTER TABLE \"FeedBridgeJobs\" ADD COLUMN IF NOT EXISTS \"AssignedAccountStateId\" uuid;",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_AppId_DeviceId\" ON \"FeedBridgeDeviceStates\" (\"AppId\", \"DeviceId\");",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_InstallationId\" ON \"FeedBridgeDeviceStates\" (\"InstallationId\");",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_LastSeenAt\" ON \"FeedBridgeDeviceStates\" (\"LastSeenAt\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_LastUsedAt\" ON \"FeedBridgeDeviceStates\" (\"LastUsedAt\");",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeDeviceStates_BridgeEnabled_LastSeenAt\" ON \"FeedBridgeDeviceStates\" (\"BridgeEnabled\", \"LastSeenAt\");",
 
                 "CREATE TABLE IF NOT EXISTS \"FeedBridgeAccountStates\" (" +
@@ -496,6 +501,7 @@ public static class DatabaseSchemaMigrator
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_AppId_DeviceId\" ON \"FeedBridgeAccountStates\" (\"AppId\", \"DeviceId\");",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_AccountId\" ON \"FeedBridgeAccountStates\" (\"AccountId\");",
                 "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_InstagramUsername\" ON \"FeedBridgeAccountStates\" (\"InstagramUsername\");",
+                "CREATE INDEX IF NOT EXISTS \"IX_FeedBridgeAccountStates_LastUsedAt\" ON \"FeedBridgeAccountStates\" (\"LastUsedAt\");",
 
                 "CREATE TABLE IF NOT EXISTS \"FeedBridgeJobs\" (" +
                 "    \"Id\" uuid NOT NULL CONSTRAINT \"PK_FeedBridgeJobs\" PRIMARY KEY," +
@@ -537,7 +543,10 @@ public static class DatabaseSchemaMigrator
         {
             var sqls = new[]
             {
-                "CREATE TABLE IF NOT EXISTS FeedBridgeDeviceStates (Id TEXT NOT NULL CONSTRAINT PK_FeedBridgeDeviceStates PRIMARY KEY, UserId TEXT, AppId TEXT NOT NULL DEFAULT 'unknown', DeviceId TEXT NOT NULL, InstallationId TEXT NOT NULL, AppInstanceId TEXT, DeviceModel TEXT, AndroidVersion TEXT, AppVersion TEXT, LastSeenAt TEXT NOT NULL, BridgeEnabled INTEGER NOT NULL DEFAULT 1, BatteryLevel INTEGER, NetworkType TEXT, ActiveAccountUsername TEXT, LoggedInAccountsJson TEXT, CapabilitiesJson TEXT, FailureCount INTEGER NOT NULL DEFAULT 0, CooldownUntil TEXT, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL);",
+                "CREATE TABLE IF NOT EXISTS FeedBridgeDeviceStates (Id TEXT NOT NULL CONSTRAINT PK_FeedBridgeDeviceStates PRIMARY KEY, UserId TEXT, AppId TEXT NOT NULL DEFAULT 'unknown', DeviceId TEXT NOT NULL, InstallationId TEXT NOT NULL, AppInstanceId TEXT, DeviceModel TEXT, AndroidVersion TEXT, AppVersion TEXT, LastSeenAt TEXT NOT NULL, BridgeEnabled INTEGER NOT NULL DEFAULT 1, BatteryLevel INTEGER, NetworkType TEXT, ActiveAccountUsername TEXT, LoggedInAccountsJson TEXT, CapabilitiesJson TEXT, FailureCount INTEGER NOT NULL DEFAULT 0, CooldownUntil TEXT, LastUsedAt TEXT, CreatedAt TEXT NOT NULL, UpdatedAt TEXT NOT NULL);",
+                "ALTER TABLE FeedBridgeDeviceStates ADD COLUMN LastUsedAt TEXT;",
+                "ALTER TABLE FeedBridgeAccountStates ADD COLUMN LastUsedAt TEXT;",
+                "ALTER TABLE FeedBridgeJobs ADD COLUMN AssignedAccountStateId TEXT;",
                 "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_AppId_DeviceId ON FeedBridgeDeviceStates (AppId, DeviceId);",
                 "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_InstallationId ON FeedBridgeDeviceStates (InstallationId);",
                 "CREATE INDEX IF NOT EXISTS IX_FeedBridgeDeviceStates_LastSeenAt ON FeedBridgeDeviceStates (LastSeenAt);",
