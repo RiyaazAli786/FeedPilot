@@ -986,7 +986,7 @@ public record BridgeFeedResponse(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? Source = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] Guid? JobId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? DeviceId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? AccountUsername = null,
+    string? AccountUsername = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Always)] long? DurationMs = null,
     object? Data = null,
     string? Code = null,
