@@ -93,9 +93,20 @@ public class InstagramFeedService : IInstagramFeedService
         var profile = await FetchProfileFromUrlAsync(client, webProfileUrl, username, sessionCookies, ct);
         if (profile is not null) return profile;
 
-        var feedProfileUrl =
-            $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(username)}/username/?count=1";
-        return await FetchProfileFromUrlAsync(client, feedProfileUrl, username, sessionCookies, ct);
+        var searchUrl =
+            $"https://www.instagram.com/api/v1/fbsearch/topsearch_flat/?query={Uri.EscapeDataString(username)}&context=blended";
+        var searchProfile = await FetchProfileFromUrlAsync(client, searchUrl, username, sessionCookies, ct);
+        if (searchProfile is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(searchProfile.Id) && searchProfile.FollowerCount == 0 && searchProfile.FollowingCount == 0)
+            {
+                var fullProfile = await FetchProfileByUserIdAsync(searchProfile.Id, username, sessionCookies, ct);
+                if (fullProfile is not null) return fullProfile;
+            }
+            return searchProfile;
+        }
+
+        return null;
     }
 
     private async Task<InstagramFeedProfile?> FetchProfileByUserIdAsync(
@@ -145,9 +156,33 @@ public class InstagramFeedService : IInstagramFeedService
         var root = doc.RootElement;
         var user = TryGet(root, "data", "user")
             ?? TryGet(root, "user")
+            ?? TryFindMatchingUser(root, "users", username)
+            ?? TryFindMatchingUser(root, "list", username)
             ?? TryGetFirstItem(root, "items")?.TryGetPropertyOrNull("user");
 
         return user is null ? null : ParseProfile(user.Value, username);
+    }
+
+    private static JsonElement? TryFindMatchingUser(JsonElement root, string propertyName, string username)
+    {
+        if (!root.TryGetProperty(propertyName, out var array) || array.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var item in array.EnumerateArray())
+        {
+            var user = item.ValueKind == JsonValueKind.Object && item.TryGetProperty("user", out var u)
+                ? u
+                : item;
+
+            if (user.ValueKind == JsonValueKind.Object &&
+                user.TryGetProperty("username", out var uName) &&
+                string.Equals(uName.GetString(), username, StringComparison.OrdinalIgnoreCase))
+            {
+                return user;
+            }
+        }
+
+        return null;
     }
 
     private async Task<List<InstagramFeedPost>> FetchPostsAsync(
@@ -165,7 +200,10 @@ public class InstagramFeedService : IInstagramFeedService
 
         foreach (var identifier in identifiers)
         {
-            var url = $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(identifier)}/username/?count={limit}";
+            var isNumeric = identifier.All(char.IsDigit);
+            if (!isNumeric) continue;
+
+            var url = $"https://www.instagram.com/api/v1/feed/user/{Uri.EscapeDataString(identifier)}/?count={limit}";
             using var request = CreateInstagramGet(url, sessionCookies, $"https://www.instagram.com/{username}/");
             using var response = await client.SendAsync(request, ct);
             var body = await response.Content.ReadAsStringAsync(ct);

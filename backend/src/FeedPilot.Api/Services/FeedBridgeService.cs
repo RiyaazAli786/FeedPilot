@@ -167,6 +167,8 @@ public class FeedBridgeService : IFeedBridgeService
                     };
                     _db.FeedBridgeJobs.Add(job);
                     await _db.SaveChangesAsync(ct);
+                    _db.Entry(account).State = EntityState.Detached;
+                    if (dev is not null) _db.Entry(dev).State = EntityState.Detached;
                     _logger.LogInformation("Bridge job {JobId} attempt {Attempt} assigned to device {DeviceId}.",
                         job.Id, job.Attempt, job.AssignedDeviceId);
                     SignalDevicePoll(account.AppId, account.DeviceId, account.InstallationId);
