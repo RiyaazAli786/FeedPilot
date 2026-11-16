@@ -26,8 +26,11 @@ public class FeedBridgeService : IFeedBridgeService
     private static readonly TimeSpan OnlineWindow = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan JobTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan PickupTimeout = TimeSpan.FromSeconds(8);
 
+    private static readonly ConcurrentDictionary<string, Task<BridgeFeedResponse>> _inFlightRequests = new();
     private static readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pollWaiters = new();
+    private static readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _activeJobRunningSignals = new();
     private static readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _activeJobCompletions = new();
 
     private static string GetDeviceKey(string appId, string deviceId, string installationId) =>
@@ -54,6 +57,14 @@ public class FeedBridgeService : IFeedBridgeService
     {
         var key = GetDeviceKey(appId, deviceId, installationId);
         if (_pollWaiters.TryRemove(key, out var tcs))
+        {
+            tcs.TrySetResult(true);
+        }
+    }
+
+    private static void SignalJobRunning(Guid jobId)
+    {
+        if (_activeJobRunningSignals.TryGetValue(jobId, out var tcs))
         {
             tcs.TrySetResult(true);
         }
@@ -87,6 +98,62 @@ public class FeedBridgeService : IFeedBridgeService
         if (string.IsNullOrWhiteSpace(username) && string.IsNullOrWhiteSpace(userId))
             return Fail("INVALID_REQUEST", "Username or userId is required.");
 
+        var targetKey = !string.IsNullOrWhiteSpace(username) ? $"u:{username}" : $"id:{userId}";
+        var dedupeKey = !string.IsNullOrWhiteSpace(request.RequestId)
+            ? $"req:{request.RequestId.Trim()}"
+            : $"target:{targetKey}:{Math.Clamp(request.Limit, 1, 50)}:{request.MaxId?.Trim()}:{request.IncludeStories}";
+
+        Task<BridgeFeedResponse>? existingTask = null;
+        var myTcs = new TaskCompletionSource<BridgeFeedResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        lock (_inFlightRequests)
+        {
+            if (_inFlightRequests.TryGetValue(dedupeKey, out var found))
+            {
+                existingTask = found;
+            }
+            else
+            {
+                _inFlightRequests[dedupeKey] = myTcs.Task;
+            }
+        }
+
+        if (existingTask is not null)
+        {
+            _logger.LogInformation("Coalescing duplicate bridge request {DedupeKey} with in-flight execution.", dedupeKey);
+            try
+            {
+                return await existingTask.WaitAsync(ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+
+        try
+        {
+            var response = await ExecuteFeedCoreAsync(request, username, userId, ct);
+            myTcs.TrySetResult(response);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            myTcs.TrySetException(ex);
+            throw;
+        }
+        finally
+        {
+            _inFlightRequests.TryRemove(dedupeKey, out _);
+        }
+    }
+
+    private async Task<BridgeFeedResponse> ExecuteFeedCoreAsync(
+        BridgeFeedRequest request,
+        string? username,
+        string? userId,
+        CancellationToken ct)
+    {
         var sw = Stopwatch.StartNew();
         var requestDeadline = DateTime.UtcNow.Add(JobTimeout);
         var attemptedDevices = new HashSet<string>();
@@ -102,105 +169,154 @@ public class FeedBridgeService : IFeedBridgeService
             try
             {
                 await ReleaseStaleAssignmentsAsync(ct);
-                var selected = await SelectAccountAsync(ct, attemptedDevices.ToArray());
-                if (selected is null)
+
+                // Prevent dispatching to multiple devices if a job for the same target / request is ALREADY active
+                var existingActiveJob = await _db.FeedBridgeJobs
+                    .Where(j =>
+                        (j.Status == FeedBridgeJobStatus.Assigned || j.Status == FeedBridgeJobStatus.Running) &&
+                        j.ExpiresAt > DateTime.UtcNow &&
+                        ((!string.IsNullOrWhiteSpace(request.RequestId) && j.ExternalRequestId == request.RequestId.Trim()) ||
+                         (!string.IsNullOrWhiteSpace(username) && j.TargetUsername == username) ||
+                         (!string.IsNullOrWhiteSpace(userId) && j.TargetUserId == userId)))
+                    .OrderByDescending(j => j.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+
+                if (existingActiveJob is not null)
                 {
-                    // Check if candidate devices are online but currently busy with in-flight jobs
-                    var hasOnlineDevices = await HasOnlineBridgeDevicesAsync(ct, attemptedDevices.ToArray());
-                    if (hasOnlineDevices)
+                    _logger.LogInformation("Found active in-flight bridge job {JobId} for target {Target}; joining active job instead of dispatching to another device.",
+                        existingActiveJob.Id, username ?? userId);
+                    job = existingActiveJob;
+                    if (job.AssignedAccountStateId is { } existingStateId)
                     {
-                        shouldWaitAndRetry = true;
-                    }
-                    else
-                    {
-                        return lastFailure ?? Fail("NO_ACTIVE_SESSION", await BuildNoActiveSessionMessageAsync(ct));
+                        account = await _db.FeedBridgeAccountStates.FirstOrDefaultAsync(a => a.Id == existingStateId, ct);
                     }
                 }
                 else
                 {
-                    account = selected;
-                    attemptedDevices.Add(account.DeviceId);
-                    var now = DateTime.UtcNow;
-                    var hasAlternative = await HasOnlineBridgeDevicesAsync(ct, attemptedDevices.ToArray());
-                    // Reserve retry time only when another device is currently available.
-                    var attemptDeadline = hasAlternative ? now.Add(AttemptTimeout) : requestDeadline;
-                    if (attemptDeadline > requestDeadline) attemptDeadline = requestDeadline;
-                    account.IsBusy = true;
-                    account.LastUsedAt = now;
-                    account.UpdatedAt = now;
-
-                    if (_db.Entry(account).State == EntityState.Detached)
+                    var selected = await SelectAccountAsync(ct, attemptedDevices.ToArray());
+                    if (selected is null)
                     {
-                        _db.FeedBridgeAccountStates.Attach(account);
+                        // Check if candidate devices are online but currently busy with in-flight jobs
+                        var hasOnlineDevices = await HasOnlineBridgeDevicesAsync(ct, attemptedDevices.ToArray());
+                        if (hasOnlineDevices)
+                        {
+                            shouldWaitAndRetry = true;
+                        }
+                        else
+                        {
+                            return lastFailure ?? Fail("NO_ACTIVE_SESSION", await BuildNoActiveSessionMessageAsync(ct));
+                        }
                     }
-                    _db.Entry(account).Property(a => a.IsBusy).IsModified = true;
-                    _db.Entry(account).Property(a => a.LastUsedAt).IsModified = true;
-                    _db.Entry(account).Property(a => a.UpdatedAt).IsModified = true;
-
-                    var dev = await _db.FeedBridgeDeviceStates.FirstOrDefaultAsync(d =>
-                        d.AppId == account.AppId && d.DeviceId == account.DeviceId && d.InstallationId == account.InstallationId, ct);
-                    if (dev is not null)
+                    else
                     {
-                        dev.LastUsedAt = now;
-                        dev.UpdatedAt = now;
+                        account = selected;
+                        attemptedDevices.Add(account.DeviceId);
+                        var now = DateTime.UtcNow;
+                        var hasAlternative = await HasOnlineBridgeDevicesAsync(ct, attemptedDevices.ToArray());
+                        // Initial pickup deadline for device to poll (extended once device transitions to Running):
+                        var pickupDeadline = hasAlternative ? now.Add(PickupTimeout) : requestDeadline;
+                        if (pickupDeadline > requestDeadline) pickupDeadline = requestDeadline;
+                        account.IsBusy = true;
+                        account.LastUsedAt = now;
+                        account.UpdatedAt = now;
+
+                        if (_db.Entry(account).State == EntityState.Detached)
+                        {
+                            _db.FeedBridgeAccountStates.Attach(account);
+                        }
+                        _db.Entry(account).Property(a => a.IsBusy).IsModified = true;
+                        _db.Entry(account).Property(a => a.LastUsedAt).IsModified = true;
+                        _db.Entry(account).Property(a => a.UpdatedAt).IsModified = true;
+
+                        var dev = await _db.FeedBridgeDeviceStates.FirstOrDefaultAsync(d =>
+                            d.AppId == account.AppId && d.DeviceId == account.DeviceId && d.InstallationId == account.InstallationId, ct);
+                        if (dev is not null)
+                        {
+                            dev.LastUsedAt = now;
+                            dev.UpdatedAt = now;
+                        }
+
+                        job = new FeedBridgeJob
+                        {
+                            ExternalRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? null : request.RequestId.Trim(),
+                            ClientName = string.IsNullOrWhiteSpace(request.Client) ? "GetIGFeed" : request.Client.Trim(),
+                            TargetUsername = username,
+                            TargetUserId = userId,
+                            Limit = Math.Clamp(request.Limit, 1, 50),
+                            MaxId = string.IsNullOrWhiteSpace(request.MaxId) ? null : request.MaxId.Trim(),
+                            IncludeStories = request.IncludeStories,
+                            Status = FeedBridgeJobStatus.Assigned,
+                            AssignedAccountId = account.AccountId,
+                            AssignedAccountStateId = account.Id,
+                            AssignedDeviceId = account.DeviceId,
+                            AssignedInstallationId = account.InstallationId,
+                            AssignedAt = now,
+                            ExpiresAt = pickupDeadline,
+                            Attempt = attemptedDevices.Count,
+                            RequestJson = JsonSerializer.Serialize(request, JsonOptions),
+                            UpdatedAt = now
+                        };
+                        _db.FeedBridgeJobs.Add(job);
+                        await _db.SaveChangesAsync(ct);
+                        _db.Entry(account).State = EntityState.Detached;
+                        if (dev is not null) _db.Entry(dev).State = EntityState.Detached;
+                        _logger.LogInformation("Bridge job {JobId} attempt {Attempt} assigned to device {DeviceId}.",
+                            job.Id, job.Attempt, job.AssignedDeviceId);
+                        SignalDevicePoll(account.AppId, account.DeviceId, account.InstallationId);
                     }
-
-                    job = new FeedBridgeJob
-                    {
-                        ExternalRequestId = string.IsNullOrWhiteSpace(request.RequestId) ? null : request.RequestId.Trim(),
-                        ClientName = string.IsNullOrWhiteSpace(request.Client) ? "GetIGFeed" : request.Client.Trim(),
-                        TargetUsername = username,
-                        TargetUserId = userId,
-                        Limit = Math.Clamp(request.Limit, 1, 50),
-                        MaxId = string.IsNullOrWhiteSpace(request.MaxId) ? null : request.MaxId.Trim(),
-                        IncludeStories = request.IncludeStories,
-                        Status = FeedBridgeJobStatus.Assigned,
-                        AssignedAccountId = account.AccountId,
-                        AssignedAccountStateId = account.Id,
-                        AssignedDeviceId = account.DeviceId,
-                        AssignedInstallationId = account.InstallationId,
-                        AssignedAt = now,
-                        ExpiresAt = attemptDeadline,
-                        Attempt = attemptedDevices.Count,
-                        RequestJson = JsonSerializer.Serialize(request, JsonOptions),
-                        UpdatedAt = now
-                    };
-                    _db.FeedBridgeJobs.Add(job);
-                    await _db.SaveChangesAsync(ct);
-                    _db.Entry(account).State = EntityState.Detached;
-                    if (dev is not null) _db.Entry(dev).State = EntityState.Detached;
-                    _logger.LogInformation("Bridge job {JobId} attempt {Attempt} assigned to device {DeviceId}.",
-                        job.Id, job.Attempt, job.AssignedDeviceId);
-                    SignalDevicePoll(account.AppId, account.DeviceId, account.InstallationId);
                 }
             }
             finally { SelectionGate.Release(); }
 
-            if (shouldWaitAndRetry || job is null || account is null)
+            if (shouldWaitAndRetry || job is null)
             {
                 // Give in-flight jobs a moment to complete before retrying selection
                 await Task.Delay(350, ct);
                 continue;
             }
 
-            var completionSource = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _activeJobCompletions[job.Id] = completionSource;
+            var runningSource = _activeJobRunningSignals.GetOrAdd(job.Id, _ => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously));
+            var completionSource = _activeJobCompletions.GetOrAdd(job.Id, _ => new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously));
             try
             {
                 try
                 {
-                    var remaining = job.ExpiresAt - DateTime.UtcNow;
-                    if (remaining > TimeSpan.Zero)
+                    // Phase 1: Wait for device to pick up the job (status -> Running) or complete/fail early
+                    var pickupRemaining = job.ExpiresAt - DateTime.UtcNow;
+                    if (pickupRemaining > TimeSpan.Zero && !completionSource.Task.IsCompleted && !runningSource.Task.IsCompleted)
                     {
-                        using var timeoutCts = new CancellationTokenSource(remaining);
-                        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+                        using var pickupCts = new CancellationTokenSource(pickupRemaining);
+                        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, pickupCts.Token);
                         try
                         {
-                            await completionSource.Task.WaitAsync(linkedCts.Token);
+                            await Task.WhenAny(completionSource.Task, runningSource.Task).WaitAsync(linkedCts.Token);
                         }
                         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                         {
-                            // Deadline reached
+                            // Pickup deadline reached without device claiming the job
+                        }
+                    }
+
+                    // Phase 2: If the job was picked up (Running), wait for completion up to the extended running deadline
+                    if (!completionSource.Task.IsCompleted)
+                    {
+                        await _db.Entry(job).ReloadAsync(ct);
+                        if (job.Status == FeedBridgeJobStatus.Running)
+                        {
+                            var runningRemaining = job.ExpiresAt - DateTime.UtcNow;
+                            if (runningRemaining > TimeSpan.Zero)
+                            {
+                                using var runTimeoutCts = new CancellationTokenSource(runningRemaining);
+                                using var runLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, runTimeoutCts.Token);
+                                try
+                                {
+                                    await completionSource.Task.WaitAsync(runLinkedCts.Token);
+                                }
+                                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                                {
+                                    // Running deadline reached
+                                }
+                            }
                         }
                     }
 
@@ -211,7 +327,7 @@ public class FeedBridgeService : IFeedBridgeService
                     {
                         object? data = string.IsNullOrWhiteSpace(job.ResponseJson) ? null
                             : JsonSerializer.Deserialize<object>(job.ResponseJson, JsonOptions);
-                        string? returnedAccountUsername = account.InstagramUsername;
+                        string? returnedAccountUsername = account?.InstagramUsername;
                         if (job.AssignedAccountStateId is { } completedStateId)
                         {
                             var completedAcc = await _db.FeedBridgeAccountStates.FindAsync(new object[] { completedStateId }, ct);
@@ -230,6 +346,7 @@ public class FeedBridgeService : IFeedBridgeService
             }
             finally
             {
+                _activeJobRunningSignals.TryRemove(job.Id, out _);
                 _activeJobCompletions.TryRemove(job.Id, out _);
             }
 
@@ -398,6 +515,7 @@ public class FeedBridgeService : IFeedBridgeService
                     job.ErrorMessage = "Bridge mode was disabled on the assigned device.";
                     job.CompletedAt = job.UpdatedAt = now;
                     await ReleaseAssignedAccountAsync(job, false, job.ErrorCode, job.ErrorMessage, ct);
+                    SignalJobCompletion(job.Id);
                 }
             }
 
@@ -476,6 +594,7 @@ public class FeedBridgeService : IFeedBridgeService
                 job.ExpiresAt = runningDeadline;
             }
             await _db.SaveChangesAsync(ct);
+            SignalJobRunning(job.Id);
 
             string? accountUsername = null;
             if (job.AssignedAccountStateId is { } stateId)
@@ -774,6 +893,7 @@ public class FeedBridgeService : IFeedBridgeService
         {
             await _db.Entry(job).ReloadAsync(ct);
             if (job.Status is not (FeedBridgeJobStatus.Assigned or FeedBridgeJobStatus.Running)) return;
+            if (job.ExpiresAt > DateTime.UtcNow) return;
             job.Status = FeedBridgeJobStatus.TimedOut;
             job.ErrorCode = "JOB_TIMEOUT";
             job.ErrorMessage = "Android device did not complete the feed job before timeout.";

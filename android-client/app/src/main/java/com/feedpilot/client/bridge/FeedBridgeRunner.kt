@@ -339,10 +339,8 @@ class FeedBridgeRunner @Inject constructor(
                     BridgeStatusStore.resultFailed("Result was not accepted: ${result.status}")
                     lastErrorCode = "JOB_NOT_ACCEPTED"
                     lastErrorMessage = "Server did not accept result: ${result.status}"
-                    if (attemptNum < totalAccounts) {
-                        Log.i(TAG, "Bridge job ${job.id}: retrying with next account on this device...")
-                        continue
-                    }
+                    // The job has already been resolved; if the server did not accept the result,
+                    // do not re-fetch with remaining local accounts.
                     break
                 }
             } catch (e: CancellationException) {
