@@ -496,6 +496,96 @@ fun SettingsScreen(
                             }
                         )
                     }
+                    if (settings.feedWarmupEnabled) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Night sleep mode", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Pause warmup 12:30 AM - 6:30 AM local time", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Switch(
+                                        checked = settings.warmupNightModeEnabled,
+                                        onCheckedChange = { viewModel.setWarmupNightMode(it) }
+                                    )
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                SettingInputRow(
+                                    label = "Warmup interval",
+                                    display = "${settings.warmupIntervalHours}h",
+                                    onClick = {
+                                        openInputSetting(NumericSetting(
+                                            label = "Warmup interval",
+                                            value = settings.warmupIntervalHours.toDouble(),
+                                            suffix = "hours",
+                                            min = 1.0,
+                                            max = 12.0,
+                                            allowDecimal = false,
+                                            onSave = { hours -> viewModel.setWarmupIntervalHours(hours.toInt()) }
+                                        ))
+                                    }
+                                )
+                                SettingInputRow(
+                                    label = "Daily warmup limit",
+                                    display = "${settings.warmupDailyLimit} actions",
+                                    onClick = {
+                                        openInputSetting(NumericSetting(
+                                            label = "Daily warmup limit",
+                                            value = settings.warmupDailyLimit.toDouble(),
+                                            suffix = "actions/day",
+                                            min = 1.0,
+                                            max = 50.0,
+                                            allowDecimal = false,
+                                            onSave = { limit -> viewModel.setWarmupDailyLimit(limit.toInt()) }
+                                        ))
+                                    }
+                                )
+                                Text("Allowed Warmup Actions", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = settings.warmupLikeEnabled,
+                                        onClick = { viewModel.setWarmupLikeEnabled(!settings.warmupLikeEnabled) },
+                                        label = { Text("Like", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.warmupSaveEnabled,
+                                        onClick = { viewModel.setWarmupSaveEnabled(!settings.warmupSaveEnabled) },
+                                        label = { Text("Save", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.warmupStoryViewEnabled,
+                                        onClick = { viewModel.setWarmupStoryViewEnabled(!settings.warmupStoryViewEnabled) },
+                                        label = { Text("Story", fontSize = 11.sp) }
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    FilterChip(
+                                        selected = settings.warmupFollowEnabled,
+                                        onClick = { viewModel.setWarmupFollowEnabled(!settings.warmupFollowEnabled) },
+                                        label = { Text("Follow", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.warmupRepostEnabled,
+                                        onClick = { viewModel.setWarmupRepostEnabled(!settings.warmupRepostEnabled) },
+                                        label = { Text("Repost", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     SettingInputRow(
                         label = "Min action delay",

@@ -71,6 +71,7 @@ import com.feedpilot.client.ui.components.CoinDot
 import com.feedpilot.client.ui.theme.AppTheme
 import com.feedpilot.client.feature.common.BalanceViewModel
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -1103,6 +1104,28 @@ private fun AccountTaskCard(
                         ) {
                             CoinDot(size = 10)
                             Text(account.coinsEarned.formatCoins(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                            if (settings.feedWarmupEnabled) {
+                                val lastWarmup = remember(logs) {
+                                    logs.firstOrNull { it.message.contains("[Warmup]", ignoreCase = true) }
+                                }
+                                val isNight = remember {
+                                    val cal = Calendar.getInstance()
+                                    val mins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+                                    mins in 30..390
+                                }
+                                Spacer(Modifier.width(4.dp))
+                                Text("•", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                                Text(
+                                    text = if (settings.warmupNightModeEnabled && isNight) "🌙 Sleep"
+                                           else if (lastWarmup != null) {
+                                               val diffMins = ((System.currentTimeMillis() - lastWarmup.timestampMs) / 60_000L).coerceAtLeast(0)
+                                               if (diffMins < 60) "Warmup ${diffMins}m" else "Warmup ${diffMins / 60}h"
+                                           } else "Warmup active",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (settings.warmupNightModeEnabled && isNight) AppTheme.brand.mutedGold else Color(0xFF4CAF50)
+                                )
+                            }
                         }
                     }
                 }
@@ -1345,16 +1368,18 @@ private fun AccountLogDialog(
     }
 
     val activityCategories = remember(logs) {
+        val hasWarmup = logs.any { it.message.contains("[Warmup]", ignoreCase = true) }
         val present = logs.map { normalizeActivity(it.action) }.distinct()
-        val standard = listOf("All", "Follow", "Like", "Repost", "Save", "Comment", "StoryView")
+        val standard = listOf("All") + (if (hasWarmup) listOf("Warmup") else emptyList()) + listOf("Follow", "Like", "Repost", "Save", "Comment", "StoryView")
         listOf("All") + (standard.drop(1) + present).distinct().filter { cat ->
-            cat == "All" || logs.any { normalizeActivity(it.action) == cat }
+            cat == "All" || (cat == "Warmup" && hasWarmup) || logs.any { normalizeActivity(it.action) == cat }
         }
     }
 
     val successCountMap = remember(logs) {
         val map = mutableMapOf<String, Int>()
         map["All"] = logs.count { it.success }
+        map["Warmup"] = logs.count { it.success && it.message.contains("[Warmup]", ignoreCase = true) }
         logs.forEach { log ->
             if (log.success) {
                 val cat = normalizeActivity(log.action)
@@ -1367,6 +1392,7 @@ private fun AccountLogDialog(
     val totalCountMap = remember(logs) {
         val map = mutableMapOf<String, Int>()
         map["All"] = logs.size
+        map["Warmup"] = logs.count { it.message.contains("[Warmup]", ignoreCase = true) }
         logs.forEach { log ->
             val cat = normalizeActivity(log.action)
             map[cat] = (map[cat] ?: 0) + 1
@@ -1375,8 +1401,11 @@ private fun AccountLogDialog(
     }
 
     val filteredLogs = remember(logs, selectedFilter) {
-        if (selectedFilter == "All") logs
-        else logs.filter { normalizeActivity(it.action) == selectedFilter }
+        when (selectedFilter) {
+            "All" -> logs
+            "Warmup" -> logs.filter { it.message.contains("[Warmup]", ignoreCase = true) }
+            else -> logs.filter { normalizeActivity(it.action) == selectedFilter }
+        }
     }
 
     Dialog(

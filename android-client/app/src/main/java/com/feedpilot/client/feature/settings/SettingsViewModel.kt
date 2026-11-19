@@ -86,6 +86,14 @@ class SettingsViewModel @Inject constructor(
     fun setBridgeEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setBridgeEnabled(enabled) }
     fun setBridgeFloatingBubbleEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setBridgeFloatingBubbleEnabled(enabled) }
     fun setFeedWarmupEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setFeedWarmupEnabled(enabled) }
+    fun setWarmupIntervalHours(hours: Int) = viewModelScope.launch { settingsRepository.setWarmupIntervalHours(hours) }
+    fun setWarmupNightMode(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupNightMode(enabled) }
+    fun setWarmupDailyLimit(limit: Int) = viewModelScope.launch { settingsRepository.setWarmupDailyLimit(limit) }
+    fun setWarmupLikeEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupLikeEnabled(enabled) }
+    fun setWarmupSaveEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupSaveEnabled(enabled) }
+    fun setWarmupFollowEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupFollowEnabled(enabled) }
+    fun setWarmupRepostEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupRepostEnabled(enabled) }
+    fun setWarmupStoryViewEnabled(enabled: Boolean) = viewModelScope.launch { settingsRepository.setWarmupStoryViewEnabled(enabled) }
     fun setAutoPartialCancelledTasks(enabled: Boolean) = viewModelScope.launch { settingsRepository.setAutoPartialCancelledTasks(enabled) }
     fun setActionDelayRange(minMs: Long, maxMs: Long) = viewModelScope.launch { settingsRepository.setActionDelayRange(minMs, maxMs) }
     fun setFetchDelay(ms: Long) = viewModelScope.launch { settingsRepository.setFetchDelay(ms) }

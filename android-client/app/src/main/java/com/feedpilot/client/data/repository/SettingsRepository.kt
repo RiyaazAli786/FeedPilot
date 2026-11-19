@@ -41,6 +41,14 @@ data class AppSettings(
     val bridgeEnabled: Boolean = true,
     val bridgeFloatingBubbleEnabled: Boolean = false,
     val feedWarmupEnabled: Boolean = false,
+    val warmupIntervalHours: Int = 1,
+    val warmupNightModeEnabled: Boolean = true,
+    val warmupDailyLimit: Int = 10,
+    val warmupLikeEnabled: Boolean = true,
+    val warmupSaveEnabled: Boolean = true,
+    val warmupFollowEnabled: Boolean = true,
+    val warmupRepostEnabled: Boolean = false,
+    val warmupStoryViewEnabled: Boolean = true,
     val smmApiUrl: String = "https://hanumansmm.in/api/v2",
     val smmApiKey: String = "",
     val selectedProvider: String = "Hanuman SMM Panel",
@@ -141,6 +149,14 @@ class SettingsRepository @Inject constructor(
         val BRIDGE_ENABLED = booleanPreferencesKey("bridge_enabled")
         val BRIDGE_FLOATING_BUBBLE_ENABLED = booleanPreferencesKey("bridge_floating_bubble_enabled")
         val FEED_WARMUP_ENABLED = booleanPreferencesKey("feed_warmup_enabled")
+        val WARMUP_INTERVAL_HOURS = intPreferencesKey("warmup_interval_hours")
+        val WARMUP_NIGHT_MODE_ENABLED = booleanPreferencesKey("warmup_night_mode_enabled")
+        val WARMUP_DAILY_LIMIT = intPreferencesKey("warmup_daily_limit")
+        val WARMUP_LIKE_ENABLED = booleanPreferencesKey("warmup_like_enabled")
+        val WARMUP_SAVE_ENABLED = booleanPreferencesKey("warmup_save_enabled")
+        val WARMUP_FOLLOW_ENABLED = booleanPreferencesKey("warmup_follow_enabled")
+        val WARMUP_REPOST_ENABLED = booleanPreferencesKey("warmup_repost_enabled")
+        val WARMUP_STORYVIEW_ENABLED = booleanPreferencesKey("warmup_storyview_enabled")
         val SMM_API_URL = stringPreferencesKey("smm_api_url")
         val SMM_API_KEY = stringPreferencesKey("smm_api_key")
         val SELECTED_PROVIDER = stringPreferencesKey("selected_provider")
@@ -202,6 +218,14 @@ class SettingsRepository @Inject constructor(
             bridgeEnabled = p[Keys.BRIDGE_ENABLED] ?: true,
             bridgeFloatingBubbleEnabled = p[Keys.BRIDGE_FLOATING_BUBBLE_ENABLED] ?: false,
             feedWarmupEnabled = p[Keys.FEED_WARMUP_ENABLED] ?: false,
+            warmupIntervalHours = p[Keys.WARMUP_INTERVAL_HOURS] ?: 1,
+            warmupNightModeEnabled = p[Keys.WARMUP_NIGHT_MODE_ENABLED] ?: true,
+            warmupDailyLimit = p[Keys.WARMUP_DAILY_LIMIT] ?: 10,
+            warmupLikeEnabled = p[Keys.WARMUP_LIKE_ENABLED] ?: true,
+            warmupSaveEnabled = p[Keys.WARMUP_SAVE_ENABLED] ?: true,
+            warmupFollowEnabled = p[Keys.WARMUP_FOLLOW_ENABLED] ?: true,
+            warmupRepostEnabled = p[Keys.WARMUP_REPOST_ENABLED] ?: false,
+            warmupStoryViewEnabled = p[Keys.WARMUP_STORYVIEW_ENABLED] ?: true,
             smmApiUrl = p[Keys.SMM_API_URL] ?: "https://hanumansmm.in/api/v2",
             smmApiKey = p[Keys.SMM_API_KEY] ?: "",
             selectedProvider = p[Keys.SELECTED_PROVIDER] ?: "Hanuman SMM Panel",
@@ -262,6 +286,14 @@ class SettingsRepository @Inject constructor(
     suspend fun setBridgeEnabled(enabled: Boolean) = edit { it[Keys.BRIDGE_ENABLED] = enabled }
     suspend fun setBridgeFloatingBubbleEnabled(enabled: Boolean) = edit { it[Keys.BRIDGE_FLOATING_BUBBLE_ENABLED] = enabled }
     suspend fun setFeedWarmupEnabled(enabled: Boolean) = edit { it[Keys.FEED_WARMUP_ENABLED] = enabled }
+    suspend fun setWarmupIntervalHours(hours: Int) = edit { it[Keys.WARMUP_INTERVAL_HOURS] = hours.coerceIn(1, 12) }
+    suspend fun setWarmupNightMode(enabled: Boolean) = edit { it[Keys.WARMUP_NIGHT_MODE_ENABLED] = enabled }
+    suspend fun setWarmupDailyLimit(limit: Int) = edit { it[Keys.WARMUP_DAILY_LIMIT] = limit.coerceIn(1, 100) }
+    suspend fun setWarmupLikeEnabled(enabled: Boolean) = edit { it[Keys.WARMUP_LIKE_ENABLED] = enabled }
+    suspend fun setWarmupSaveEnabled(enabled: Boolean) = edit { it[Keys.WARMUP_SAVE_ENABLED] = enabled }
+    suspend fun setWarmupFollowEnabled(enabled: Boolean) = edit { it[Keys.WARMUP_FOLLOW_ENABLED] = enabled }
+    suspend fun setWarmupRepostEnabled(enabled: Boolean) = edit { it[Keys.WARMUP_REPOST_ENABLED] = enabled }
+    suspend fun setWarmupStoryViewEnabled(enabled: Boolean) = edit { it[Keys.WARMUP_STORYVIEW_ENABLED] = enabled }
     suspend fun setSmmApiUrl(url: String) = edit { it[Keys.SMM_API_URL] = url }
     suspend fun setSmmApiKey(key: String) = edit { it[Keys.SMM_API_KEY] = key }
     suspend fun setSelectedProvider(provider: String) = edit { it[Keys.SELECTED_PROVIDER] = provider }

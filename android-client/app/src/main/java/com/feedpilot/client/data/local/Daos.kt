@@ -273,6 +273,12 @@ interface AccountLogDao {
     @Query("SELECT COUNT(*) FROM account_logs WHERE accountId = :accountId AND action = :action AND success = 1 AND timestampMs >= :sinceMs")
     suspend fun getDailyCountForAccountAction(accountId: String, action: String, sinceMs: Long): Int
 
+    @Query("SELECT MAX(timestampMs) FROM account_logs WHERE accountId = :accountId AND message LIKE '[Warmup]%'")
+    suspend fun getLastWarmupTimestamp(accountId: String): Long?
+
+    @Query("SELECT COUNT(*) FROM account_logs WHERE accountId = :accountId AND message LIKE '[Warmup]%' AND success = 1 AND timestampMs >= :sinceMs")
+    suspend fun getDailyWarmupCount(accountId: String, sinceMs: Long): Int
+
     @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     suspend fun insert(log: AccountLogEntity)
 

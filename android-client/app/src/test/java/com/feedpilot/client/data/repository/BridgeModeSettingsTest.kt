@@ -63,9 +63,28 @@ class BridgeModeSettingsTest {
         } as ApiService
         val settings = SettingsRepository(context, api)
         assertFalse(settings.settings.first().feedWarmupEnabled)
+        assertEquals(1, settings.settings.first().warmupIntervalHours)
+        assertTrue(settings.settings.first().warmupNightModeEnabled)
+        assertEquals(10, settings.settings.first().warmupDailyLimit)
+        assertTrue(settings.settings.first().warmupLikeEnabled)
+        assertTrue(settings.settings.first().warmupSaveEnabled)
+        assertTrue(settings.settings.first().warmupFollowEnabled)
+        assertFalse(settings.settings.first().warmupRepostEnabled)
+        assertTrue(settings.settings.first().warmupStoryViewEnabled)
+
         settings.setFeedWarmupEnabled(true)
+        settings.setWarmupIntervalHours(3)
+        settings.setWarmupNightMode(false)
+        settings.setWarmupDailyLimit(15)
+        settings.setWarmupRepostEnabled(true)
+
         val restored = SettingsRepository(context, api)
         assertTrue(restored.settings.first().feedWarmupEnabled)
+        assertEquals(3, restored.settings.first().warmupIntervalHours)
+        assertFalse(restored.settings.first().warmupNightModeEnabled)
+        assertEquals(15, restored.settings.first().warmupDailyLimit)
+        assertTrue(restored.settings.first().warmupRepostEnabled)
+
         restored.setFeedWarmupEnabled(false)
         assertFalse(settings.settings.first().feedWarmupEnabled)
     }

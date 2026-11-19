@@ -37,6 +37,14 @@
    - Residential gateway serving upstream consumers (such as **GetIGFeed**) via `POST /api/bridge/feed` with `X-Bridge-Key`.
    - Real-time device selection algorithm with 30s request budget, 10s per-device attempt, device failover, and 40s job expiry.
    - Device status tracking, local TSV telemetry logging (`bridge-history.tsv`), and foreground alerts (`BridgeJobNotifier`).
+4. **Hourly Feed Warmup & Organic Anti-Bot Engagement** (`FeedWarmupWorker`):
+   - Periodic background worker scheduled via WorkManager every 1 hour (configurable 1h–12h) to refresh the Instagram home timeline feed and keep sessions active.
+   - Organic random activity selection with configurable toggles for Like, Save Post, Story View, Follow, and Repost.
+   - Night Sleep Mode (12:30 AM – 6:30 AM local time) simulating natural human sleep cycles to evade anti-bot heuristics.
+   - Persistent debounce and daily warmup action caps queried from `AccountLogDao` without Room migrations.
+   - Collision guard: Skips feed refresh and warmup actions if an account is currently running active tasks in `TaskRunnerService` or `UpgradeRunnerService`.
+   - Browsing dwell simulation: Enforces a 12s–28s human reading delay between fetching feed and executing any action, with mid-browse abort if the account becomes busy.
+   - Action Log dialog includes a dedicated "Warmup" filter chip with success counts, and account cards display real-time warmup status.
    - **Recent Bridge Fixes & Enhancements**:
      - *Floating Bubble Window Overlay*: Foreground service (`FloatingBridgeBubbleService`) providing an on-screen floating pill and expandable diagnostic card (`BridgeFloatingBubbleCard`) for real-time bridge monitoring across apps.
      - *Device Fleet Management*: Added backend `DevicesController` and Android `DevicesScreen` for tracking battery, active accounts, network status, and remote bridge toggles.
