@@ -2300,74 +2300,33 @@ class InstagramWebClient @Inject constructor(
         var following: Long? = null
         var picUrl: String = ""
 
-        // 0. Initial Check: web_profile_info endpoint
-        if (!cleanUsername.all { it.isDigit() }) {
-            try {
-                val webProfileUrl = "https://www.instagram.com/api/v1/users/web_profile_info/?username=$cleanUsername"
-                val webProfileReqBuilder = Request.Builder()
-                    .url(webProfileUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-                    .header("X-IG-App-ID", "936619743392459")
-                    .header("X-ASBD-ID", "129477")
-                    .header("Accept", "*/*")
-                    .header("Origin", "https://www.instagram.com")
-                    .header("Referer", "https://www.instagram.com/$cleanUsername/")
-                    .header("Sec-Fetch-Dest", "empty")
-                    .header("Sec-Fetch-Mode", "cors")
-                    .header("Sec-Fetch-Site", "same-origin")
-
-                if (!csrfToken.isNullOrBlank()) {
-                    webProfileReqBuilder.header("X-CSRFToken", csrfToken)
-                }
-                if (!sessionCookies.isNullOrBlank()) {
-                    webProfileReqBuilder.header("Cookie", sessionCookies)
-                    webProfileReqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
-                }
-
-                http.newCall(webProfileReqBuilder.build()).execute().use { response ->
-                    val bodyText = response.body?.string() ?: ""
-                    // Check if valid JSON and contains data.user (not HTML fallback or user agent mismatch redirect)
-                    if (response.isSuccessful && bodyText.isNotBlank() && !bodyText.trimStart().startsWith("<")) {
-                        val json = JSONObject(bodyText)
-                        val user = json.optJSONObject("data")?.optJSONObject("user")
-                        if (user != null) {
-                            userObj = user
-                            val timeline = user.optJSONObject("edge_owner_to_timeline_media")
-                            if (timeline != null) {
-                                mediaCount = timeline.optLong("count", 0L)
-                            }
-                            Log.i(TAG, "web_profile_info successfully fetched profile for $cleanUsername")
+        // 0. Primary: Resolve PK and Profile via GraphQL / Profile Page / Topsearch
+        if (numericPk.isNullOrBlank() && !cleanUsername.all { it.isDigit() }) {
+            if (!sessionCookies.isNullOrBlank()) {
+                try {
+                    val feedRes = fetchUserFeedViaGraphql(cleanUsername, null, sessionCookies)
+                    val p = feedRes?.profile
+                    if (p != null) {
+                        if (p.id.isNotBlank() && p.id.all { it.isDigit() }) {
+                            numericPk = p.id
                         }
-                    } else {
-                        Log.w(TAG, "web_profile_info returned HTML/error (HTTP ${response.code}), falling back to next step")
+                        if (p.followerCount > 0 || p.followingCount > 0 || p.mediaCount > 0) {
+                            return@withContext p
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "GraphQL profile fetch failed for $cleanUsername, falling back", e)
                 }
+            }
 
-                if (numericPk == null && userObj != null) {
-                    numericPk = userObj?.optString("id")?.ifBlank { null }
-                        ?: userObj?.optString("pk")?.ifBlank { null }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "web_profile_info endpoint failed for $cleanUsername, falling back", e)
+            if (numericPk.isNullOrBlank()) {
+                numericPk = resolveNumericPkFromProfilePage(cleanUsername, sessionCookies)
             }
         }
 
-        // 1. Second Fallback: PolarisUserHoverCardContentV2Query GraphQL query
+        // 1. Second Step: PolarisUserHoverCardContentV2Query GraphQL query
         if (userObj == null) {
             try {
-                if (numericPk.isNullOrBlank() && !cleanUsername.all { it.isDigit() }) {
-                    numericPk = resolveNumericPkFromProfilePage(cleanUsername, sessionCookies)
-                }
-
-                if (numericPk.isNullOrBlank() && !cleanUsername.all { it.isDigit() } && !sessionCookies.isNullOrBlank()) {
-                    try {
-                        val feedRes = fetchUserFeedViaGraphql(cleanUsername, null, sessionCookies)
-                        numericPk = feedRes?.profile?.id?.takeIf { it.isNotBlank() && it.all(Char::isDigit) }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "GraphQL PK resolution failed for $cleanUsername", e)
-                    }
-                }
-
                 val targetUserId = numericPk ?: if (cleanUsername.all { it.isDigit() }) cleanUsername else null
                 if (!targetUserId.isNullOrBlank()) {
                     val fbDtsgToken = fetchFbDtsgToken(sessionCookies, cleanUsername)
@@ -2494,7 +2453,7 @@ class InstagramWebClient @Inject constructor(
             }
         }
 
-        // 2. Secondary: feed/user endpoint with resolved numeric PK (if web_profile_info did not resolve userObj)
+        // 2. Secondary: feed/user endpoint with resolved numeric PK (if GraphQL/HoverCard did not resolve userObj)
         if (userObj == null) {
             val targetPk = numericPk ?: if (cleanUsername.all { it.isDigit() }) cleanUsername else resolveNumericPkFromProfilePage(cleanUsername, sessionCookies)
             if (!targetPk.isNullOrBlank()) {
@@ -4050,42 +4009,7 @@ class InstagramWebClient @Inject constructor(
     private suspend fun resolveNumericPkFromProfilePage(username: String, sessionCookies: String?): String? {
         val csrfToken = if (!sessionCookies.isNullOrBlank()) extractCookie(sessionCookies, "csrftoken") else null
 
-        // 1. Try web_profile_info endpoint (fast, returns user.id / pk)
-        try {
-            val webUrl = "https://www.instagram.com/api/v1/users/web_profile_info/?username=${java.net.URLEncoder.encode(username, "UTF-8")}"
-            val webReqBuilder = Request.Builder()
-                .url(webUrl)
-                .applyDeviceHeaders()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-                .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
-                .header("X-ASBD-ID", "129477")
-                .header("Accept", "*/*")
-                .header("Origin", "https://www.instagram.com")
-                .header("Referer", "https://www.instagram.com/$username/")
-                .header("Sec-Fetch-Site", "same-origin")
-                .header("Sec-Fetch-Mode", "cors")
-                .header("Sec-Fetch-Dest", "empty")
-            if (!csrfToken.isNullOrBlank()) webReqBuilder.header("X-CSRFToken", csrfToken)
-            if (!sessionCookies.isNullOrBlank()) {
-                webReqBuilder.header("Cookie", sessionCookies)
-                webReqBuilder.header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
-            }
-
-            http.newCall(webReqBuilder.build()).execute().use { response ->
-                val bodyText = response.body?.string() ?: ""
-                if (response.isSuccessful && bodyText.isNotBlank() && !bodyText.trimStart().startsWith("<")) {
-                    val json = JSONObject(bodyText)
-                    val user = json.optJSONObject("data")?.optJSONObject("user")
-                    val pk = user?.optString("id")?.ifBlank { null }
-                        ?: user?.optString("pk")?.ifBlank { null }
-                    if (!pk.isNullOrBlank()) return pk
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "web_profile_info PK resolution failed for $username", e)
-        }
-
-        // 2. Try fbsearch/topsearch_flat endpoint
+        // 1. Try fbsearch/topsearch_flat endpoint
         try {
             val searchUrl = "https://www.instagram.com/api/v1/fbsearch/topsearch_flat/?query=${java.net.URLEncoder.encode(username, "UTF-8")}&context=blended"
             val searchReqBuilder = Request.Builder()

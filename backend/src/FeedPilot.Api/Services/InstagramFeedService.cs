@@ -47,7 +47,7 @@ public class InstagramFeedService : IInstagramFeedService
         var posts = await FetchPostsAsync(profile.Id, profile.Username, session, limit, ct);
         if (posts.Count == 0)
         {
-            posts = await FetchWebProfileTimelinePostsAsync(profile.Username, session, limit, ct);
+            posts = await FetchGraphqlTimelinePostsAsync(profile.Username, session, limit, ct);
         }
         return BuildJsonFeed(profile, posts);
     }
@@ -87,11 +87,6 @@ public class InstagramFeedService : IInstagramFeedService
     private async Task<InstagramFeedProfile?> FetchProfileAsync(string username, string sessionCookies, CancellationToken ct)
     {
         var client = _http.CreateClient("Instagram");
-        var webProfileUrl =
-            $"https://www.instagram.com/api/v1/users/web_profile_info/?username={Uri.EscapeDataString(username)}";
-
-        var profile = await FetchProfileFromUrlAsync(client, webProfileUrl, username, sessionCookies, ct);
-        if (profile is not null) return profile;
 
         var searchUrl =
             $"https://www.instagram.com/api/v1/fbsearch/topsearch_flat/?query={Uri.EscapeDataString(username)}&context=blended";
@@ -106,6 +101,51 @@ public class InstagramFeedService : IInstagramFeedService
             return searchProfile;
         }
 
+        var pageId = await ResolveUserIdFromPageAsync(client, username, sessionCookies, ct);
+        if (!string.IsNullOrWhiteSpace(pageId))
+        {
+            var fullProfile = await FetchProfileByUserIdAsync(pageId, username, sessionCookies, ct);
+            if (fullProfile is not null) return fullProfile;
+        }
+
+        return null;
+    }
+
+    private async Task<string?> ResolveUserIdFromPageAsync(
+        HttpClient client,
+        string username,
+        string sessionCookies,
+        CancellationToken ct)
+    {
+        try
+        {
+            var url = $"https://www.instagram.com/{Uri.EscapeDataString(username)}/";
+            using var request = CreateInstagramGet(url, sessionCookies, "https://www.instagram.com/");
+            using var response = await client.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            var html = await response.Content.ReadAsStringAsync(ct);
+            var match = System.Text.RegularExpressions.Regex.Match(
+                html,
+                @"""profile_owner""\s*:\s*\{\s*""id""\s*:\s*""(\d+)""",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success) return match.Groups[1].Value;
+
+            var match2 = System.Text.RegularExpressions.Regex.Match(
+                html,
+                @"""target_user_id""\s*:\s*""(\d+)""",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match2.Success) return match2.Groups[1].Value;
+
+            var match3 = System.Text.RegularExpressions.Regex.Match(
+                html,
+                @"""profile_id""\s*:\s*""([1-9]\d+)""",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match3.Success) return match3.Groups[1].Value;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Profile page ID extraction failed for {Username}", username);
+        }
         return null;
     }
 
@@ -236,29 +276,71 @@ public class InstagramFeedService : IInstagramFeedService
         return new List<InstagramFeedPost>();
     }
 
-    private async Task<List<InstagramFeedPost>> FetchWebProfileTimelinePostsAsync(
+    private async Task<List<InstagramFeedPost>> FetchGraphqlTimelinePostsAsync(
         string username,
         string sessionCookies,
         int limit,
         CancellationToken ct)
     {
         var client = _http.CreateClient("Instagram");
-        var url = $"https://www.instagram.com/api/v1/users/web_profile_info/?username={Uri.EscapeDataString(username)}";
-        using var request = CreateInstagramGet(url, sessionCookies, $"https://www.instagram.com/{username}/");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://www.instagram.com/graphql/query");
+        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+        request.Headers.TryAddWithoutValidation("Accept", "*/*");
+        request.Headers.TryAddWithoutValidation("X-IG-App-ID", InstagramAppId);
+        request.Headers.TryAddWithoutValidation("X-ASBD-ID", AsbdId);
+        request.Headers.TryAddWithoutValidation("X-FB-Friendly-Name", "PolarisProfilePostsTabContentQuery_connection");
+        request.Headers.Referrer = new Uri($"https://www.instagram.com/{username}/");
+
+        if (!string.IsNullOrWhiteSpace(sessionCookies))
+        {
+            request.Headers.TryAddWithoutValidation("Cookie", sessionCookies);
+            request.Headers.TryAddWithoutValidation("X-IG-WWW-Claim", ExtractCookie(sessionCookies, "x-ig-www-claim") ?? "0");
+            var csrf = ExtractCookie(sessionCookies, "csrftoken");
+            if (!string.IsNullOrWhiteSpace(csrf))
+                request.Headers.TryAddWithoutValidation("X-CSRFToken", csrf);
+        }
+
+        var variables = JsonSerializer.Serialize(new
+        {
+            after = (string?)null,
+            before = (string?)null,
+            data = new
+            {
+                count = Math.Clamp(limit, 1, 50),
+                include_reel_media_seen_timestamp = true,
+                include_relationship_info = true,
+                latest_besties_reel_media = true,
+                latest_reel_media = true
+            },
+            first = Math.Clamp(limit, 1, 50),
+            include_multi_captions = true,
+            last = (string?)null,
+            username = username
+        });
+
+        var formData = new Dictionary<string, string>
+        {
+            ["doc_id"] = "29240983615539641",
+            ["variables"] = variables,
+            ["server_timestamps"] = "true"
+        };
+        request.Content = new FormUrlEncodedContent(formData);
+
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode || string.IsNullOrWhiteSpace(body) || body.TrimStart().StartsWith("<"))
         {
             _logger.LogWarning(
-                "Instagram web profile timeline fallback failed for {Username}: HTTP {StatusCode}",
+                "Instagram GraphQL timeline request failed for {Username}: HTTP {StatusCode}",
                 username,
                 (int)response.StatusCode);
             return new List<InstagramFeedPost>();
         }
 
         using var doc = JsonDocument.Parse(StripJsonPrefix(body));
-        var edges = TryGet(doc.RootElement, "data", "user", "edge_owner_to_timeline_media", "edges");
+        var edges = TryGet(doc.RootElement, "data", "xdt_api__v1__feed__user_timeline_graphql_connection", "edges")
+            ?? TryGet(doc.RootElement, "data", "user", "edge_owner_to_timeline_media", "edges");
         if (edges is null || edges.Value.ValueKind != JsonValueKind.Array)
             return new List<InstagramFeedPost>();
 
@@ -270,7 +352,6 @@ public class InstagramFeedService : IInstagramFeedService
             var post = ParseTimelineNodePost(node.Value);
             if (!string.IsNullOrWhiteSpace(post.Id) || !string.IsNullOrWhiteSpace(post.Code))
                 posts.Add(post);
-            // Collect all edges in page before sorting chronologically
         }
 
         return posts.OrderByDescending(p => p.TakenAt).Take(limit).ToList();

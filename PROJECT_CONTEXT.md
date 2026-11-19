@@ -1,8 +1,8 @@
 # FeedPilot Project Context
 
-Reviewed against repository source: 2026-11-09.
-Baseline commit: `f49cd87` (fix(bridge): suppress feedpilot footprint in bridge response and log server-side).
-Validated with live build and test suites on 2026-11-09 (.NET 10 compilation, BridgeChecks, and Android unit tests).
+Reviewed against repository source: 2026-11-19.
+Baseline commit: `cf7139d` (chore(release): bump version to v2.0.128 [skip ci]).
+Validated with live build and test suites: .NET 10 compilation target, BridgeChecks, and Android unit tests on JVM 17 (Gradle 8.13).
 
 ## Purpose and scope
 

@@ -1,6 +1,6 @@
 # FeedPilot — Complete Workspace & Architecture Context
 
-> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-11-09 (Baseline commit `f49cd87`).  
+> Living reference for the entire FeedPilot ecosystem. Rebuilt and validated from active source code on 2026-11-19 (Baseline commit `cf7139d`, Android release `v2.0.128` build 130).  
 > Companion references:
 > - [PROJECT_CONTEXT.md](file:///c:/CoreProjects/FeedPilot/PROJECT_CONTEXT.md) (source inspection & operational boundaries)
 > - [README.md](file:///c:/CoreProjects/FeedPilot/README.md) (repository overview & build commands)
@@ -46,7 +46,10 @@
      - *Decoupled Heartbeat & Token Initialization*: Injected `AuthRepository` to auto-ensure device session and decoupled 5s periodic heartbeats from poll requests, removing error loops.
      - *Power & Connectivity Locks*: Added `PARTIAL_WAKE_LOCK` and high-performance `WifiLock` in `FeedBridgeService.kt` to ensure uninterrupted polling when screen is locked or in Android Doze mode.
      - *Backend Stale State Recovery*: In `FeedBridgeService.cs`, active heartbeats immediately clear stale `CooldownUntil` and `IsBusy` flags.
-     - *Release APK & CI/CD Pipeline*: Built and signed release artifact at `android-client/app/build/outputs/apk/release/app-release.apk` (current `v2.0.121`, build 123). Automated via `.github/workflows/auto-update-release.yml` and `push-and-release.bat` with in-app OTA download & install handling (`UpdateRepository.kt`, `UpdatesViewModel.kt`).
+     - *Request Coalescing & Deduplication*: Added `_inFlightRequests` concurrent tracking in `FeedBridgeService.cs` to coalesce identical concurrent bridge requests (by `RequestId` or target key `u:username`/`id:userId` + limit + maxId + includeStories) and prevent duplicate device dispatches.
+     - *Two-Phase Execution Timeout & In-Memory Signaling*: Introduced `PickupTimeout` (8s) vs extended running deadline (20s) with `_activeJobRunningSignals` and `_activeJobCompletions` `TaskCompletionSource` channels, waking backend requests immediately without polling lag when devices accept or complete jobs.
+     - *Strict Round-Robin Rotation*: Added device and account assignment balancing using `LastAssignedAt` / `LastUsedAt` ordering and tracking across all active residential sessions.
+     - *Release APK & CI/CD Pipeline*: Built and signed release artifact at `android-client/app/build/outputs/apk/release/app-release.apk` (current `v2.0.128`, build 130). Automated via `.github/workflows/auto-update-release.yml` and `push-and-release.bat` with in-app OTA download & install handling (`UpdateRepository.kt`, `UpdatesViewModel.kt`).
      - *Header Badge & Balance Integration*: Pinned header version pill directly to `BuildConfig.VERSION_NAME` in `AppHeader.kt` and `BalanceViewModel.kt` to prevent version desync while dynamically streaming live wallet coin balances and active subscription tier.
      - *Bridge Account Candidate Selection*: Enhanced `FeedBridgeRunner.kt` with round-robin candidate account rotation across valid sessions with fallback guarantees, accompanied by unit tests in `BridgeCandidateAccountsTest.kt`.
      - *Footprint Suppression & Telemetry Separation*: In `BridgeFeedController.cs` and `Dtos.cs`, operational fields (`Source`, `JobId`, `DeviceId`, `AccountUsername`, `DurationMs`) are decorated with `[JsonIgnore]` to prevent leaking internal hardware/session IDs and bridge signatures to external callers (such as GetIGFeed). Telemetry is securely captured in structured backend server logs (`ILogger`).
