@@ -112,8 +112,8 @@ data class AppSettings(
     }
 
     companion object {
-        const val DEFAULT_ACTION_DELAY_MIN_MS = 1_500L
-        const val DEFAULT_ACTION_DELAY_MAX_MS = 4_000L
+        const val DEFAULT_ACTION_DELAY_MIN_MS = 5_000L
+        const val DEFAULT_ACTION_DELAY_MAX_MS = 12_000L
         const val MIN_ACTION_DELAY_MS = 500L
         const val MAX_ACTION_DELAY_MS = 120_000L
 
@@ -121,7 +121,7 @@ data class AppSettings(
         const val MIN_FETCH_DELAY_MS = 3_000L
         const val MAX_FETCH_DELAY_MS = 60_000L
 
-        const val DEFAULT_COOLDOWN_SECONDS = 30
+        const val DEFAULT_COOLDOWN_SECONDS = 45
         const val MIN_COOLDOWN_SECONDS = 1
         const val MAX_COOLDOWN_SECONDS = 3_600
     }

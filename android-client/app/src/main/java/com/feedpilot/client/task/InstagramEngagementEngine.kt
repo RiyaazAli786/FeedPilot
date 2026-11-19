@@ -15,7 +15,7 @@ import kotlin.random.Random
  * to real Instagram Web APIs using [InstagramRepository].
  *
  * There is deliberately no simulated fallback here. This engine previously answered a failed
- * like or follow — and an account with no session at all — by delegating to
+ * like or follow â€” and an account with no session at all â€” by delegating to
  * [SimulatedEngagementEngine], which always succeeds. Every such attempt was then reported to
  * the backend as completed work and paid a coin, so the runner could never fail. An action
  * that did not happen is now a [EngagementResult.Failure] carrying the reason.
@@ -28,7 +28,7 @@ class InstagramEngagementEngine @Inject constructor(
 ) : EngagementEngine {
 
     override suspend fun like(targetId: String, accountId: String): EngagementResult {
-        applyHumanJitter()
+        applyHumanJitter(3_500L, 8_000L)
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
             ?: return noSession(accountId, "like")
@@ -46,7 +46,7 @@ class InstagramEngagementEngine @Inject constructor(
     }
 
     override suspend fun follow(targetId: String, accountId: String): EngagementResult {
-        applyHumanJitter()
+        applyHumanJitter(6_000L, 14_000L)
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
             ?: return noSession(accountId, "follow")
@@ -110,8 +110,8 @@ class InstagramEngagementEngine @Inject constructor(
         )
         persistRotatedCookies(accountId, result.updatedCookies)
 
-        // A cached id can go stale — the target account was deleted or renamed after it was
-        // resolved — and Instagram reports that as "user not found" rather than rejecting the
+        // A cached id can go stale â€” the target account was deleted or renamed after it was
+        // resolved â€” and Instagram reports that as "user not found" rather than rejecting the
         // follow itself. The backend cache has no expiry/invalidation, so without this every
         // device would keep being served the same dead id forever. Re-resolve fresh and retry
         // once instead of just failing.
@@ -146,7 +146,7 @@ class InstagramEngagementEngine @Inject constructor(
     }
 
     override suspend fun comment(targetId: String, commentText: String, accountId: String): EngagementResult {
-        applyHumanJitter()
+        applyHumanJitter(10_000L, 22_000L)
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
             ?: return noSession(accountId, "comment")
@@ -164,7 +164,7 @@ class InstagramEngagementEngine @Inject constructor(
     }
 
     override suspend fun repost(targetId: String, accountId: String): EngagementResult {
-        applyHumanJitter()
+        applyHumanJitter(4_000L, 9_000L)
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
             ?: return noSession(accountId, "repost")
@@ -183,7 +183,7 @@ class InstagramEngagementEngine @Inject constructor(
 
     override suspend fun savePost(targetId: String, accountId: String): EngagementResult {
         if (targetId.isBlank()) return EngagementResult.Failure("Order has no target post")
-        applyHumanJitter()
+        applyHumanJitter(3_000L, 7_000L)
 
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
@@ -203,7 +203,7 @@ class InstagramEngagementEngine @Inject constructor(
 
     override suspend fun storyView(targetId: String, accountId: String): EngagementResult {
         if (targetId.isBlank()) return EngagementResult.Failure("Order has no target story")
-        applyHumanJitter()
+        applyHumanJitter(3_000L, 6_000L)
 
         val account = accountDao.getById(accountId)
         val cookies = sessionCookiesFor(account?.sessionCookies, account?.lastLogin)
@@ -229,12 +229,12 @@ class InstagramEngagementEngine @Inject constructor(
 
     private fun noSession(accountId: String, action: String): EngagementResult {
         Log.w(TAG, "Account $accountId has no live Instagram session cookies; cannot $action")
-        return EngagementResult.Failure("No Instagram session for this account — sign in again")
+        return EngagementResult.Failure("No Instagram session for this account â€” sign in again")
     }
 
     /**
-     * Saves a cookie Instagram rotated on this action's response, so the next call — and the
-     * next app launch — uses it instead of the value the session started with. Without this a
+     * Saves a cookie Instagram rotated on this action's response, so the next call â€” and the
+     * next app launch â€” uses it instead of the value the session started with. Without this a
      * perfectly live session slowly drifted out of date purely because nothing ever picked up
      * what a real browser's cookie jar absorbs automatically, eventually getting rejected as
      * "logged out" after a run of otherwise-successful actions.
@@ -245,8 +245,11 @@ class InstagramEngagementEngine @Inject constructor(
             .onFailure { Log.w(TAG, "Could not persist rotated session cookies for $accountId", it) }
     }
 
-    private suspend fun applyHumanJitter() {
-        val delayMillis = Random.nextLong(1500, 3500)
+    private suspend fun applyHumanJitter(minMs: Long = 4_000L, maxMs: Long = 9_000L) {
+        // Natural human reaction times follow a right-skewed distribution rather than a flat box.
+        val base = Random.nextLong(minMs, maxMs)
+        val skew = Random.nextLong(0, (maxMs - minMs) / 2 + 1)
+        val delayMillis = base + skew
         delay(delayMillis)
     }
 

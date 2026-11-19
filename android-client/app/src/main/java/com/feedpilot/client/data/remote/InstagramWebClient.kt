@@ -18,6 +18,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import org.json.JSONObject
 import java.util.Locale
+import java.util.UUID
 import java.util.regex.Pattern
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -1033,9 +1034,7 @@ class InstagramWebClient @Inject constructor(
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
                 .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
-                .header("X-Requested-With", "XMLHttpRequest")
                 .header("X-CSRFToken", csrfToken)
-                .header("X-Instagram-AJAX", InstagramCrypto.generateInstagramAjax())
                 .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
                 .header("Cookie", sessionCookies)
                 .header("Origin", "https://www.instagram.com")
@@ -1095,8 +1094,8 @@ class InstagramWebClient @Inject constructor(
         try {
             val csrfToken = extractCookie(sessionCookies, "csrftoken") ?: ""
             val dsUserId = extractCookie(sessionCookies, "ds_user_id") ?: "0"
-            val lsdToken = extractCookie(sessionCookies, "lsd") ?: "9TjJvcwkR5rOoXDuAO_1-5"
             val targetHandle = if (targetUsername.isNotBlank()) targetUsername else "accounts/edit"
+            val lsdToken = extractCookie(sessionCookies, "lsd") ?: fetchLsdToken(sessionCookies, targetHandle)
             val extractedFbDtsg = fetchFbDtsg(sessionCookies, targetHandle)
 
             val variablesJson = org.json.JSONObject().apply {
@@ -1108,13 +1107,15 @@ class InstagramWebClient @Inject constructor(
             val formBodyBuilder = FormBody.Builder()
                 .add("__comet_req", "7")
                 .add("jazoest", InstagramCrypto.createJazoest(targetUserId))
-                .add("lsd", lsdToken)
                 .add("__crn", "comet.igweb.PolarisProfilePostsTabRoute")
                 .add("fb_api_caller_class", "RelayModern")
                 .add("fb_api_req_friendly_name", "usePolarisFollowMutation")
                 .add("variables", variablesJson)
                 .add("doc_id", "26508036048874888")
 
+            if (lsdToken.isNotBlank()) {
+                formBodyBuilder.add("lsd", lsdToken)
+            }
             if (!extractedFbDtsg.isNullOrBlank()) {
                 formBodyBuilder.add("fb_dtsg", extractedFbDtsg)
             }
@@ -1124,17 +1125,15 @@ class InstagramWebClient @Inject constructor(
             val refererUrl = if (targetUsername.isNotBlank()) "https://www.instagram.com/$targetUsername/"
             else "https://www.instagram.com/"
 
-            val request = Request.Builder()
+            val requestBuilder = Request.Builder()
                 .url("https://www.instagram.com/api/graphql")
                 .post(formBody)
                 .applyDeviceHeaders()
                 .header("Accept", "*/*")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
-                .header("X-FB-LSD", lsdToken)
                 .header("X-FB-Friendly-Name", "usePolarisFollowMutation")
                 .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
-                .header("X-Requested-With", "XMLHttpRequest")
                 .header("X-CSRFToken", csrfToken)
                 .header("Cookie", sessionCookies)
                 .header("Origin", "https://www.instagram.com")
@@ -1142,7 +1141,12 @@ class InstagramWebClient @Inject constructor(
                 .header("Sec-Fetch-Dest", "empty")
                 .header("Sec-Fetch-Mode", "cors")
                 .header("Sec-Fetch-Site", "same-origin")
-                .build()
+
+            if (lsdToken.isNotBlank()) {
+                requestBuilder.header("X-FB-LSD", lsdToken)
+            }
+
+            val request = requestBuilder.build()
 
             http.newCall(request).execute().use { response ->
                 val bodyText = response.body?.string() ?: ""
@@ -1218,7 +1222,6 @@ class InstagramWebClient @Inject constructor(
             .header("Accept", "*/*")
             .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
             .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
-            .header("X-Requested-With", "XMLHttpRequest")
             .header("X-CSRFToken", csrfToken)
             .header("Cookie", sessionCookies)
             .header("Referer", refererUrl)
@@ -1287,12 +1290,11 @@ class InstagramWebClient @Inject constructor(
         crn = "comet.igweb.PolarisPostRoute",
         rootFieldName = null
     ) { mediaId, actorId ->
-        // variables={"input":{"media_id":..,"actor_id":..,"client_mutation_id":"1"}}
         JSONObject().apply {
             put("input", JSONObject().apply {
                 put("media_id", mediaId)
                 put("actor_id", actorId)
-                put("client_mutation_id", "1")
+                put("client_mutation_id", UUID.randomUUID().toString())
             })
         }.toString()
     }
@@ -1317,7 +1319,7 @@ class InstagramWebClient @Inject constructor(
         JSONObject().apply {
             put("input", JSONObject().apply {
                 put("actor_id", actorId)
-                put("client_mutation_id", "1")
+                put("client_mutation_id", UUID.randomUUID().toString())
                 put("audience", 7)
                 put("media_id", mediaId)
                 put("note_style", 13)
@@ -1362,7 +1364,7 @@ class InstagramWebClient @Inject constructor(
             put("input", JSONObject().apply {
                 put("media_id", mediaId)
                 put("actor_id", actorId)
-                put("client_mutation_id", "1")
+                put("client_mutation_id", UUID.randomUUID().toString())
             })
         }.toString()
     }
@@ -1481,6 +1483,7 @@ class InstagramWebClient @Inject constructor(
                 put("viewSeenAt", viewSeenAt)
             }
 
+            val storyReqCounter = ((System.currentTimeMillis() / 1000) % 1000 + 1).toString(36)
             val formBuilder = FormBody.Builder()
             if (!actorIdFromRur.isNullOrBlank()) {
                 formBuilder.add("av", actorIdFromRur)
@@ -1489,8 +1492,7 @@ class InstagramWebClient @Inject constructor(
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
-                .add("__req", "13")
-                .add("__hs", "20676.HYP:instagram_web_pkg.2.1...0")
+                .add("__req", storyReqCounter)
                 .add("dpr", "1")
                 .add("__ccg", "EXCELLENT")
                 .add("__comet_req", "7")
@@ -1521,7 +1523,6 @@ class InstagramWebClient @Inject constructor(
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
                 .header("X-FB-Friendly-Name", "PolarisStoriesV3SeenMutation")
                 .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
-                .header("X-IG-Max-Touch-Points", "0")
                 .header("X-CSRFToken", csrfToken)
                 .header("Cookie", sessionCookies)
                 .header("Origin", "https://www.instagram.com")
@@ -1602,12 +1603,13 @@ class InstagramWebClient @Inject constructor(
             val fbDtsg = fetchFbDtsg(sessionCookies)
             val jazoest = if (!fbDtsg.isNullOrBlank()) InstagramCrypto.createJazoest(fbDtsg) else InstagramCrypto.createJazoest(mediaId)
 
+            val reqCounter = ((System.currentTimeMillis() / 1000) % 1000 + 1).toString(36)
             val formBuilder = FormBody.Builder()
                 .add("av", actorId)
                 .add("__d", "www")
                 .add("__user", "0")
                 .add("__a", "1")
-                .add("__req", "1y")
+                .add("__req", reqCounter)
                 .add("dpr", "1")
                 .add("__ccg", "MODERATE")
                 .add("__comet_req", "7")
@@ -1628,30 +1630,20 @@ class InstagramWebClient @Inject constructor(
             val builder = Request.Builder()
                 .url("https://www.instagram.com/api/graphql")
                 .post(formBuilder.build())
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-                .header("sec-ch-ua", "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"")
-                .header("sec-ch-ua-mobile", "?0")
-                .header("sec-ch-ua-platform", "\"Windows\"")
-                .header("sec-ch-ua-platform-version", "\"15.0.0\"")
-                .header("sec-ch-ua-model", "\"\"")
+                .applyDeviceHeaders()
                 .header("Accept", "*/*")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
                 .header("X-FB-Friendly-Name", friendlyName)
-                .header("X-Action-Name", action)
-                .header("X-BLOKS-VERSION-ID", BLOKS_VERSION_ID)
                 .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
-                .header("X-IG-Max-Touch-Points", "0")
                 .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
                 .header("X-CSRFToken", csrfToken)
-                .header("X-Requested-With", "XMLHttpRequest")
                 .header("Cookie", sessionCookies)
                 .header("Origin", "https://www.instagram.com")
                 .header("Referer", referer)
                 .header("Sec-Fetch-Dest", "empty")
                 .header("Sec-Fetch-Mode", "cors")
                 .header("Sec-Fetch-Site", "same-origin")
-                .header("Accept-Language", "en-US,en;q=0.9")
             // if (rootFieldName != null) builder.header("X-Root-Field-Name", rootFieldName)
             if (!lsd.isNullOrBlank()) builder.header("X-FB-LSD", lsd)
 
@@ -1700,6 +1692,13 @@ class InstagramWebClient @Inject constructor(
                 .add("jazoest", InstagramCrypto.createJazoest(mediaId))
                 .build()
 
+            val cleanCode = InstagramCrypto.getCodeFromUrl(mediaCodeOrId).ifBlank { mediaCodeOrId.trim() }
+            val refererUrl = if (cleanCode.isNotBlank() && !cleanCode.all(Char::isDigit)) {
+                "https://www.instagram.com/p/$cleanCode/"
+            } else {
+                "https://www.instagram.com/"
+            }
+
             val request = Request.Builder()
                 .url("https://www.instagram.com/api/v1/web/comments/$mediaId/add/")
                 .post(formBody)
@@ -1709,12 +1708,13 @@ class InstagramWebClient @Inject constructor(
                 .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
                 .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
                 .header("X-CSRFToken", csrfToken)
-                .header("X-Requested-With", "XMLHttpRequest")
-                .header("X-Instagram-AJAX", InstagramCrypto.generateInstagramAjax())
                 .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
                 .header("Cookie", sessionCookies)
                 .header("Origin", "https://www.instagram.com")
-                .header("Referer", "https://www.instagram.com/")
+                .header("Referer", refererUrl)
+                .header("Sec-Fetch-Dest", "empty")
+                .header("Sec-Fetch-Mode", "cors")
+                .header("Sec-Fetch-Site", "same-origin")
                 .build()
 
             http.newCall(request).execute().use { response ->
@@ -2330,7 +2330,7 @@ class InstagramWebClient @Inject constructor(
                 val targetUserId = numericPk ?: if (cleanUsername.all { it.isDigit() }) cleanUsername else null
                 if (!targetUserId.isNullOrBlank()) {
                     val fbDtsgToken = fetchFbDtsgToken(sessionCookies, cleanUsername)
-                    val lsdToken = extractCookie(sessionCookies ?: "", "lsd") ?: "toxLtqxo-5GooSYWUv2PJ1"
+                    val lsdToken = extractCookie(sessionCookies ?: "", "lsd") ?: fetchLsdToken(sessionCookies, cleanUsername)
                     val actorId = extractAvFromCookies(sessionCookies)
 
                     val formBodyBuilder = FormBody.Builder()
@@ -2351,29 +2351,20 @@ class InstagramWebClient @Inject constructor(
                     val reqBuilder = Request.Builder()
                         .url("https://www.instagram.com/api/graphql")
                         .post(formBody)
-                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36")
+                        .applyDeviceHeaders()
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("sec-ch-ua-full-version-list", "\"Not=A?Brand\";v=\"99.0.0.0\", \"Google Chrome\";v=\"151.0.7922.108\", \"Chromium\";v=\"151.0.7922.108\"")
-                        .header("sec-ch-ua-platform", "\"Windows\"")
-                        .header("viewport-width", "1517")
-                        .header("sec-ch-ua", "\"Not=A?Brand\";v=\"99\", \"Google Chrome\";v=\"151\", \"Chromium\";v=\"151\"")
-                        .header("sec-ch-ua-model", "\"\"")
-                        .header("sec-ch-ua-mobile", "?0")
-                        .header("X-IG-App-ID", "936619743392459")
-                        .header("X-FB-LSD", lsdToken)
-                        .header("X-IG-Max-Touch-Points", "0")
+                        .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
                         .header("X-FB-Friendly-Name", "PolarisUserHoverCardContentV2Query")
-                        .header("dpr", "0.9")
-                        .header("sec-ch-prefers-color-scheme", "dark")
-                        .header("DNT", "1")
-                        .header("sec-ch-ua-platform-version", "\"15.0.0\"")
                         .header("Accept", "*/*")
                         .header("Origin", "https://www.instagram.com")
                         .header("Sec-Fetch-Site", "same-origin")
                         .header("Sec-Fetch-Mode", "cors")
                         .header("Sec-Fetch-Dest", "empty")
                         .header("Referer", "https://www.instagram.com/$cleanUsername/")
-                        .header("Accept-Language", "en-US,en;q=0.9")
+
+                    if (lsdToken.isNotBlank()) {
+                        reqBuilder.header("X-FB-LSD", lsdToken)
+                    }
 
                     if (!csrfToken.isNullOrBlank()) {
                         reqBuilder.header("X-CSRFToken", csrfToken)
@@ -2823,7 +2814,7 @@ class InstagramWebClient @Inject constructor(
         pageHtml: String,
         sessionCookies: String
     ): InstagramUserFeedResult? {
-        val request = InstagramProfileFeedRequest.build(username, maxId, currentCookies, extractCookie(currentCookies, "csrftoken"), tokens)
+        val request = InstagramProfileFeedRequest.build(username, maxId, currentCookies, extractCookie(currentCookies, "csrftoken"), tokens, activeFingerprint)
             .newBuilder()
             .apply { if (context != null) applyDeviceHeaders() }
             .header("X-IG-WWW-Claim", extractWwwClaim(currentCookies))

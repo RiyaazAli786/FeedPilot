@@ -163,8 +163,12 @@ private fun FeedPilotRoot(
         val background = MaterialTheme.colorScheme.background
         LaunchedEffect(darkTheme, background) {
             val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarColor = background.toArgb()
+            if (Build.VERSION.SDK_INT < 35) {
+                @Suppress("DEPRECATION")
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                @Suppress("DEPRECATION")
+                window.navigationBarColor = background.toArgb()
+            }
             WindowCompat.getInsetsController(window, window.decorView).apply {
                 isAppearanceLightStatusBars = !darkTheme
                 isAppearanceLightNavigationBars = !darkTheme

@@ -35,7 +35,14 @@ class InstagramCallTelemetry @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val response = chain.proceed(request)
+        val actionName = request.header("X-Action-Name")
+        // Strip synthetic telemetry header before sending over the wire to Instagram
+        val outboundRequest = if (actionName != null) {
+            request.newBuilder().removeHeader("X-Action-Name").build()
+        } else {
+            request
+        }
+        val response = chain.proceed(outboundRequest)
 
         // peekBody returns an independent buffered copy — the real response body stream, which
         // every caller in InstagramWebClient still needs to read afterwards, is left untouched.
@@ -45,7 +52,6 @@ class InstagramCallTelemetry @Inject constructor(
 
         val method = request.method
         val friendlyName = request.header("X-FB-Friendly-Name")
-        val actionName = request.header("X-Action-Name")
         val tag = when {
             !actionName.isNullOrBlank() && !friendlyName.isNullOrBlank() -> " [$actionName | $friendlyName]"
             !friendlyName.isNullOrBlank() -> " [$friendlyName]"

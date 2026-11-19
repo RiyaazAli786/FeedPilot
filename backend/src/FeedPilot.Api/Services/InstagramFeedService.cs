@@ -365,7 +365,6 @@ public class InstagramFeedService : IInstagramFeedService
         request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
         request.Headers.TryAddWithoutValidation("X-IG-App-ID", InstagramAppId);
         request.Headers.TryAddWithoutValidation("X-ASBD-ID", AsbdId);
-        request.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
         request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
         request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
         request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-origin");

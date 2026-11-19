@@ -4,10 +4,12 @@ import okhttp3.FormBody
 import okhttp3.Request
 import org.json.JSONObject
 
+import com.feedpilot.client.common.InstagramCrypto
+
 internal object InstagramProfileFeedRequest {
     const val DOC_ID = "29240983615539641"
     const val FRIENDLY_NAME = "PolarisProfilePostsTabContentQuery_connection"
-    const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
+    const val USER_AGENT = InstagramCrypto.DEFAULT_USER_AGENT
 
     fun tokens(html: String): Map<String, String> {
         val result = mutableMapOf<String, String>()
@@ -19,7 +21,21 @@ internal object InstagramProfileFeedRequest {
         return result
     }
 
-    fun build(username: String, cursor: String?, cookies: String, csrf: String?, tokens: Map<String, String>): Request {
+    fun build(
+        username: String,
+        cursor: String?,
+        cookies: String,
+        csrf: String?,
+        tokens: Map<String, String>,
+        fingerprint: InstagramCrypto.DeviceFingerprint? = null
+    ): Request {
+        val fp = fingerprint ?: InstagramCrypto.DeviceFingerprint(
+            userAgent = InstagramCrypto.DEFAULT_USER_AGENT,
+            platform = InstagramCrypto.SEC_CH_UA_PLATFORM,
+            platformVersion = InstagramCrypto.SEC_CH_UA_PLATFORM_VERSION,
+            model = InstagramCrypto.SEC_CH_UA_MODEL,
+            isMobile = InstagramCrypto.SEC_CH_UA_MOBILE
+        )
         val variables = JSONObject()
             .put("after", cursor?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
             .put("before", JSONObject.NULL)
@@ -50,21 +66,23 @@ internal object InstagramProfileFeedRequest {
         val request = Request.Builder()
             .url("https://www.instagram.com/graphql/query")
             .post(form.build())
-            .header("User-Agent", USER_AGENT)
-            .header("sec-ch-ua-platform", "\"Windows\"")
-            .header("sec-ch-ua", "\"Chromium\";v=\"154\", \"Google Chrome\";v=\"154\", \"Not A(Brand\";v=\"99\"")
-            .header("sec-ch-ua-mobile", "?0")
-            .header("X-IG-App-ID", "936619743392459")
+            .header("User-Agent", fp.userAgent)
+            .header("sec-ch-ua", InstagramCrypto.SEC_CH_UA)
+            .header("sec-ch-ua-platform", fp.platform)
+            .header("sec-ch-ua-platform-version", fp.platformVersion)
+            .header("sec-ch-ua-model", fp.model)
+            .header("sec-ch-ua-mobile", fp.isMobile)
+            .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
             .header("X-Root-Field-Name", "xdt_api__v1__feed__user_timeline_graphql_connection")
             .header("X-FB-Friendly-Name", FRIENDLY_NAME)
-            .header("X-ASBD-ID", "359341")
+            .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
             .header("Accept", "*/*")
             .header("Origin", "https://www.instagram.com")
             .header("Referer", "https://www.instagram.com/$username/")
             .header("Sec-Fetch-Site", "same-origin")
             .header("Sec-Fetch-Mode", "cors")
             .header("Sec-Fetch-Dest", "empty")
-            .header("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+            .header("Accept-Language", InstagramCrypto.ACCEPT_LANGUAGE)
             .header("Cookie", cookies)
         csrf?.takeIf { it.isNotBlank() }?.let { request.header("X-CSRFToken", it) }
         tokens["lsd"]?.let { request.header("X-FB-LSD", it) }

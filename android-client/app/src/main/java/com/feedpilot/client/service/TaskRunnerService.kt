@@ -457,6 +457,12 @@ class TaskRunnerService : Service() {
                         }
                     }
                     result.terminalOrderId?.let { terminalOrderIds += it }
+                    if (result.isActionBlock) {
+                        Log.w(TAG, "[$accountId] Action block encountered (${task.taskType}); cooling down account for 30m to protect session")
+                        runnerState.noteAccount(accountId, "Instagram action limit — cooling down 30m...")
+                        delay(30 * 60_000L)
+                        break
+                    }
                     if (result.sessionDead) {
                         Log.w(TAG, "[$accountId] Session looks logged out - stopping this batch early instead of repeating the same failure")
                         runnerState.noteAccount(accountId, "Session logged out - re-add this account")
@@ -834,6 +840,7 @@ class TaskRunnerService : Service() {
         val ran: Boolean,
         val succeeded: Boolean = false,
         val sessionDead: Boolean = false,
+        val isActionBlock: Boolean = false,
         val terminalOrderId: String? = null
     )
 
@@ -927,6 +934,12 @@ class TaskRunnerService : Service() {
                 val isChallenge = isChallengeFailure(outcome.reason)
                 val isLoggedOut = !isChallenge &&
                     outcome.reason?.contains("Session logged out", ignoreCase = true) == true
+                val isActionBlock = !isChallenge && !isLoggedOut && (
+                    outcome.reason?.contains("feedback_required", ignoreCase = true) == true ||
+                    outcome.reason?.contains("action-block", ignoreCase = true) == true ||
+                    outcome.reason?.contains("Rate limited", ignoreCase = true) == true ||
+                    outcome.reason?.contains("spam", ignoreCase = true) == true
+                )
                 if (isChallenge) {
                     Log.w(TAG, "[$accountId] Account hit Instagram challenge: ${outcome.reason}")
                     runCatching { accountDao.updateStatus(accountId, "CHALLENGE_REQUIRED") }
@@ -938,13 +951,21 @@ class TaskRunnerService : Service() {
                     Log.w(TAG, "[$accountId] Account session logged out: ${outcome.reason}")
                     runCatching { accountDao.updateStatus(accountId, "SESSION_LOGGED_OUT") }
                     runnerState.noteAccount(accountId, "Session logged out - log in via globe icon")
+                } else if (isActionBlock) {
+                    Log.w(TAG, "[$accountId] Account action blocked / rate limited: ${outcome.reason}")
                 }
                 val sessionDead = isChallenge || isLoggedOut
                 val terminalOrderId = if (
                     task.id.startsWith(BACKEND_TASK_PREFIX) &&
                     isTerminalTargetFailure(outcome.reason)
                 ) task.orderId else null
-                ProcessResult(ran = true, succeeded = false, sessionDead = sessionDead, terminalOrderId = terminalOrderId)
+                ProcessResult(
+                    ran = true,
+                    succeeded = false,
+                    sessionDead = sessionDead,
+                    isActionBlock = isActionBlock,
+                    terminalOrderId = terminalOrderId
+                )
             }
             is TaskOutcome.Skipped -> {
                 // Not reported - the backend keeps the order and hands it out again later.
