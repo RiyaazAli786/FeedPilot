@@ -45,6 +45,10 @@
    - Collision guard: Skips feed refresh and warmup actions if an account is currently running active tasks in `TaskRunnerService` or `UpgradeRunnerService`.
    - Browsing dwell simulation: Enforces a 12s–28s human reading delay between fetching feed and executing any action, with mid-browse abort if the account becomes busy.
    - Action Log dialog includes a dedicated "Warmup" filter chip with success counts, and account cards display real-time warmup status.
+5. **WebView Media File Picker Support** (`MediaFileChooserWebChromeClient`):
+   - Overrides `WebChromeClient.onShowFileChooser` across `SessionViewerScreen`, `WebLoginScreen`, and `ActionLogWebViewDialog`.
+   - Integrates with `rememberLauncherForActivityResult` and `ActivityResultContracts.StartActivityForResult()` to present the system media picker / gallery chooser for photo, video, story, and reel uploads.
+   - Safe callback lifecycle management: always releases previous/pending callbacks (`filePathCallback.onReceiveValue(null)`) on cancellation or screen dismissal to avoid locking WebView file chooser states.
    - **Recent Bridge Fixes & Enhancements**:
      - *Floating Bubble Window Overlay*: Foreground service (`FloatingBridgeBubbleService`) providing an on-screen floating pill and expandable diagnostic card (`BridgeFloatingBubbleCard`) for real-time bridge monitoring across apps.
      - *Device Fleet Management*: Added backend `DevicesController` and Android `DevicesScreen` for tracking battery, active accounts, network status, and remote bridge toggles.

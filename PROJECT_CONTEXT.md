@@ -24,7 +24,7 @@ The repository also includes a backend-hosted admin dashboard, a SwiftUI iOS sta
 | Android `feature/`, `ui/`, `RootViewModel.kt`, `MainActivity.kt` | Compose screens, navigation, application UI state, Exception Users panel |
 | Android `data/`, `di/` | Room models/DAOs, API clients, repositories, Hilt wiring |
 | Android `task/`, `service/`, `worker/`, `bridge/` | Engagement execution, foreground services, scheduled work (`FeedWarmupWorker`, `FeedWatcherWorker`, `SyncWorker`), bridge runner |
-| Android `identity/`, `security/`, `common/` | Installation identity, guards, secure storage, session/crypto utilities |
+| Android `identity/`, `security/`, `common/` | Installation identity, guards, secure storage, session/crypto utilities, media picker WebChromeClient |
 | `android-client/app/src/test/` | JVM tests and some network diagnostic tests |
 | `ios-client/FeedPilot/` | SwiftUI views, models, session, URLSession API client |
 | `chrome-extension/` | Manifest V3 Instagram session opener |

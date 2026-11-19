@@ -1842,6 +1842,22 @@ private fun ActionLogWebViewDialog(
     onDismiss: () -> Unit
 ) {
     var isLoading by remember { mutableStateOf(true) }
+    var fileUploadCallback by remember { mutableStateOf<android.webkit.ValueCallback<Array<android.net.Uri>>?>(null) }
+
+    val fileChooserLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uris = android.webkit.WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+        fileUploadCallback?.onReceiveValue(uris)
+        fileUploadCallback = null
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            fileUploadCallback?.onReceiveValue(null)
+            fileUploadCallback = null
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1920,6 +1936,13 @@ private fun ActionLogWebViewDialog(
                                 }
                                 cookieManager.flush()
                             }
+
+                            webChromeClient = com.feedpilot.client.common.MediaFileChooserWebChromeClient(
+                                context = ctx,
+                                fileChooserLauncher = fileChooserLauncher,
+                                onCallbackUpdate = { fileUploadCallback = it },
+                                getPendingCallback = { fileUploadCallback }
+                            )
 
                             webViewClient = object : android.webkit.WebViewClient() {
                                 override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
