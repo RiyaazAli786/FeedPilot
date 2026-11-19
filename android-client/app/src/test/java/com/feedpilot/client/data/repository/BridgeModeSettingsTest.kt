@@ -51,4 +51,22 @@ class BridgeModeSettingsTest {
         restored.setBridgeFloatingBubbleEnabled(false)
         assertFalse(settings.settings.first().bridgeFloatingBubbleEnabled)
     }
+
+    @Test fun feedWarmupChoicePersistsAndDefaultsToFalse() = runBlocking {
+        val directory = Files.createTempDirectory("feedpilot-warmup-settings").toFile()
+        val context = object : ContextWrapper(null) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = directory
+        }
+        val api = Proxy.newProxyInstance(ApiService::class.java.classLoader, arrayOf(ApiService::class.java)) {
+            _, _, _ -> error("This test must not call the backend")
+        } as ApiService
+        val settings = SettingsRepository(context, api)
+        assertFalse(settings.settings.first().feedWarmupEnabled)
+        settings.setFeedWarmupEnabled(true)
+        val restored = SettingsRepository(context, api)
+        assertTrue(restored.settings.first().feedWarmupEnabled)
+        restored.setFeedWarmupEnabled(false)
+        assertFalse(settings.settings.first().feedWarmupEnabled)
+    }
 }

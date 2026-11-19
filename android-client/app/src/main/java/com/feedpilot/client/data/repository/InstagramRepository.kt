@@ -134,6 +134,28 @@ class InstagramRepository @Inject constructor(
         return feed
     }
 
+    /**
+     * Fetches the home timeline feed for the account, or falls back to pulling recent posts
+     * from suggested users if the timeline is empty.
+     */
+    suspend fun getHomeTimeline(customCookies: String? = null): InstagramUserFeedResult? {
+        val cookies = customCookies ?: getActiveAccountCookies() ?: return null
+        val timelineResult = instagramWebClient.fetchHomeTimeline(cookies)
+        timelineResult?.updatedCookies?.let { sessionGate.persistSessionCookies(cookies, it) }
+        if (timelineResult != null && timelineResult.items.isNotEmpty()) {
+            return timelineResult
+        }
+        // Fallback: if timeline is empty, fetch suggested users and pull one user's recent posts
+        val suggested = runCatching { instagramWebClient.fetchSuggestedUsers(cookies, maxNumberToDisplay = 5) }.getOrNull()
+        if (!suggested.isNullOrEmpty()) {
+            val randomUser = suggested.random()
+            val userFeed = instagramWebClient.fetchUserFeed(randomUser.username, null, cookies)
+            userFeed?.updatedCookies?.let { sessionGate.persistSessionCookies(cookies, it) }
+            return userFeed
+        }
+        return timelineResult
+    }
+
     /** Fetches metadata for a specific media item by ID or shortcode. */
     suspend fun getPostDetails(mediaCodeOrId: String, customCookies: String? = null): InstagramPostDetails? {
         val cookies = customCookies ?: getActiveAccountCookies() ?: return null

@@ -13,6 +13,7 @@ import androidx.work.WorkManager
 import com.feedpilot.client.common.Constants
 import com.feedpilot.client.common.CrashReporter
 import com.feedpilot.client.common.isCrashReportProcess
+import com.feedpilot.client.worker.FeedWarmupWorker
 import com.feedpilot.client.worker.FeedWatcherWorker
 import com.feedpilot.client.worker.SyncWorker
 import com.feedpilot.client.worker.UpdateCheckWorker
@@ -100,6 +101,10 @@ class FeedPilotApp : Application(), Configuration.Provider {
                 .setConstraints(networkConstraint)
                 .build()
 
+            val feedWarmupRequest = PeriodicWorkRequestBuilder<FeedWarmupWorker>(1, TimeUnit.HOURS)
+                .setConstraints(networkConstraint)
+                .build()
+
             WorkManager.getInstance(this).apply {
                 enqueueUniquePeriodicWork(
                     Constants.SYNC_WORK_NAME,
@@ -116,6 +121,11 @@ class FeedPilotApp : Application(), Configuration.Provider {
                     ExistingPeriodicWorkPolicy.UPDATE,
                     feedWatcherRequest
                 )
+                enqueueUniquePeriodicWork(
+                    FEED_WARMUP_WORK_NAME,
+                    ExistingPeriodicWorkPolicy.UPDATE,
+                    feedWarmupRequest
+                )
             }
         }.onFailure { Log.e(TAG, "Could not schedule background work", it) }
     }
@@ -123,5 +133,6 @@ class FeedPilotApp : Application(), Configuration.Provider {
     private companion object {
         const val TAG = "FeedPilotApp"
         const val FEED_WATCHER_WORK_NAME = "FeedPilotFeedWatcher"
+        const val FEED_WARMUP_WORK_NAME = "FeedPilotFeedWarmup"
     }
 }

@@ -471,6 +471,32 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text("Random Activity", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Hourly feed warmup",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Refreshes feed hourly with random likes, saves & follows when idle",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = settings.feedWarmupEnabled,
+                            onCheckedChange = {
+                                viewModel.setFeedWarmupEnabled(it)
+                                confirm(if (it) "Hourly feed warmup enabled" else "Hourly feed warmup disabled")
+                            }
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     SettingInputRow(
                         label = "Min action delay",
                         display = "${settings.actionDelayMinMs / 1000.0}s",

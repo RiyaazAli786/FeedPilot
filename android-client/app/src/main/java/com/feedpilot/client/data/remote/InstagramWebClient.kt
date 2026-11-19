@@ -2737,6 +2737,63 @@ class InstagramWebClient @Inject constructor(
         }
     }
 
+    /**
+     * Fetches the user's home timeline feed (/api/v1/feed/timeline/) using active session cookies.
+     * Extracts recent posts and any updated rotated cookies from response headers.
+     */
+    suspend fun fetchHomeTimeline(sessionCookies: String): InstagramUserFeedResult? = withContext(Dispatchers.IO) {
+        if (sessionCookies.isBlank()) return@withContext null
+        try {
+            val csrfToken = extractCookie(sessionCookies, "csrftoken") ?: ""
+            val url = "https://www.instagram.com/api/v1/feed/timeline/"
+            val form = FormBody.Builder()
+                .add("reason", "warm_start_fetch")
+                .add("client_session_id", java.util.UUID.randomUUID().toString())
+                .add("is_async_ads_in_headload_enabled", "0")
+                .build()
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .post(form)
+                .applyDeviceHeaders()
+                .header("X-IG-App-ID", InstagramCrypto.INSTAGRAM_APP_ID)
+                .header("X-ASBD-ID", InstagramCrypto.ASBD_ID)
+                .header("Accept", "*/*")
+                .header("Cookie", sessionCookies)
+                .header("X-IG-WWW-Claim", extractWwwClaim(sessionCookies))
+            if (csrfToken.isNotBlank()) reqBuilder.header("x-csrftoken", csrfToken)
+
+            http.newCall(reqBuilder.build()).execute().use { response ->
+                val bodyText = response.body?.string().orEmpty()
+                if (!response.isSuccessful || bodyText.isBlank()) {
+                    Log.w(TAG, "Home timeline feed returned HTTP ${response.code}")
+                    return@use null
+                }
+                val json = JSONObject(bodyText)
+                val feedItemsArr = json.optJSONArray("feed_items")
+                val items = mutableListOf<InstagramUserFeedItem>()
+                if (feedItemsArr != null) {
+                    val mediaArr = org.json.JSONArray()
+                    for (i in 0 until feedItemsArr.length()) {
+                        val obj = feedItemsArr.optJSONObject(i) ?: continue
+                        val media = obj.optJSONObject("media_or_ad") ?: continue
+                        mediaArr.put(media)
+                    }
+                    items.addAll(parsePrivateFeedItems(mediaArr))
+                }
+                val updatedCookies = mergeSetCookiesAndClaim(sessionCookies, response)
+                InstagramUserFeedResult(
+                    items = items,
+                    maxId = json.optString("next_max_id").ifBlank { null },
+                    hasMore = json.optBoolean("more_available", false),
+                    updatedCookies = updatedCookies
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching home timeline feed", e)
+            null
+        }
+    }
+
     private data class CachedSessionTokens(
         val tokens: Map<String, String>,
         val cookies: String,
