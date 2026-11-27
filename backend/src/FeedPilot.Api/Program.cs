@@ -101,7 +101,11 @@ builder.Services.AddHttpClient("Telegram", c => c.Timeout = TimeSpan.FromSeconds
 builder.Services.AddSingleton<TelegramRequestLogger>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TelegramRequestLogger>());
 builder.Services.AddHttpClient("B2");
-builder.Services.AddHttpClient("Instagram");
+builder.Services.AddHttpClient("Instagram")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = System.Net.DecompressionMethods.All
+    });
 builder.Services.AddSignalR();
 
 // ---------- Auth ----------

@@ -67,7 +67,7 @@ internal object InstagramProfileFeedRequest {
             .url("https://www.instagram.com/graphql/query")
             .post(form.build())
             .header("User-Agent", fp.userAgent)
-            .header("sec-ch-ua", InstagramCrypto.SEC_CH_UA)
+            .header("sec-ch-ua", fp.secChUa)
             .header("sec-ch-ua-platform", fp.platform)
             .header("sec-ch-ua-platform-version", fp.platformVersion)
             .header("sec-ch-ua-model", fp.model)

@@ -14,6 +14,8 @@ object InstagramCrypto {
 
     /** Modern Android 14 Mobile Chrome User-Agent (Samsung Galaxy S23 Ultra) */
     const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.135 Mobile Safari/537.36"
+    /** Instagram native Android User-Agent required by mobile-surface endpoints like fbsearch/topsearch_flat. */
+    const val INSTAGRAM_APP_USER_AGENT = "Instagram 350.0.0.0.0 Android (34/14; 420dpi; 1080x2340; samsung; SM-S918B; dm3q; qcom; en_US; 600000000)"
     const val INSTAGRAM_APP_ID = "936619743392459"
     const val ASBD_ID = "359341"
     const val SHARED_DATA_URL = "https://www.instagram.com/api/v1/web/data/shared_data/"
@@ -31,20 +33,29 @@ object InstagramCrypto {
         val platform: String = "\"Android\"",
         val platformVersion: String,
         val model: String,
-        val isMobile: String = "?1"
+        val isMobile: String = "?1",
+        val secChUa: String = secChUaForUserAgent(userAgent)
     )
 
+    private val CHROME_MAJOR_REGEX = Regex("""Chrome/(\d+)""")
+
+    /** Builds a `sec-ch-ua` header whose Chrome major version matches [userAgent]. */
+    fun secChUaForUserAgent(userAgent: String): String {
+        val major = CHROME_MAJOR_REGEX.find(userAgent)?.groupValues?.getOrNull(1) ?: "131"
+        return "\"Google Chrome\";v=\"$major\", \"Chromium\";v=\"$major\", \"Not_A Brand\";v=\"24\""
+    }
+
     /**
-     * Cache of the fingerprint built from the device's *real* WebView user agent — populated the
+     * Cache of the fingerprint built from the device's *real* WebView user agent â€” populated the
      * first time [getDeviceFingerprint] is called on the main thread (see [FeedPilotApp] pre-warm)
      * and reused for the rest of the process. `WebSettings.getDefaultUserAgent()` is main-thread
      * only; calling it from the IO-dispatcher coroutines that run authenticated Instagram calls
-     * (current_user, users/{id}/info, …) throws there and used to silently fall back to a
-     * hardcoded Chrome UA on every one of those calls — a different string than whatever real UA
+     * (current_user, users/{id}/info, â€¦) throws there and used to silently fall back to a
+     * hardcoded Chrome UA on every one of those calls â€” a different string than whatever real UA
      * the login WebView used when Instagram bound the session's cookies to it, which is exactly
      * what Instagram's "useragent mismatch" (400) response is complaining about. Caching only the
      * real-UA fingerprint (never the fallback) means every call after the first main-thread one
-     * — regardless of which thread it runs on — sees the same UA the session was created with.
+     * â€” regardless of which thread it runs on â€” sees the same UA the session was created with.
      */
     @Volatile
     private var cachedFingerprint: DeviceFingerprint? = null
@@ -91,9 +102,9 @@ object InstagramCrypto {
      * Strips the tokens that mark a string as an Android WebView user agent.
      *
      * `WebSettings.getDefaultUserAgent()` returns something like
-     * `…; SM-S918B Build/UP1A…; wv) AppleWebKit/537.36 … Version/4.0 Chrome/131… Mobile Safari…`.
+     * `â€¦; SM-S918B Build/UP1Aâ€¦; wv) AppleWebKit/537.36 â€¦ Version/4.0 Chrome/131â€¦ Mobile Safariâ€¦`.
      * The `; wv)` and `Version/4.0` tokens tell Instagram (and Google) the page is running inside
-     * an embedded browser, which they refuse to serve the login form to — the WebView then shows
+     * an embedded browser, which they refuse to serve the login form to â€” the WebView then shows
      * "this browser may not be secure" or just a blank page. Removing those tokens leaves a plain
      * mobile-Chrome UA that renders the real login page. Returns null for null/blank input so the
      * caller can fall back to its hard-coded Chrome string.
@@ -101,7 +112,7 @@ object InstagramCrypto {
     fun sanitizeWebViewUserAgent(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         return raw
-            // "…Build/XXX; wv)" and "…; wv)" -> "…)"
+            // "â€¦Build/XXX; wv)" and "â€¦; wv)" -> "â€¦)"
             .replace(Regex("\\s*Build/[^;)]+;?\\s*wv\\)"), ")")
             .replace("; wv)", ")")
             .replace(" wv)", ")")
@@ -268,7 +279,7 @@ object InstagramCrypto {
      */
     private fun sealAesKey(rawKey: ByteArray, publicKey: ByteArray): ByteArray {
         // Clamp the ephemeral secret per RFC 7748 so base-point and shared use the identical
-        // scalar — the box then opens correctly regardless of Tink's internal clamping.
+        // scalar â€” the box then opens correctly regardless of Tink's internal clamping.
         val ephemeralSecret = ByteArray(32).also { SecureRandom().nextBytes(it) }
         ephemeralSecret[0] = (ephemeralSecret[0].toInt() and 248).toByte()
         ephemeralSecret[31] = (ephemeralSecret[31].toInt() and 127).toByte()
